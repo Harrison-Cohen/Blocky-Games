@@ -100,6 +100,15 @@ export class Vehicle {
     parent.add(this.root);
   }
 
+  // Take this car out of the scene for good. Materials are shared and cached;
+  // the geometry and this car's own tail lamp material are not.
+  dispose(parent) {
+    parent.remove(this.root);
+    disposeTree(this.root);
+    this.brakeLight.dispose();
+    if (this.headlight) { this.headlight.dispose(); this.headlight = null; }
+  }
+
   step(dt, input, ground) {
     this.physics.step(dt, input, ground);
   }

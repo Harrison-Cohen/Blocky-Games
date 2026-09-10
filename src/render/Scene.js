@@ -154,6 +154,10 @@ export class Scene {
     if (!GRAPHICS.dynamicResolution || !this.drawable || !(dt > 0)) return;
     rs.clock += dt;
     if (rs.hold > 0) { rs.hold -= dt; return; }
+    // A single long frame is a hitch -- a shader compiling, a car being built,
+    // the garbage collector -- not a sign that there are too many pixels.
+    // Counting it would drop the resolution for half a minute over one frame.
+    if (dt > 0.1) return;
     rs.time += dt; rs.sum += dt; rs.frames++;
     if (rs.time < 1) return;
     const avg = rs.sum / rs.frames;
@@ -180,6 +184,12 @@ export class Scene {
     if (Math.abs(next - this.renderScale) < 0.01) return;
     this.renderScale = next;
     this._onResize();
+  }
+
+  // Ignore frame times for a moment: something is about to cause a hitch that
+  // says nothing about resolution, like building a field of cars.
+  settle(seconds = 2) {
+    this._rs.hold = Math.max(this._rs.hold, seconds);
   }
 
   _onResize() {

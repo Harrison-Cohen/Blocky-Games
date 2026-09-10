@@ -152,6 +152,12 @@ export class SpeedProfile {
         if (cap < this.v[j]) this.v[j] = cap;
       }
     }
+
+    // A uniform scale on the whole plan, corners and straights alike. 1 in
+    // time trial. A race uses it to slow a fast car down evenly rather than by
+    // making it timid only in the corners -- see RACE.minGrip.
+    const scale = style.speedScale ?? 1;
+    if (scale !== 1) for (let i = 0; i < n; i++) this.v[i] *= scale;
   }
 
   // Longitudinal acceleration available at sample i once the cornering force
@@ -165,6 +171,16 @@ export class SpeedProfile {
     // scrubbing, and a profile that says otherwise produces a braking point an
     // infinite distance back.
     return Math.max(total * AI.longFloor, left > 0 ? Math.sqrt(left) : 0);
+  }
+
+  // The lap this profile would drive if every target were met exactly, in
+  // seconds. A race uses it to tune each opponent to a lap time rather than to
+  // a raw grip number, so that a Wedge One and a Haul 4x4 driven by drivers of
+  // the same standard are in the same race.
+  lapTime() {
+    let t = 0;
+    for (let i = 0; i < this.count; i++) t += this.line.ds[i] / Math.max(1, this.v[i]);
+    return t;
   }
 
   // The lowest target over the next `distance` metres of line. This is what the

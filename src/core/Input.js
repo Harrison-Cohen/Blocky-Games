@@ -45,7 +45,7 @@ export class Input {
     // One-shot actions, consumed by the game and cleared each frame.
     this.actions = {
       reset: false, pause: false, cycleCamera: false,
-      nextChassis: false, nextTrack: false, rivals: false, autoDrive: false,
+      nextChassis: false, nextTrack: false, rivals: false, autoDrive: false, race: false,
       toggleDebug: false, results: false,
       garage: false,
     };
@@ -99,6 +99,7 @@ export class Input {
     if (e.code === 'KeyT') this.actions.nextTrack = true;
     if (e.code === 'KeyO') this.actions.rivals = true;
     if (e.code === 'KeyP') this.actions.autoDrive = true;
+    if (e.code === 'KeyN') this.actions.race = true;
     if (e.code === 'Backquote') this.actions.toggleDebug = true;
     // Tab would otherwise move focus off the canvas and stop the game hearing
     // the keyboard at all, so it is claimed here.

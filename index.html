@@ -30,6 +30,19 @@
         <div class="lap-line lap-delta"></div>
       </div>
 
+      <!-- Race mode: position and the gaps either side of you, top left. -->
+      <div class="race-hud" hidden>
+        <div class="race-pos"><span class="race-pos-now">P1</span><span class="race-pos-of">/8</span></div>
+        <div class="race-gap race-gap-ahead"><span class="race-gap-label">Ahead</span><span class="race-gap-time">--</span><span class="race-gap-name"></span></div>
+        <div class="race-gap race-gap-behind"><span class="race-gap-label">Behind</span><span class="race-gap-time">--</span><span class="race-gap-name"></span></div>
+      </div>
+
+      <!-- Start lights: one comes on each second, then all go out. -->
+      <div class="start-lights" hidden>
+        <div class="start-lamps"><span class="start-lamp"></span><span class="start-lamp"></span><span class="start-lamp"></span></div>
+        <div class="start-go" hidden>Go</div>
+      </div>
+
       <div class="sector-flash" hidden></div>
 
       <div class="minimap" hidden>
@@ -64,6 +77,23 @@
         </aside>
       </section>
 
+      <!-- Race setup. The rows are built by ui/RaceScreens.js. -->
+      <section class="race-setup" hidden>
+        <h1>Race</h1>
+        <ul class="race-rows"></ul>
+        <p class="race-hint">Up and down pick a setting, left and right change it. Enter chooses. Esc goes back.</p>
+      </section>
+
+      <section class="race-results" hidden>
+        <h1>Race results</h1>
+        <p class="race-results-sub"></p>
+        <table class="race-table">
+          <thead><tr><th>Pos</th><th>Driver</th><th>Car</th><th>Time</th><th>Gap</th><th>Best lap</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <ul class="race-rows race-results-actions"></ul>
+      </section>
+
       <section class="controls-card" hidden>
         <h1>Controls</h1>
         <div class="controls-grid">
@@ -79,6 +109,7 @@
               <dt>Tab</dt><dd>Session results</dd>
               <dt>G</dt><dd>Garage</dd>
               <dt>P</dt><dd>Auto drive</dd>
+              <dt>N</dt><dd>Race</dd>
             </dl>
           </div>
           <div>

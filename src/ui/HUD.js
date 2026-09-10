@@ -47,9 +47,11 @@ export class HUD {
     this.flashEl.hidden = true;
   }
 
-  update(timer, track, physics) {
+  // extras, in a race: { lapText: '2/3', cars: [{ x, z, color }] }, the lap
+  // counter against the race distance and every other car for the minimap.
+  update(timer, track, physics, extras = null) {
     // Lap number counts the lap you are ON, so it is one past the finished ones.
-    const lapNo = String(timer.laps.length + 1);
+    const lapNo = extras && extras.lapText ? extras.lapText : String(timer.laps.length + 1);
     if (lapNo !== this._lap) { this.numberEl.textContent = lapNo; this._lap = lapNo; }
 
     const cur = timer.running ? formatTime(timer.lapTime) : '0:00.000';
@@ -85,10 +87,10 @@ export class HUD {
       this._flash = flashKey;
     }
 
-    this._drawMinimap(track, physics);
+    this._drawMinimap(track, physics, extras ? extras.cars : null);
   }
 
-  _drawMinimap(track, p) {
+  _drawMinimap(track, p, cars) {
     const ctx = this.ctx;
     const w = this.canvas.width;
     const h = this.canvas.height;
@@ -110,8 +112,10 @@ export class HUD {
 
     const px = p.x * this._scale + this._ox;
     const py = p.z * this._scale + this._oy;
-    // Redrawing an unchanged minimap every frame is pure waste.
-    if (Math.abs(px - this._carPx) < 0.5 && Math.abs(py - this._carPy) < 0.5) return;
+    // Redrawing an unchanged minimap every frame is pure waste -- unless there
+    // are other cars on it, which move whether you do or not.
+    const others = cars && cars.length > 0;
+    if (!others && Math.abs(px - this._carPx) < 0.5 && Math.abs(py - this._carPy) < 0.5) return;
     this._carPx = px;
     this._carPy = py;
 
@@ -137,9 +141,27 @@ export class HUD {
     ctx.fillStyle = 'rgba(237, 237, 231, 0.8)';
     ctx.fill();
 
+    // Every other car in its own paint, under the player's dot.
+    if (others) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(14, 26, 43, 0.95)';
+      for (const c of cars) {
+        ctx.beginPath();
+        ctx.arc(c.x * this._scale + this._ox, c.z * this._scale + this._oy, 3.6, 0, Math.PI * 2);
+        ctx.fillStyle = c.color;
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
     ctx.beginPath();
     ctx.arc(px, py, 4.5, 0, Math.PI * 2);
     ctx.fillStyle = '#ff7a1a';
     ctx.fill();
+    if (others) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#edede7';
+      ctx.stroke();
+    }
   }
 }

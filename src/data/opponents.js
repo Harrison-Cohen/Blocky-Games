@@ -4,6 +4,9 @@
 // opponent is a name, a chassis, a paint job and a driving style, and adding one
 // is an entry here. Nothing outside this file decides who is on the grid.
 //
+// Seven drivers, the most a race can field. A race with fewer takes them from
+// the top of this list.
+//
 // The chassis mix is deliberate. Five identical cars in five colours is not a
 // field, it is one car rendered five times -- so the list alternates between
 // the quick and the heavy, and the styles are picked to suit what each of them
@@ -74,6 +77,26 @@ export const OPPONENTS = [
            roofItem: 'box', headlight: 'blue', number: 1 },
     style: { gripUse: 0.65, brakeMargin: 0.96, lineBias: -0.6,
              wander: 0.38, wanderRate: 0.68, phase: 2.4, reaction: 5.2 },
+  },
+  {
+    id: 'varga',
+    name: 'Ines Varga',
+    chassis: 'cube-gt',
+    car: { primary: 'rose', secondary: 'ink', livery: 'stripes',
+           wheelStyle: 'fivespoke', wheelColor: 'offwhite', spoiler: 'ducktail',
+           roofItem: 'none', headlight: 'cold', number: 17 },
+    style: { gripUse: 0.66, brakeMargin: 1.0, lineBias: 0.3,
+             wander: 0.28, wanderRate: 0.58, phase: 4.2, reaction: 6.0 },
+  },
+  {
+    id: 'brandt',
+    name: 'Otto Brandt',
+    chassis: 'wedge-one',
+    car: { primary: 'teal', secondary: 'offwhite', livery: 'quarters',
+           wheelStyle: 'deepdish', wheelColor: 'ink', spoiler: 'wing',
+           roofItem: 'none', headlight: 'warm', number: 33 },
+    style: { gripUse: 0.64, brakeMargin: 0.95, lineBias: -0.2,
+             wander: 0.34, wanderRate: 0.47, phase: 0.8, reaction: 5.6 },
   },
 ];
 

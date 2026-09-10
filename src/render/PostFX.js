@@ -190,6 +190,7 @@ export class PostFX {
         scale: 1,
         samples: GRAPHICS.aoSamples,
       });
+      this.ao.updatePdMaterial({ samples: GRAPHICS.aoDenoiseSamples });
       this.ao.blendIntensity = GRAPHICS.aoIntensity;
       this.composer.addPass(this.ao);
     }

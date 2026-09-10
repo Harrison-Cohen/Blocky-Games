@@ -460,6 +460,12 @@ export const GRAPHICS = {
   aoSamples: 8,
   aoThickness: 1.2,
 
+  // Samples the occlusion's denoise pass takes per pixel. It smooths a soft
+  // effect, so eight looks the same as sixteen; with a full field on Skyline
+  // Interchange the occlusion was still the largest single cost in the frame.
+  // Range 4-16.
+  aoDenoiseSamples: 8,
+
   // Resolution the occlusion is worked out at, as a fraction of the screen.
   // It is soft, low-frequency shading, so half resolution looks the same and
   // costs a quarter: at full resolution it was half of the whole frame on a
@@ -559,7 +565,9 @@ export const GRAPHICS = {
   // width of the beam; drop is how far it dips over twenty metres. Ranges 40-400,
   // 30-150, 0.3-0.8, 0.2-0.8, 0.5-4.
   headlightColor: 0xfff1d8,
-  headlightIntensity: 130,
+  // 85: at 130 the car in front of you in traffic, five metres ahead, was lit
+  // white by your own beams.
+  headlightIntensity: 85,
   // Falloff exponent, for the same reason as lampDecay: at the physical 2 the
   // beam that lights the road at 30 m turns a tunnel wall at 5 m white.
   // Range 1-2.
@@ -568,6 +576,11 @@ export const GRAPHICS = {
   headlightAngle: 0.52,
   headlightPenumbra: 0.5,
   headlightDrop: 1.6,
+
+  // How many of the other cars' headlights are real lights at once, handed to
+  // the ones nearest the camera. The rest keep their lit lenses. Each one costs
+  // every lit pixel, like a lamp. Range 0-7.
+  rivalHeadlights: 3,
 
   // Whether the player's headlights cast shadows. Costs one more shadow pass.
   headlightShadows: true,
@@ -788,4 +801,171 @@ export const AI = {
   // 1/m of curvature. Higher means the driver is tidy in more of the corner.
   // Range 20-90.
   tidyAtCorners: 45,
+
+  // --- racing other cars ----------------------------------------------------
+  // None of these do anything in time trial, where the driver is alone.
+
+  // How far ahead a driver looks for traffic: a fixed part plus this many
+  // seconds of travel. Longer is a driver who plans a pass earlier; shorter is
+  // one who arrives on the back of somebody first. Range 6-20, 0.6-2.
+  awareBase: 10,
+  awareTime: 1.1,
+
+  // Clear air a driver leaves beside a car it is passing, metres, on top of the
+  // two cars' half widths. Lower is closer racing and more rubbing. Range 0.3-1.5.
+  passGap: 0.7,
+
+  // The closest a passing lane comes to the edge of the tarmac, metres, before
+  // the car's own half width. Range 0.3-2.
+  passEdge: 0.6,
+
+  // How fast a driver moves across into a passing lane, metres per second, and
+  // how long it keeps to that lane once the car it was passing is out of its
+  // lookahead. Ranges 1-4, 0.5-3.
+  passRate: 2.2,
+  passHold: 1.2,
+
+  // When there is no room to pass: the following distance kept, a fixed gap
+  // plus this many seconds at the current speed. Ranges 2-8, 0.15-0.6.
+  followGap: 4,
+  followTime: 0.3,
+
+  // Whatever else a driver is doing -- passing included -- it never closes on
+  // a car in its own path faster than it could brake to that car's speed in
+  // the gap between them, at this deceleration, m/s^2. This is the rule that
+  // stops rear-ending. Lower is more cautious. Range 3-8.
+  followDecel: 5,
+
+  // Seconds after the start that a driver holds its grid lane before joining
+  // the racing line, so a two-by-two grid does not converge on one groove into
+  // the first corner. Range 0-6.
+  startHold: 3,
+
+  // --- mistakes -------------------------------------------------------------
+  // How long a mistake lasts, seconds, and how big it is: a braking point this
+  // fraction too fast (an overshoot), an apex missed by this many metres, and a
+  // lift that holds the throttle to this much. How OFTEN a driver makes one is
+  // the difficulty's mistake rate, per corner. Ranges 0.6-2, 0.03-0.15,
+  // 0.5-2.5, 0.1-0.6.
+  mistakeTime: 1.3,
+  mistakeLate: 0.08,
+  mistakeWide: 1.4,
+  mistakeLift: 0.3,
+};
+
+// ============================================================================
+// RACE
+// ----------------------------------------------------------------------------
+// Race mode: the grid, the countdown, how hard the field is, and what happens
+// at the flag. The track select screen (milestone 9) will set laps, opponents
+// and difficulty; these are the defaults it starts from.
+// ============================================================================
+export const RACE = {
+  // Defaults for a new race. Range 1-10, 1-7.
+  laps: 3,
+  opponents: 5,
+  maxOpponents: 7,
+  difficulty: 'club',
+
+  // Seconds of lights before the start. The spec's three. Range 2-5.
+  countdown: 3,
+
+  // The standing grid, two by two and staggered, behind the start line. First
+  // row this far behind it, rows this far apart, the right-hand slot of each
+  // row this much further back, and the two slots this far either side of the
+  // centreline. Metres. Ranges 5-15, 7-12, 2-6, 2-4.
+  gridFirst: 9,
+  gridRow: 9,
+  gridStagger: 4.5,
+  gridLateral: 2.8,
+
+  // What the difficulty is measured against: the lap this chassis would do on
+  // this track at this gripUse, from its speed profile. That is a clean, quick
+  // Cube GT lap, the car a new player starts in.
+  referenceChassis: 'cube-gt',
+  referenceGrip: 0.66,
+
+  // Difficulty. `pace` is the lap time each opponent is tuned to, as a
+  // multiple of that reference, so a field with two Wedge Ones in it is no
+  // quicker than one of Cube GTs -- the braver drivers are simply in the slower
+  // cars. `brake` scales every driver's braking margin, and `mistakes` is the
+  // chance per corner of an early lift, a missed apex or an overshoot.
+  //
+  //   Rookie  beatable in a Cube GT on the first go
+  //   Club    a clean, committed lap wins
+  //   Pro     the reference lap, driven by people who do not lift
+  //
+  // Ranges: pace 0.95-1.3, brake 0.85-1.02, mistakes 0-0.35.
+  levels: {
+    rookie: { name: 'Rookie', pace: 1.16, brake: 0.92, mistakes: 0.22 },
+    club: { name: 'Club', pace: 1.06, brake: 0.97, mistakes: 0.08 },
+    pro: { name: 'Pro', pace: 0.995, brake: 1.0, mistakes: 0.02 },
+  },
+
+  // The range a driver's grip use is held to when the race tunes it to a lap
+  // time. Above maxGrip a chassis is being asked for more than it has and goes
+  // off; below minGrip a fast car becomes slow in corners but still quick on the
+  // straights, brakes far earlier than everyone round it, and gets driven into.
+  // A driver who would need less than minGrip runs at minGrip and has their
+  // whole speed plan scaled down instead, straights included. Ranges 0.4-0.6,
+  // 0.7-0.9.
+  minGrip: 0.5,
+  maxGrip: 0.8,
+
+  // How far a driver's own style moves their pace either side of the field's,
+  // per unit of their gripUse away from 0.65. Keeps the field spread out rather
+  // than five cars on the same lap time. Range 0-0.8.
+  driverSpread: 0.4,
+
+  // Rubber banding. Off by default, as the spec asks: when on, an opponent
+  // behind the player gets up to catchUpBonus extra target speed, reaching the
+  // full amount at catchUpRange metres behind. Ranges true/false, 0-0.1, 50-400.
+  catchUp: false,
+  catchUpBonus: 0.04,
+  catchUpRange: 150,
+
+  // Seconds after crossing the line before the results appear. Range 0.5-4.
+  resultsDelay: 1.5,
+
+  // Seconds after the player finishes before anyone still running is
+  // classified as not finished. Range 20-180.
+  finishTimeout: 60,
+
+  // How hard the car is driven round the cool-down lap after the flag, when
+  // the AI takes over. Range 0.3-0.6.
+  coolDownGrip: 0.45,
+};
+
+// ============================================================================
+// CONTACT
+// ----------------------------------------------------------------------------
+// Car against car. The same idea as the barrier response: the cars are pushed
+// apart, the speed going into each other is taken out, and the speed sliding
+// along each other is scrubbed. It must cost time without deciding a race: the
+// player cannot punt an AI car across the map, and an AI car cannot end the
+// player's race.
+// ============================================================================
+export const CONTACT = {
+  // Bounce given back from a hit. Keep it low or it turns into bumper cars.
+  // Range 0-0.3.
+  restitution: 0.1,
+
+  // The most one contact can change either car's speed, m/s. This is the cap
+  // that stops a heavy car at full speed launching a light one. Range 1-8.
+  maxDeltaV: 4,
+
+  // Fraction of the speed two cars are sliding along each other at that is
+  // lost per second of contact. Range 0.3-3.
+  scrape: 1.4,
+
+  // Fraction of yaw rate killed per second of contact, so a touch does not
+  // spin a car. Range 1-8.
+  yawScrub: 3,
+
+  // Extra radius round each car's body, metres. Range 0-0.2.
+  pad: 0.05,
+
+  // Cars further apart in height than this do not touch -- one is on the
+  // flyover and the other is underneath it. Metres. Range 1.5-5.
+  maxHeight: 2.5,
 };

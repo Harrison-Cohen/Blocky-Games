@@ -11,7 +11,8 @@
     "lap": "node scripts/check-lap.mjs",
     "timing": "node scripts/check-timing.mjs",
     "parts": "node scripts/check-parts.mjs",
-    "ai": "node scripts/check-ai.mjs"
+    "ai": "node scripts/check-ai.mjs",
+    "race": "node scripts/check-race.mjs"
   },
   "dependencies": {
     "three": "^0.185.1"

@@ -17,10 +17,11 @@ npm run lap     # every chassis can lap every track, clean
 npm run timing  # lap timing, sectors and the validation rules
 npm run parts   # no car part floats or is sealed inside another; cars sit on hills
 npm run ai      # the racing line is a racing line, and the AI laps it clean
+npm run race    # a full field races every track to the flag, cleanly
 ```
 
 The check scripts run headless against the real Track, VehiclePhysics and
-CarBuilder, with no browser and no renderer. Run all five before calling a
+CarBuilder, with no browser and no renderer. Run all six before calling a
 milestone done.
 
 ## Stack
