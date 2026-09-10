@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Racing game</title>
+    <!-- Inline so it costs no request and cannot 404. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230E1A2B'/%3E%3Crect x='5' y='13' width='22' height='8' fill='%23FF7A1A'/%3E%3Crect x='9' y='9' width='12' height='5' fill='%23FF7A1A'/%3E%3Crect x='7' y='21' width='5' height='4' fill='%23EDEDE7'/%3E%3Crect x='20' y='21' width='5' height='4' fill='%23EDEDE7'/%3E%3C/svg%3E" />
+    <link rel="preload" href="/fonts/martian-mono-latin-var.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/archivo-latin-var.woff2" as="font" type="font/woff2" crossorigin />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+
+    <div id="ui">
+      <div class="speed-readout">
+        <span class="speed-value">0</span>
+        <span class="speed-unit">km/h</span>
+      </div>
+
+      <!-- Shown while the AI is driving the player's car. -->
+      <div class="auto-badge" hidden>Auto drive</div>
+
+      <!-- Lap timing. Populated by ui/HUD.js; the markup lives here so the
+           first frame has something laid out rather than popping in. -->
+      <div class="lap-hud" hidden>
+        <div class="lap-line lap-counter"><span class="lap-label">Lap</span> <span class="lap-number">1</span></div>
+        <div class="lap-line lap-current">0:00.000</div>
+        <div class="lap-line lap-best"><span class="lap-label">Best</span> <span class="lap-best-time">--:--.---</span></div>
+        <div class="lap-line lap-delta"></div>
+      </div>
+
+      <div class="sector-flash" hidden></div>
+
+      <div class="minimap" hidden>
+        <canvas class="minimap-canvas" width="220" height="220"></canvas>
+      </div>
+
+      <section class="results-card" hidden>
+        <h1>Session</h1>
+        <div class="results-headline">
+          <div><span class="results-label">Best lap</span><span class="results-best">--:--.---</span></div>
+          <div><span class="results-label">Best possible</span><span class="results-possible">--:--.---</span></div>
+        </div>
+        <ol class="results-laps"></ol>
+        <p class="results-empty">No laps yet. Cross the line to start timing.</p>
+        <div class="controls-foot">
+          <p class="controls-dev">Tab closes this.</p>
+        </div>
+      </section>
+
+      <!-- Garage. The rows are built by ui/Garage.js from the option lists in
+           data/customization.js, so adding a setting is a data change. -->
+      <section class="garage" hidden>
+        <div class="garage-panel">
+          <h1>Garage</h1>
+          <ul class="garage-rows"></ul>
+          <p class="garage-hint">Up and down pick a setting, left and right change it. Enter chooses a button. Esc leaves without saving.</p>
+        </div>
+        <aside class="garage-card">
+          <h2 class="garage-car-name"></h2>
+          <p class="garage-car-blurb"></p>
+          <dl class="garage-car-stats"></dl>
+        </aside>
+      </section>
+
+      <section class="controls-card" hidden>
+        <h1>Controls</h1>
+        <div class="controls-grid">
+          <div>
+            <h2>Keyboard</h2>
+            <dl>
+              <dt>W A S D</dt><dd>Drive</dd>
+              <dt>Arrows</dt><dd>Drive</dd>
+              <dt>Space</dt><dd>Handbrake</dd>
+              <dt>R</dt><dd>Reset</dd>
+              <dt>C</dt><dd>Change camera</dd>
+              <dt>Esc</dt><dd>Pause</dd>
+              <dt>Tab</dt><dd>Session results</dd>
+              <dt>G</dt><dd>Garage</dd>
+              <dt>P</dt><dd>Auto drive</dd>
+            </dl>
+          </div>
+          <div>
+            <h2>Gamepad</h2>
+            <dl>
+              <dt>Triggers</dt><dd>Throttle and brake</dd>
+              <dt>Left stick</dt><dd>Steering</dd>
+              <dt>A</dt><dd>Handbrake</dd>
+              <dt>Y</dt><dd>Reset</dd>
+              <dt>X</dt><dd>Change camera</dd>
+              <dt>Start</dt><dd>Pause</dd>
+              <dt>B</dt><dd>Garage</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="controls-foot">
+          <p class="controls-dev">V swaps chassis, T swaps track, O toggles the AI car. Backtick hides the telemetry panel.</p>
+          <p class="controls-go">Press any key to drive</p>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

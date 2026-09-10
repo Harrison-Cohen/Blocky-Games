@@ -1,0 +1,544 @@
+/* Self-hosted so the game makes no network calls at runtime and the timing
+   readouts never fall back to a proportional face mid-lap. Both files are the
+   variable versions, so one file covers every weight the game uses. */
+@font-face {
+  font-family: 'Martian Mono';
+  src: url('/fonts/martian-mono-latin-var.woff2') format('woff2-variations');
+  font-weight: 100 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Archivo';
+  src: url('/fonts/archivo-latin-var.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --ink: #0e1a2b;
+  --signal: #ff7a1a;
+  --offwhite: #edede7;
+  --purple: #b57bff;
+  --green: #34d17a;
+  --yellow: #f5c518;
+
+  --mono: 'Martian Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --sans: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--offwhite);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  /* Keep the HUD clear of notches and rounded display corners. */
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+           max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+
+/* --- speed readout: bottom right, per the HUD layout ---------------------- */
+.speed-readout {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 16px 8px;
+  background: var(--ink);
+  border-bottom: 3px solid var(--signal);
+}
+
+.speed-value {
+  font-family: var(--mono);
+  /* Tabular figures so the number does not shuffle as it counts. The fallback
+     stack is monospace for the same reason. */
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 56px;
+  line-height: 0.95;
+  color: var(--signal);
+  min-width: 3ch;
+  text-align: right;
+}
+
+.speed-unit {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--offwhite);
+  opacity: 0.75;
+}
+
+/* --- auto drive: sits on the speed readout while the AI has the wheel ------ */
+/* Solid signal orange rather than a label on ink, because it has to be
+   impossible to forget you are not the one driving. */
+.auto-badge {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 82px);
+  padding: 6px 12px 5px;
+  background: var(--signal);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* --- controls card -------------------------------------------------------- */
+.controls-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(620px, calc(100vw - 48px));
+  padding: 28px 32px 24px;
+  background: var(--ink);
+  border-top: 4px solid var(--signal);
+  pointer-events: auto;
+}
+
+.controls-card h1 {
+  margin: 0 0 20px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.controls-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+}
+
+.controls-card h2 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--signal);
+}
+
+.controls-card dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  font-size: 14px;
+}
+
+.controls-card dt {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--offwhite);
+  white-space: nowrap;
+}
+
+.controls-card dd {
+  margin: 0;
+  opacity: 0.8;
+}
+
+.controls-foot {
+  margin-top: 22px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(237, 237, 231, 0.18);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.controls-dev {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.55;
+}
+
+.controls-go {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--signal);
+  white-space: nowrap;
+}
+
+/* --- debug telemetry: dev tool, not the game HUD -------------------------- */
+.debug-hud {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: max(16px, env(safe-area-inset-left));
+  width: 258px;
+  padding: 10px 12px;
+  background: rgba(14, 26, 43, 0.92);
+  border-left: 3px solid var(--signal);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.dbg-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  /* Telemetry must never reflow: a wrapping line makes the whole panel jump
+     while you are reading it mid-corner. */
+  white-space: nowrap;
+}
+
+.dbg-row b { overflow: hidden; text-overflow: ellipsis; }
+
+.dbg-row span { opacity: 0.6; }
+.dbg-row b { font-weight: 700; }
+.dbg-row b.over { color: var(--yellow); }
+
+.dbg-head {
+  font-size: 12px;
+  color: var(--signal);
+  margin-bottom: 6px;
+}
+.dbg-head span { font-size: 9px; }
+
+.dbg-sep {
+  height: 1px;
+  background: rgba(237, 237, 231, 0.16);
+  margin: 6px 0;
+}
+
+[hidden] { display: none !important; }
+
+/* ---------------------------------------------------------------------------
+   Lap timing HUD. Hard edged rectangles, no rounding, no shadows, no blur.
+   Every number is tabular so a counting digit never changes the width of the
+   readout and makes the whole panel twitch.
+   --------------------------------------------------------------------------- */
+
+.lap-hud {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 16px;
+  background: rgba(14, 26, 43, 0.82);
+  border: 1px solid rgba(237, 237, 231, 0.18);
+  text-align: center;
+  pointer-events: none;
+}
+
+.lap-line {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+
+.lap-label {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(237, 237, 231, 0.62);
+}
+
+.lap-counter { font-size: 12px; }
+.lap-current { font-size: 30px; font-weight: 600; }
+.lap-best { font-size: 13px; color: rgba(237, 237, 231, 0.78); }
+
+.lap-delta { font-size: 17px; font-weight: 600; min-height: 1.25em; }
+.lap-delta.purple { color: var(--purple); }
+.lap-delta.green { color: var(--green); }
+.lap-delta.yellow { color: var(--yellow); }
+
+/* An invalid lap is struck through while you are still driving it, so you know
+   the moment it stops counting rather than finding out at the line. */
+.lap-current.invalid {
+  text-decoration: line-through;
+  color: rgba(237, 237, 231, 0.55);
+}
+
+.sector-flash {
+  position: absolute;
+  top: 44%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  background: rgba(14, 26, 43, 0.86);
+  border: 1px solid rgba(237, 237, 231, 0.2);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.sector-flash.purple { color: var(--purple); }
+.sector-flash.green { color: var(--green); }
+.sector-flash.yellow { color: var(--yellow); }
+
+.minimap {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  padding: 8px;
+  background: rgba(14, 26, 43, 0.72);
+  border: 1px solid rgba(237, 237, 231, 0.16);
+  pointer-events: none;
+}
+.minimap-canvas { display: block; width: 150px; height: 150px; }
+
+.results-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 22px 26px;
+  background: var(--ink);
+  border: 1px solid rgba(237, 237, 231, 0.22);
+  border-top: 3px solid var(--signal);
+}
+
+.results-card h1 { margin: 0 0 14px; font-size: 20px; font-weight: 600; }
+
+.results-headline {
+  display: flex;
+  gap: 32px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(237, 237, 231, 0.16);
+}
+.results-headline > div { display: flex; flex-direction: column; gap: 3px; }
+
+.results-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(237, 237, 231, 0.62);
+}
+
+.results-best, .results-possible {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+  font-weight: 600;
+}
+.results-best.record { color: var(--purple); }
+.results-possible { color: var(--green); }
+
+.results-laps { margin: 0; padding: 0; list-style: none; }
+
+.results-laps li {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(237, 237, 231, 0.08);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.results-laps .lap-no {
+  width: 2.5em;
+  font-family: var(--sans);
+  color: rgba(237, 237, 231, 0.62);
+}
+.results-laps .lap-total { width: 6.5em; font-weight: 600; }
+.results-laps .lap-secs { color: rgba(237, 237, 231, 0.7); }
+.results-laps .lap-why {
+  margin-left: auto;
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--yellow);
+}
+.results-laps li.invalid .lap-total,
+.results-laps li.invalid .lap-secs { text-decoration: line-through; opacity: 0.55; }
+.results-laps li.fastest .lap-total { color: var(--purple); }
+
+.results-empty { margin: 6px 0 0; font-size: 13px; color: rgba(237, 237, 231, 0.62); }
+
+/* --- garage ---------------------------------------------------------------
+   Hard edged rectangles on a single accent rule, same as every other panel.
+   The car turns behind this, right of centre, so the left column is opaque
+   and the right hand card is narrow. */
+.garage {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  display: grid;
+  grid-template-columns: minmax(300px, 27vw) 1fr minmax(220px, 20vw);
+  align-items: start;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+           max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  gap: 20px;
+}
+
+.garage-panel {
+  background: var(--ink);
+  border-top: 4px solid var(--signal);
+  padding: 20px 0 14px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.garage-panel h1 {
+  margin: 0 20px 14px;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.garage-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.garage-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 20px 7px 16px;
+  border-left: 4px solid transparent;
+  cursor: pointer;
+}
+
+.garage-row.focused {
+  border-left-color: var(--signal);
+  background: rgba(255, 122, 26, 0.12);
+}
+
+.garage-label {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.garage-row.focused .garage-label { opacity: 1; }
+
+.garage-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: right;
+}
+
+.garage-swatch {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border: 1px solid rgba(237, 237, 231, 0.35);
+}
+
+.garage-value-text {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.garage-count {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  opacity: 0.5;
+  min-width: 7ch;
+  text-align: right;
+}
+
+/* The two buttons are rows in the same list, so one focus concept covers the
+   whole screen and the gamepad never needs a cursor. */
+.garage-row-action {
+  margin-top: 8px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  border-top: 1px solid rgba(237, 237, 231, 0.12);
+}
+
+.garage-row-action .garage-label {
+  font-size: 15px;
+  font-weight: 700;
+  opacity: 1;
+}
+
+.garage-row-action.focused .garage-label { color: var(--signal); }
+
+.garage-hint {
+  margin: 12px 20px 0;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.55;
+}
+
+.garage-card {
+  grid-column: 3;
+  background: var(--ink);
+  border-top: 4px solid var(--signal);
+  padding: 18px 18px 16px;
+}
+
+.garage-car-name {
+  margin: 0 0 6px;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.garage-car-blurb {
+  margin: 0 0 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.7;
+}
+
+.garage-car-stats {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 12px;
+  margin: 0;
+}
+
+.garage-car-stats dt {
+  font-size: 11px;
+  opacity: 0.65;
+}
+
+.garage-car-stats dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  text-align: right;
+}
+
+@media (max-width: 900px) {
+  .garage { grid-template-columns: 1fr; }
+  .garage-card { grid-column: 1; }
+}
+
+/* Nothing from the driving HUD belongs over the turntable. */
+#ui.garage-open .speed-readout,
+#ui.garage-open .minimap,
+#ui.garage-open .sector-flash,
+#ui.garage-open .lap-hud,
+#ui.garage-open .debug-hud { display: none; }
