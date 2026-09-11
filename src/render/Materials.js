@@ -149,9 +149,70 @@ export function stars(hex, size, glow = 1) {
   return m;
 }
 
+// The ghost car: flat-shaded Lambert like the world, translucent, and lit from
+// within a little so it reads on a night track. A copy of the car it was set
+// in, colour for colour -- never the car's own glossy materials, which are
+// shared with every solid car of the same paint.
+//
+// Cached per colour like everything else, and ONLY the ghost uses them, which
+// is what lets setGhostOpacity() fade the whole ghost at once.
+const ghostSet = new Set();
+export function ghost(hex, opacity = 0.35, glow = 0) {
+  const k = `ghost|${hex}|${glow}`;
+  let m = cache.get(k);
+  if (m) return m;
+  m = new THREE.MeshLambertMaterial({
+    color: hex,
+    flatShading: true,
+    transparent: true,
+    opacity,
+    emissive: hex,
+    emissiveIntensity: glow,
+  });
+  cache.set(k, m);
+  ghostSet.add(m);
+  return m;
+}
+
+export function setGhostOpacity(opacity) {
+  for (const m of ghostSet) if (m.opacity !== opacity) m.opacity = opacity;
+}
+
+// Dust, gravel and smoke. White, so each particle's own instance colour is
+// the colour it shows. Opaque: particles fade by shrinking, which needs no
+// transparency sorting.
+export function particles() {
+  const k = 'particles';
+  let m = cache.get(k);
+  if (m) return m;
+  m = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
+  cache.set(k, m);
+  return m;
+}
+
+// Skid marks: colour and fade come per vertex, alpha included. Laid ON the
+// road, so pulled toward the camera in depth like the painted lines, a step
+// further so a mark across a line sits on top of it.
+export function skidMarks() {
+  const k = 'skid-marks';
+  let m = cache.get(k);
+  if (m) return m;
+  m = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    vertexColors: true,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  applyOffset(m, { offset: 3 });
+  cache.set(k, m);
+  return m;
+}
+
 export function disposeAll() {
   for (const m of cache.values()) m.dispose();
   cache.clear();
+  ghostSet.clear();
 }
 
 export function materialCount() {

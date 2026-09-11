@@ -12,6 +12,8 @@ card.hidden = false;
 game.paused = true;
 const dismiss = (e) => {
   if (e.type === 'keydown' && e.code === 'Escape') return;
+  // Setting the volume on the card is not a request to start driving.
+  if (e.target && e.target.closest && e.target.closest('.volume-row')) return;
   game.dismissControls();
   window.removeEventListener('keydown', dismiss);
   window.removeEventListener('pointerdown', dismiss);

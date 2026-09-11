@@ -5,6 +5,9 @@ Five tracks, five chassis, customizable cars, precise lap timing.
 
 Full spec is in PROMPT.md. Read it before starting new work on a milestone.
 
+Picking this up in a new session? Read HANDOFF.md first: current state, the
+user's open requests, standing instructions, and testing gotchas.
+
 ## Commands
 
 ```
@@ -18,10 +21,11 @@ npm run timing  # lap timing, sectors and the validation rules
 npm run parts   # no car part floats or is sealed inside another; cars sit on hills
 npm run ai      # the racing line is a racing line, and the AI laps it clean
 npm run race    # a full field races every track to the flag, cleanly
+npm run fx      # the ghost replays exactly, the gearbox never hunts, skid marks sit on the road
 ```
 
 The check scripts run headless against the real Track, VehiclePhysics and
-CarBuilder, with no browser and no renderer. Run all six before calling a
+CarBuilder, with no browser and no renderer. Run all seven before calling a
 milestone done.
 
 ## Stack

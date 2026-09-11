@@ -58,8 +58,23 @@ function drive(track, chassis, laps, sabotage) {
   let steerCmd = 0;
   let steps = 0;
   const maxSteps = SIM.hz * 200 * (laps + 1);
+  // Like a player, back out of a head-on wall hit rather than sit against it
+  // with the throttle down. The excursion test shoves the car into the barrier
+  // at whatever angle the handling happens to put it, and a nose-first stop
+  // would otherwise never finish the lap it is meant to spoil.
+  let stuck = 0, backing = 0;
 
   while (timer.laps.length < laps && steps < maxSteps) {
+    if (backing > 0) {
+      backing -= dt;
+      v.step(dt, input(0, 1, 0), track);
+      timer.step(dt, v);
+      steps++;
+      continue;
+    }
+    stuck = v.speed < 1 && v.touchingBarrier ? stuck + dt : 0;
+    if (stuck > 1) { stuck = 0; backing = 1.5; }
+
     const i = track.nearestIndex(v.x, v.z, v.y);
     const look = Math.max(14, Math.min(60, v.speed * 2.1));
     const j = (i + Math.round(look / track.ds)) % track.count;
@@ -200,6 +215,72 @@ const clean = walk(track0, CHASSIS[0].id, [
 check(clean.laps.length === 1 && clean.laps[0].valid,
   'a clean walk still validates',
   clean.laps[0] ? clean.laps[0].reason : 'no lap');
+
+// A gate spans everywhere a car can be. Two halves to that: a car crossing it
+// at any lateral offset, from the centreline out to the barrier on either side,
+// trips it; and its plane cleanly divides the drivable area before the gate from
+// the area after it, so no path through that part of the track gets round it.
+const { Checkpoints } = await import(SRC + 'game/Checkpoints.js');
+for (const data of trackData) {
+  const t = new Track(data);
+  const cps = new Checkpoints(t);
+  const n = t.count;
+  const wrap = (i) => ((i % n) + n) % n;
+  let missed = 0, leaks = 0, first = '';
+  for (const g of cps.gates) {
+    const a = wrap(g.sample - 2), b = wrap(g.sample + 2);
+    const lim = t.barrierLimit(g.half);
+    for (let L = -lim; L <= lim; L += 0.5) {
+      const ev = cps.update(t.px[a] + t.lx[a] * L, t.pz[a] + t.lz[a] * L,
+        t.px[b] + t.lx[b] * L, t.pz[b] + t.lz[b] * L, g.y + 0.5);
+      if (!ev || ev.index !== g.index || !ev.forward) {
+        missed++;
+        if (!first) first = `gate ${g.index} at ${L.toFixed(1)} m`;
+      }
+    }
+    for (let o = -cps.reach; o <= cps.reach; o++) {
+      if (Math.abs(o) < 1) continue;
+      const j = wrap(g.sample + o);
+      const lj = t.barrierLimit(t.halfWidth[j]);
+      for (let L = -lj; L <= lj; L += 1) {
+        const d = (t.px[j] + t.lx[j] * L - g.x) * g.tx + (t.pz[j] + t.lz[j] * L - g.z) * g.tz;
+        if ((d < 0) !== (o < 0)) {
+          leaks++;
+          if (!first) first = `gate ${g.index}'s plane does not divide the track ${o * t.ds} m away, ${L} m out`;
+        }
+      }
+    }
+  }
+  check(missed === 0 && leaks === 0,
+    `${data.name}: every gate spans the whole drivable area`,
+    missed || leaks ? `${missed} missed crossings, ${leaks} leaks; first: ${first}` : '');
+}
+
+// Running wide through the runoff at a gate, for less than the off-track
+// grace, is legal -- so the gate has to see it. Gates used to end 3 m past the
+// road edge while the runoff runs to the barrier, and the NEXT gate then called
+// a cleanly driven lap a missed checkpoint. Every track, both sides.
+for (const data of trackData) {
+  const t = new Track(data);
+  for (const side of [1, -1]) {
+    const timer = new LapTimer(t, CHASSIS[0].id);
+    const wideAt = t.checkpoints[Math.min(5, t.checkpoints.length - 1)].prog;
+    let px = null, pz = null;
+    for (let s = -20; s <= t.count + 20; s++) {
+      const i = ((t.startSample + s) % t.count + t.count) % t.count;
+      const wide = Math.abs(s - wideAt) * t.ds < 10;
+      const off = wide ? (t.barrierLimit(t.halfWidth[i]) - 1.2) * side : 0;
+      const x = t.px[i] + t.lx[i] * off, z = t.pz[i] + t.lz[i] * off;
+      timer.step(dt, { x, z, y: t.py[i] + 0.5, prevX: px ?? x, prevZ: pz ?? z,
+        wheelsOnTrack: wide ? 0 : 4, speed: 40 });
+      px = x; pz = z;
+    }
+    const lap = timer.laps[0];
+    check(lap && lap.valid,
+      `${data.name}: running wide in the ${side > 0 ? 'left' : 'right'} runoff still passes the gate`,
+      lap ? lap.reason : 'no lap');
+  }
+}
 
 console.log(failures === 0
   ? '\nPASS: lap timing, sectors and validation behave.'

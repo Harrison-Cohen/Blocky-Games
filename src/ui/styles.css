@@ -53,47 +53,120 @@ html, body {
            max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
 }
 
-/* --- speed readout: bottom right, per the HUD layout ---------------------- */
-.speed-readout {
+/* --- dashboard: bottom right, per the HUD layout ---------------------------
+   ui/Speedo.js. Two faces, picked in the garage. Hard edged panels, and
+   tabular figures for every number so nothing shuffles as it counts. */
+.dash {
   position: absolute;
   right: max(16px, env(safe-area-inset-right));
   bottom: max(16px, env(safe-area-inset-bottom));
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 10px 16px 8px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.speedo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+/* Automatic or manual, a small tag over the panel's top right corner. */
+.speedo-mode {
+  padding: 2px 8px 1px;
+  background: var(--ink);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(237, 237, 231, 0.7);
+}
+
+.speedo-digital {
+  width: 336px;
+  padding: 12px 14px 10px;
   background: var(--ink);
   border-bottom: 3px solid var(--signal);
 }
 
-.speed-value {
+/* The rev bar: idle to the redline, left to right, red for the last stretch
+   before it. Unlit segments stay faintly visible so the scale reads at a
+   glance, the red ones faintly red. */
+.rev-bar {
+  display: grid;
+  grid-template-columns: repeat(36, 1fr);
+  gap: 2px;
+  height: 16px;
+}
+.rev-bar i { background: rgba(237, 237, 231, 0.1); }
+.rev-bar i.on { background: var(--offwhite); }
+.rev-bar i.red { background: rgba(232, 50, 31, 0.28); }
+.rev-bar i.red.on { background: #e8321f; }
+/* Manual, at the shift point: the lit bar goes signal orange. */
+.speedo.shift-cue .rev-bar i.on:not(.red) { background: var(--signal); }
+
+.digi-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.digi-gear {
+  flex: none;
+  width: 46px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(237, 237, 231, 0.3);
   font-family: var(--mono);
-  /* Tabular figures so the number does not shuffle as it counts. The fallback
-     stack is monospace for the same reason. */
   font-variant-numeric: tabular-nums;
   font-weight: 700;
-  font-size: 56px;
-  line-height: 0.95;
-  color: var(--signal);
+  font-size: 28px;
+  line-height: 1;
+}
+.speedo.shift-cue .digi-gear {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: var(--ink);
+}
+
+.digi-speed {
   min-width: 3ch;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 52px;
+  line-height: 0.92;
+  color: var(--signal);
   text-align: right;
 }
 
-.speed-unit {
-  font-family: var(--sans);
+.digi-unit {
+  padding-bottom: 3px;
   font-size: 14px;
   font-weight: 600;
-  color: var(--offwhite);
   opacity: 0.75;
 }
 
-/* --- auto drive: sits on the speed readout while the AI has the wheel ------ */
+.digi-rpm {
+  margin-left: auto;
+  padding-bottom: 4px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+
+/* Classic: both dials are one canvas, drawn by ui/Speedo.js. */
+.speedo-canvas { display: block; }
+
+/* --- auto drive: sits over the dashboard while the AI has the wheel -------- */
 /* Solid signal orange rather than a label on ink, because it has to be
    impossible to forget you are not the one driving. */
 .auto-badge {
-  position: absolute;
-  right: max(16px, env(safe-area-inset-right));
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 82px);
   padding: 6px 12px 5px;
   background: var(--signal);
   color: var(--ink);
@@ -273,9 +346,11 @@ html, body {
   color: rgba(237, 237, 231, 0.55);
 }
 
+/* Hangs from the bottom edge of the timer panel (it lives inside it), so it
+   stays up at the top of the screen and never over the road ahead. */
 .sector-flash {
   position: absolute;
-  top: 44%;
+  top: calc(100% + 6px);
   left: 50%;
   transform: translateX(-50%);
   padding: 8px 20px;
@@ -377,14 +452,14 @@ html, body {
 
 /* --- garage ---------------------------------------------------------------
    Hard edged rectangles on a single accent rule, same as every other panel.
-   The car turns behind this, right of centre, so the left column is opaque
-   and the right hand card is narrow. */
+   Settings on the left, the chassis card on the right, and the car turning
+   in the open space between them. */
 .garage {
   position: absolute;
   inset: 0;
   pointer-events: auto;
   display: grid;
-  grid-template-columns: minmax(300px, 27vw) 1fr minmax(220px, 20vw);
+  grid-template-columns: minmax(340px, 400px) 1fr minmax(240px, 290px);
   align-items: start;
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
            max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
@@ -392,60 +467,114 @@ html, body {
 }
 
 .garage-panel {
-  background: var(--ink);
-  border-top: 4px solid var(--signal);
-  padding: 20px 0 14px;
+  background: rgba(14, 26, 43, 0.96);
+  border-top: 3px solid var(--signal);
   max-height: 100%;
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
 
-.garage-panel h1 {
-  margin: 0 20px 14px;
+.garage-head {
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid rgba(237, 237, 231, 0.1);
+}
+.garage-head h1 {
+  margin: 0;
   font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.01em;
+}
+.garage-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  opacity: 0.6;
 }
 
 .garage-rows {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 2px 0 12px;
   overflow-y: auto;
   min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(237, 237, 231, 0.2) transparent;
+}
+
+.garage-section {
+  padding: 12px 20px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: rgba(237, 237, 231, 0.5);
 }
 
 .garage-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr minmax(0, 1.35fr);
+  align-items: center;
   gap: 12px;
-  padding: 7px 20px 7px 16px;
-  border-left: 4px solid transparent;
+  min-height: 36px;
+  padding: 2px 20px 2px 17px;
+  border-left: 3px solid transparent;
   cursor: pointer;
 }
-
 .garage-row.focused {
   border-left-color: var(--signal);
-  background: rgba(255, 122, 26, 0.12);
+  background: rgba(237, 237, 231, 0.04);
 }
 
 .garage-label {
   font-size: 13px;
-  font-weight: 600;
-  opacity: 0.8;
+  font-weight: 500;
+  color: rgba(237, 237, 231, 0.75);
 }
+.garage-row.focused .garage-label { color: var(--offwhite); }
 
-.garage-row.focused .garage-label { opacity: 1; }
-
-.garage-value {
+/* A field: a flat box holding the value, with a small chevron as the one sign
+   that it opens. */
+.garage-field {
   display: flex;
   align-items: center;
   gap: 8px;
-  text-align: right;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  background: rgba(237, 237, 231, 0.04);
+  border: 1px solid rgba(237, 237, 231, 0.16);
+  border-radius: 0;
+  color: var(--offwhite);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.garage-row.focused .garage-field,
+.garage-row.focused .garage-input { border-color: var(--signal); }
+.garage-row.open .garage-field { background: rgba(255, 122, 26, 0.1); }
+
+.garage-value-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
 }
 
+.garage-caret {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: -3px 2px 0 0;
+  border-right: 1.5px solid rgba(237, 237, 231, 0.6);
+  border-bottom: 1.5px solid rgba(237, 237, 231, 0.6);
+  transform: rotate(45deg);
+}
+.garage-row.open .garage-caret { margin-top: 3px; transform: rotate(-135deg); }
+
+.garage-chips { display: flex; gap: 3px; flex: none; }
 .garage-swatch {
   width: 13px;
   height: 13px;
@@ -453,83 +582,186 @@ html, body {
   border: 1px solid rgba(237, 237, 231, 0.35);
 }
 
-.garage-value-text {
-  font-size: 13px;
-  font-weight: 600;
+/* The dropdown hangs off its field, over the rows below it. */
+.garage-list {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% - 3px);
+  right: 20px;
+  width: calc((100% - 49px) * 0.5745);
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px 0;
+  background: var(--ink);
+  border: 1px solid rgba(237, 237, 231, 0.22);
+  border-top: 2px solid var(--signal);
+  cursor: default;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(237, 237, 231, 0.2) transparent;
 }
+.garage-list-head {
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(237, 237, 231, 0.5);
+}
+.garage-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  border-left: 2px solid transparent;
+  font-size: 13px;
+  cursor: pointer;
+}
+.garage-option:hover { background: rgba(237, 237, 231, 0.06); }
+.garage-option.hl {
+  border-left-color: var(--signal);
+  background: rgba(255, 122, 26, 0.16);
+}
+.garage-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.garage-list-note { margin: 4px 12px 8px; font-size: 11px; opacity: 0.5; }
 
-.garage-count {
+/* Text boxes: the driver number, and a new preset's name. */
+.garage-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  background: rgba(237, 237, 231, 0.04);
+  border: 1px solid rgba(237, 237, 231, 0.16);
+  border-radius: 0;
+  color: var(--offwhite);
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  font-size: 10px;
-  opacity: 0.5;
-  min-width: 7ch;
-  text-align: right;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+}
+.garage-input:focus { border-color: var(--signal); background: rgba(255, 122, 26, 0.08); }
+.garage-input::placeholder { color: rgba(237, 237, 231, 0.4); }
+.garage-name { font-family: var(--sans); font-size: 13px; }
+
+/* "Save these colours as a preset" is a text action across the whole row;
+   while naming, the name box and its button take its place. */
+.garage-row-savePreset { grid-template-columns: 1fr; }
+.garage-row-savePreset.naming { grid-template-columns: 1fr auto; gap: 8px; }
+.garage-link { color: var(--signal); font-weight: 600; }
+.garage-row-savePreset.focused .garage-link {
+  color: var(--signal);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-/* The two buttons are rows in the same list, so one focus concept covers the
-   whole screen and the gamepad never needs a cursor. */
-.garage-row-action {
-  margin-top: 8px;
-  padding-top: 10px;
-  padding-bottom: 10px;
-  border-top: 1px solid rgba(237, 237, 231, 0.12);
+.garage-mini {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid rgba(237, 237, 231, 0.3);
+  border-radius: 0;
+  color: var(--offwhite);
+  font: 600 12px var(--sans);
+  cursor: pointer;
+}
+.garage-mini:hover { border-color: var(--signal); color: var(--signal); }
+.garage-row-savePreset .garage-mini {
+  height: 32px;
+  background: var(--signal);
+  border-color: var(--signal);
+  color: var(--ink);
 }
 
-.garage-row-action .garage-label {
-  font-size: 15px;
-  font-weight: 700;
-  opacity: 1;
+/* Save and discard, pinned under the list so they never scroll away. They are
+   the last row of the same focus list, so the gamepad never needs a cursor. */
+.garage-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 14px 20px 12px;
+  border-top: 1px solid rgba(237, 237, 231, 0.1);
 }
-
-.garage-row-action.focused .garage-label { color: var(--signal); }
+.garage-btn {
+  height: 40px;
+  background: transparent;
+  border: 1px solid rgba(237, 237, 231, 0.3);
+  border-radius: 0;
+  color: var(--offwhite);
+  font: 700 14px var(--sans);
+  cursor: pointer;
+}
+.garage-btn:hover { border-color: var(--offwhite); }
+.garage-btn-primary { background: var(--signal); border-color: var(--signal); color: var(--ink); }
+.garage-btn-primary:hover { border-color: var(--signal); }
+.garage-btn:focus { outline: none; }
+.garage-btn.focused,
+.garage-btn:focus-visible { outline: 2px solid var(--offwhite); outline-offset: 2px; }
 
 .garage-hint {
-  margin: 12px 20px 0;
+  margin: 0;
+  padding: 0 20px 14px;
   font-size: 11px;
   line-height: 1.5;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 .garage-card {
   grid-column: 3;
-  background: var(--ink);
-  border-top: 4px solid var(--signal);
-  padding: 18px 18px 16px;
+  background: rgba(14, 26, 43, 0.96);
+  border-top: 3px solid var(--signal);
+  padding: 18px 18px 18px;
 }
-
+.garage-card-kicker {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(237, 237, 231, 0.5);
+}
 .garage-car-name {
   margin: 0 0 6px;
-  font-size: 19px;
+  font-size: 22px;
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
-
 .garage-car-blurb {
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   font-size: 12px;
   line-height: 1.5;
   opacity: 0.7;
 }
 
+/* Each stat: its name and figure, and a bar against the biggest of the five. */
 .garage-car-stats {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 5px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
   margin: 0;
 }
-
-.garage-car-stats dt {
-  font-size: 11px;
-  opacity: 0.65;
+.garage-stat {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
 }
-
-.garage-car-stats dd {
+.garage-stat dt { font-size: 11px; opacity: 0.65; }
+.garage-stat dd {
   margin: 0;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   font-size: 11px;
   text-align: right;
 }
+.garage-stat-bar {
+  grid-column: 1 / -1;
+  height: 3px;
+  background: rgba(237, 237, 231, 0.1);
+}
+.garage-stat-bar i { display: block; height: 100%; background: var(--signal); }
 
 @media (max-width: 900px) {
   .garage { grid-template-columns: 1fr; }
@@ -537,7 +769,7 @@ html, body {
 }
 
 /* Nothing from the driving HUD belongs over the turntable. */
-#ui.garage-open .speed-readout,
+#ui.garage-open .dash,
 #ui.garage-open .minimap,
 #ui.garage-open .sector-flash,
 #ui.garage-open .lap-hud,
@@ -720,4 +952,51 @@ html, body {
   height: 10px;
   margin-right: 8px;
   border: 1px solid rgba(237, 237, 231, 0.35);
+}
+
+/* --- master volume, on the controls card the pause screen shows ---------- */
+.volume-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 20px;
+}
+.volume-row label {
+  font-size: 14px;
+  font-weight: 600;
+}
+.volume-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  margin: 0;
+  background: rgba(237, 237, 231, 0.25);
+  border-radius: 0;
+  cursor: pointer;
+}
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 18px;
+  background: var(--signal);
+  border: none;
+  border-radius: 0;
+}
+.volume-slider::-moz-range-thumb {
+  width: 14px;
+  height: 18px;
+  background: var(--signal);
+  border: none;
+  border-radius: 0;
+}
+.volume-slider:focus { outline: none; }
+.volume-slider:focus-visible { outline: 2px solid var(--offwhite); outline-offset: 6px; }
+.volume-value {
+  min-width: 6ch;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  text-align: right;
+  opacity: 0.8;
 }

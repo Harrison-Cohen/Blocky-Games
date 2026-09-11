@@ -150,6 +150,45 @@ for (const chassis of CHASSIS) {
   }
 }
 
+// --- held lock at speed keeps turning the way it is steered ---------------
+//
+// Full keyboard lock at 162 km/h, held for three seconds. The nose has to keep
+// turning toward the lock, and the front wheels have to stay pointed that way.
+//
+// This is here because it was wrong: the front went straight to its peak, the
+// nose snapped round three times faster than the path could follow, the rear
+// let go, and the steering limit swung the wheels onto the OTHER lock while the
+// key was still held -- the car stopped turning, and even yawed the wrong way,
+// with D down. STEERING.yawStability is what holds it.
+console.log('');
+const flat = {
+  sample: () => ({ height: 0, normal: { x: 0, y: 1, z: 0 }, surface: 'tarmac', onTrack: true }),
+  bounds: () => ({ lateral: 0, limit: 1e9, inwardX: 0, inwardZ: 0, onTrack: true }),
+};
+for (const chassis of CHASSIS) {
+  for (const [name, key] of [['right (D)', -1], ['left (A) ', 1]]) {
+    const p = new VehiclePhysics(chassis);
+    p.reset(0, chassis.suspensionRest, 0, 0);
+    for (let i = 0; i < 240; i++) p.step(1 / SIM.hz, N(0, 0, 0, 0), flat);
+    p.vLong = 45;
+    const yaw0 = p.yaw;
+    let wrongYaw = 0, wrongWheel = 0;
+    for (let i = 0; i < 3 * SIM.hz; i++) {
+      p.step(1 / SIM.hz, N(p.vLong < 45 ? 0.6 : 0, 0, key, 0), flat);
+      // `key` has the sign of the lock, so the product is negative only when
+      // the car yaws, or the wheels point, the other way.
+      if (p.yawRate * key < -0.03) wrongYaw += 1 / SIM.hz;
+      if (p.steerAngleUsed * key < -0.01) wrongWheel += 1 / SIM.hz;
+    }
+    const turned = (p.yaw - yaw0) * key * 57.3;
+    const ok = wrongYaw === 0 && wrongWheel === 0 && turned > 30;
+    if (!ok) allOk = false;
+    console.log(`${chassis.name.padEnd(14)} full lock ${name} at 162 km/h -> turned `
+      + `${turned.toFixed(0)} deg, yawed the wrong way ${wrongYaw.toFixed(2)} s, wheels on `
+      + `the wrong lock ${wrongWheel.toFixed(2)} s   ${ok ? 'correct' : 'WRONG'}`);
+  }
+}
+
 console.log(allOk
   ? '\nPASS: handling is frame-rate invariant, unchanged by paint, and reverses correctly.'
   : '\nFAIL: handling is not invariant.');

@@ -49,6 +49,7 @@ export class HUD {
 
   // extras, in a race: { lapText: '2/3', cars: [{ x, z, color }] }, the lap
   // counter against the race distance and every other car for the minimap.
+  // A car with `ghost: true` is the ghost of your best lap, drawn as a ring.
   update(timer, track, physics, extras = null) {
     // Lap number counts the lap you are ON, so it is one past the finished ones.
     const lapNo = extras && extras.lapText ? extras.lapText : String(timer.laps.length + 1);
@@ -147,7 +148,16 @@ export class HUD {
       ctx.strokeStyle = 'rgba(14, 26, 43, 0.95)';
       for (const c of cars) {
         ctx.beginPath();
-        ctx.arc(c.x * this._scale + this._ox, c.z * this._scale + this._oy, 3.6, 0, Math.PI * 2);
+        ctx.arc(c.x * this._scale + this._ox, c.z * this._scale + this._oy, c.ghost ? 4 : 3.6, 0, Math.PI * 2);
+        if (c.ghost) {
+          // A ring, not a dot: it is where you were, not a car you can hit.
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = c.color;
+          ctx.stroke();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = 'rgba(14, 26, 43, 0.95)';
+          continue;
+        }
         ctx.fillStyle = c.color;
         ctx.fill();
         ctx.stroke();

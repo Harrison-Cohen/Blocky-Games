@@ -103,7 +103,7 @@ export const DEFAULT_CONFIG = {
   wheelStyle: 'fivespoke',
   spoiler: 'none',
   roofItem: 'none',
-  number: 0,          // 0 draws no roundel
+  number: null,       // null draws no roundel; 0 is a number like any other
 };
 
 // How far a livery panel or a roundel stands off the bodywork it is painted
@@ -421,7 +421,7 @@ const SEGMENTS = {
 };
 
 function addRoundel(parts, number, disc, ink, m, H) {
-  if (!number || !m) return;
+  if (number == null || !m) return;
   const text = String(Math.round(number));
   const r = m.r;
 
@@ -438,8 +438,12 @@ function addRoundel(parts, number, disc, ink, m, H) {
     const dir = -side;
     // The cell is 1 across by 1.8 up, so one scale covers both axes. Sized so
     // the digits' corners stay inside the disc: for two digits the block is
-    // 1.22r by 1.05r, whose corner sits at 0.81r.
-    const k = (text.length === 1 ? r * 1.35 : r * 1.05) / 1.8;
+    // 1.22r by 1.05r, whose corner sits at 0.81r. Longer numbers shrink until
+    // their block's corner sits at 0.82r.
+    const n = text.length;
+    const k = n === 1 ? (r * 1.35) / 1.8
+      : n === 2 ? (r * 1.05) / 1.8
+      : (r * 0.82) / Math.hypot(n / 2, 0.9);
     const totalW = k * text.length;
 
     for (let i = 0; i < text.length; i++) {
@@ -812,7 +816,7 @@ export function buildCar(chassis, config = {}) {
     lens: unlit(c.headlight),
     trim: glossy(c.hub, { shininess: 95, specular: 0x9a9aa4 }),
   }, mount.roof, chassis, H);
-  if (c.number) {
+  if (c.number != null) {
     const discHex = contrastTo(c.primary);
     addRoundel(parts, c.number,
       glossy(discHex, { shininess: 30, specular: 0x2e2e36 }),

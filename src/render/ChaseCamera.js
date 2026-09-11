@@ -34,6 +34,17 @@ export class ChaseCamera {
     this._idealPos = new THREE.Vector3();
     this._idealLook = new THREE.Vector3();
     this._initialized = false;
+
+    // Screen shake: an amplitude kicked by hits and landings that dies away,
+    // turned into a jolt by a few unrelated sine waves. Visual only.
+    this.shake = 0;
+    this._shakeTime = 0;
+    this._shakeOffset = new THREE.Vector3();
+  }
+
+  // A hit or a landing. `amount` is metres of jolt, capped by CAMERA.shakeMax.
+  kick(amount) {
+    if (amount > 0) this.shake = Math.min(CAMERA.shakeMax, this.shake + amount);
   }
 
   cycle() {
@@ -51,9 +62,21 @@ export class ChaseCamera {
   // chassis: the car being driven. Needed for its top speed, so the FOV ramp
   //          means the same thing in every car, and for its body box, which
   //          the cockpit eye position is derived from.
-  update(state, speed, chassis, dt) {
+  // physics: optional, the car's VehiclePhysics, for the direction it is
+  //          actually travelling in -- see CAMERA.velocityFollow.
+  update(state, speed, chassis, dt, physics = null) {
     const speedFrac = Math.min(speed / Math.max(chassis.topSpeed, 1), 1);
     const sinY = Math.sin(state.yaw), cosY = Math.cos(state.yaw);
+
+    this._shakeTime += dt;
+    this.shake *= Math.exp(-CAMERA.shakeDecay * dt);
+    const amp = (this.shake + CAMERA.speedRumble * speedFrac * speedFrac) * (this.mode === 1 ? 0.5 : 1);
+    const st = this._shakeTime;
+    this._shakeOffset.set(
+      amp * (Math.sin(st * 47.3) + 0.5 * Math.sin(st * 91.7 + 0.7)) / 1.5,
+      amp * (Math.sin(st * 53.1 + 1.3) + 0.5 * Math.sin(st * 83.9 + 2.1)) / 1.5,
+      amp * (Math.sin(st * 41.9 + 2.6) + 0.5 * Math.sin(st * 97.3 + 0.4)) / 1.5
+    );
 
     if (this.mode === 1) {
       // Cockpit. Rigid to the body, so pitch and roll are felt directly.
@@ -76,7 +99,7 @@ export class ChaseCamera {
       );
       this.pos.copy(this._idealPos);
       this.look.lerp(this._idealLook, 1 - Math.exp(-24 * dt));
-      this.camera.position.copy(this.pos);
+      this.camera.position.copy(this.pos).add(this._shakeOffset);
       this.camera.up.set(Math.sin(state.roll), Math.cos(state.roll), 0)
         .applyAxisAngle(UP, state.yaw);
       this.camera.lookAt(this.look);
@@ -85,19 +108,31 @@ export class ChaseCamera {
       const distance = (CAMERA.distance + CAMERA.speedPullback * speedFrac) * far;
       const height = (CAMERA.height - CAMERA.speedDrop * speedFrac) * far;
 
-      // Sit behind the car along its heading.
+      // Sit behind the car, along its heading swung part of the way toward the
+      // direction it is actually travelling, so a slide does not swing the
+      // whole view sideways with the bodywork. Forwards only: reversing, the
+      // travel direction is behind the car.
+      let yaw = state.yaw;
+      if (physics && physics.vLong > 1) {
+        const tx = physics.vLong * sinY + physics.vLat * cosY;
+        const tz = physics.vLong * cosY - physics.vLat * sinY;
+        let d = Math.atan2(tx, tz) - yaw;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        yaw += d * CAMERA.velocityFollow * Math.min(1, physics.vLong / 10);
+      }
+      const cs = Math.sin(yaw), cc = Math.cos(yaw);
       this._idealPos.set(
-        state.x - sinY * distance,
+        state.x - cs * distance,
         state.y + height,
-        state.z - cosY * distance
+        state.z - cc * distance
       );
       // Look into the corner: the target is pushed ahead of the car, more so
       // the faster it is going.
       const ahead = CAMERA.lookAhead * speedFrac;
       this._idealLook.set(
-        state.x + sinY * ahead,
+        state.x + cs * ahead,
         state.y + 0.9,
-        state.z + cosY * ahead
+        state.z + cc * ahead
       );
 
       if (!this._initialized) {
@@ -114,7 +149,7 @@ export class ChaseCamera {
         this.look.z = smoothTo(this.look.z, this._idealLook.z, CAMERA.lookSpring, dt);
       }
 
-      this.camera.position.copy(this.pos);
+      this.camera.position.copy(this.pos).add(this._shakeOffset);
       this.camera.up.set(0, 1, 0);
       this.camera.lookAt(this.look);
     }

@@ -40,6 +40,8 @@ export const CSS = {
   purple: '#B57BFF',
   green: '#34D17A',
   yellow: '#F5C518',
+  // The start lamps' red, reused for the rev counter's red zone.
+  redline: '#E8321F',
 };
 
 export function hexToCss(hex) {

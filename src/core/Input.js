@@ -21,6 +21,11 @@ const KEY_BINDINGS = {
   handbrake: ['Space'],
 };
 
+// Gamepad buttons read as one-shot edges while driving. Every other button's
+// state is recorded as it stands, so a menu opening later does not see a
+// button that was already held as a fresh press.
+const PAD_EDGES = new Set([9, 3, 2, 8, 1, 12, 5, 4, 13, 15]);
+
 function deadzone(v, dz) {
   const a = Math.abs(v);
   if (a < dz) return 0;
@@ -40,6 +45,10 @@ export class Input {
       handbrake: 0,
       steerIsAnalog: false,
       pedalsAreAnalog: false,
+      // Manual gearbox. Written by the game from its Gearbox, not by poll():
+      // the gear is state the player sets, not a key being held. 0 is neutral.
+      manual: false,
+      gear: 1,
     };
 
     // One-shot actions, consumed by the game and cleared each frame.
@@ -47,13 +56,15 @@ export class Input {
       reset: false, pause: false, cycleCamera: false,
       nextChassis: false, nextTrack: false, rivals: false, autoDrive: false, race: false,
       toggleDebug: false, results: false,
-      garage: false,
+      garage: false, ghost: false, mute: false,
+      manual: false, shiftUp: false, shiftDown: false, neutral: false,
     };
 
     // Menu navigation, produced from the gamepad only. The keyboard half is
     // handled by whichever screen is open, because a menu wants key repeat and
     // digits and the driving path wants neither.
-    this.menu = { up: false, down: false, left: false, right: false, confirm: false, back: false };
+    // alt is X / square: deletes a preset of your own in the garage's list.
+    this.menu = { up: false, down: false, left: false, right: false, confirm: false, back: false, alt: false };
 
     // Set while a screen owns the input. Driving keys stop accumulating and
     // driving actions stop firing, but menu edges keep coming through.
@@ -84,10 +95,21 @@ export class Input {
   }
 
   _onKeyDown(e) {
+    // A text box (the garage's number and preset name) gets its keys, spaces
+    // included, and none of them drive the car.
+    const t = e.target;
+    if (t && t.tagName === 'INPUT' && t.type === 'text') return;
     // Stop the page scrolling out from under the game, whoever is listening.
     if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
     if (e.repeat || this.suspended) return;
     this.keys.add(e.code);
+
+    // Gearbox: B switches between automatic and manual; in manual, E shifts
+    // up, Q down, and X drops to neutral.
+    if (e.code === 'KeyB') this.actions.manual = true;
+    if (e.code === 'KeyE') this.actions.shiftUp = true;
+    if (e.code === 'KeyQ') this.actions.shiftDown = true;
+    if (e.code === 'KeyX') this.actions.neutral = true;
 
     if (e.code === 'KeyG') this.actions.garage = true;
     if (e.code === 'KeyR') this.actions.reset = true;
@@ -100,6 +122,8 @@ export class Input {
     if (e.code === 'KeyO') this.actions.rivals = true;
     if (e.code === 'KeyP') this.actions.autoDrive = true;
     if (e.code === 'KeyN') this.actions.race = true;
+    if (e.code === 'KeyH') this.actions.ghost = true;
+    if (e.code === 'KeyM') this.actions.mute = true;
     if (e.code === 'Backquote') this.actions.toggleDebug = true;
     // Tab would otherwise move focus off the canvas and stop the game hearing
     // the keyboard at all, so it is claimed here.
@@ -196,8 +220,15 @@ export class Input {
       if (edge(2)) this.actions.cycleCamera = true; // X / square
       if (edge(8)) this.actions.results = true; // Select / share
       if (edge(1)) this.actions.garage = true; // B / circle
+      if (edge(12)) this.actions.ghost = true; // D-pad up
+      // Gearbox: the bumpers shift, d-pad down is neutral, d-pad right
+      // switches between automatic and manual.
+      if (edge(5)) this.actions.shiftUp = true; // RB / R1
+      if (edge(4)) this.actions.shiftDown = true; // LB / L1
+      if (edge(13)) this.actions.neutral = true; // D-pad down
+      if (edge(15)) this.actions.manual = true; // D-pad right
       for (let i = 0; i < pad.buttons.length; i++) {
-        if (i !== 9 && i !== 3 && i !== 2 && i !== 1) this._prevButtons[i] = pad.buttons[i].pressed;
+        if (!PAD_EDGES.has(i)) this._prevButtons[i] = pad.buttons[i].pressed;
       }
     } else {
       this.gamepadIndex = null;
@@ -224,7 +255,7 @@ export class Input {
   // held stick steps one row rather than scrolling the whole list away.
   _pollMenuPad() {
     const m = this.menu;
-    m.up = m.down = m.left = m.right = m.confirm = m.back = false;
+    m.up = m.down = m.left = m.right = m.confirm = m.back = m.alt = false;
 
     const pad = this._findGamepad();
     if (!pad) { this._stickLatch = 0; return; }
@@ -243,8 +274,9 @@ export class Input {
     if (edge(15)) m.right = true;
     if (edge(0)) m.confirm = true;
     if (edge(1)) m.back = true;
+    if (edge(2)) m.alt = true;
     for (let i = 0; i < pad.buttons.length; i++) {
-      if (i > 15 || i > 1 && i < 12) this._prevButtons[i] = pad.buttons[i].pressed;
+      if (i > 15 || i > 2 && i < 12) this._prevButtons[i] = pad.buttons[i].pressed;
     }
 
     const x = pad.axes[0] ?? 0;

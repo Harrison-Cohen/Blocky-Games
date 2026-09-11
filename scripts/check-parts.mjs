@@ -88,14 +88,16 @@ const check = (ok, label, detail = '') => {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'}  ${label}${detail ? '   ' + detail : ''}`);
 };
 
-// Every livery against every spoiler against every roof item, plus the two
-// numbers that light the most segments. Cosmetics are the part of this that a
-// player changes, so they are the part most likely to end up hanging in space.
+// Every livery against every spoiler against every roof item, plus the
+// numbers that light the most segments at two and four digits, and zero,
+// which draws a roundel now rather than meaning "none". Cosmetics are the part
+// of this that a player changes, so they are the part most likely to end up
+// hanging in space.
 const configs = [];
 for (const livery of LIVERIES) {
   for (const spoiler of SPOILERS) {
     for (const roofItem of ROOF_ITEMS) {
-      for (const number of [8, 88]) {
+      for (const number of [8, 88, 8888, 0]) {
         configs.push({ ...DEFAULT_CAR, livery: livery.id, spoiler: spoiler.id,
           roofItem: roofItem.id, number });
       }

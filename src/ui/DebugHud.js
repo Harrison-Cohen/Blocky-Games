@@ -3,6 +3,7 @@
 // thing you read while editing tuning.js. Toggle with the backtick key.
 
 import { SIM } from '../data/tuning.js';
+import { toMph } from './Speedo.js';
 
 export class DebugHud {
   constructor(root) {
@@ -62,7 +63,7 @@ export class DebugHud {
 <div class="dbg-row"><span>resolution</span><b>${scene ? `${Math.round(scene.renderScale * 100)}% x${scene.renderer.getPixelRatio().toFixed(2)}` : '-'}</b></div>
 <div class="dbg-row"><span>exposure</span><b>${scene ? scene.renderer.toneMappingExposure.toFixed(2) : '-'}</b></div>
 <div class="dbg-sep"></div>
-<div class="dbg-row"><span>speed</span><b>${(p.speed * 3.6).toFixed(1)} km/h</b></div>
+<div class="dbg-row"><span>speed</span><b>${toMph(p.speed).toFixed(1)} mph</b></div>
 <div class="dbg-row"><span>long / lat vel</span><b>${p.vLong.toFixed(1)} / ${p.vLat.toFixed(1)}</b></div>
 <div class="dbg-row"><span>yaw rate</span><b>${deg(p.yawRate)}&deg;/s</b></div>
 <div class="dbg-sep"></div>

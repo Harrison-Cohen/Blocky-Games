@@ -48,11 +48,44 @@ export const HEADLIGHT_COLORS = [
   { id: 'blue', name: 'Ice blue', hex: 0x8fd4ff },
 ];
 
-// Two digits. Three would fit on the car but not legibly on a roundel built
-// out of seven-segment bars, and an unreadable number is worse than a small
-// range of readable ones.
-export const NUMBER_MIN = 1;
-export const NUMBER_MAX = 99;
+// Any number up to four digits, typed in the garage. The roundel shrinks the
+// seven-segment digits to fit as the number gets longer; past four they stop
+// being readable from the chase camera.
+export const NUMBER_MIN = 0;
+export const NUMBER_MAX = 9999;
+export const NUMBER_DIGITS = 4;
+
+// Named paint schemes: primary, secondary and wheel colour that go together.
+// Ids from palette.js, like everything else the garage stores. The player can
+// save their own alongside these; see normalizePresets.
+export const COLOUR_PRESETS = [
+  { id: 'signal', name: 'Signal', primary: 'signal', secondary: 'ink', wheelColor: 'ink' },
+  { id: 'stealth', name: 'Stealth', primary: 'ink', secondary: 'signal', wheelColor: 'ink' },
+  { id: 'hornet', name: 'Hornet', primary: 'acid', secondary: 'ink', wheelColor: 'ink' },
+  { id: 'arctic', name: 'Arctic', primary: 'offwhite', secondary: 'sky', wheelColor: 'ink' },
+  { id: 'deep-sea', name: 'Deep sea', primary: 'indigo', secondary: 'teal', wheelColor: 'offwhite' },
+  { id: 'ultraviolet', name: 'Ultraviolet', primary: 'violet', secondary: 'ink', wheelColor: 'offwhite' },
+  { id: 'desert-rally', name: 'Desert rally', primary: 'sand', secondary: 'ember', wheelColor: 'ink' },
+  { id: 'mint', name: 'Mint', primary: 'teal', secondary: 'offwhite', wheelColor: 'ink' },
+  { id: 'bubblegum', name: 'Bubblegum', primary: 'rose', secondary: 'sky', wheelColor: 'offwhite' },
+  { id: 'heatwave', name: 'Heatwave', primary: 'ember', secondary: 'acid', wheelColor: 'ink' },
+  { id: 'lagoon', name: 'Lagoon', primary: 'sky', secondary: 'offwhite', wheelColor: 'indigo' },
+  { id: 'copper', name: 'Copper', primary: 'signal', secondary: 'sand', wheelColor: 'ink' },
+  { id: 'moss', name: 'Moss', primary: 'lime', secondary: 'ink', wheelColor: 'sand' },
+];
+
+// Each chassis starts in its own scheme, so the five cars are five different
+// cars before anyone opens the garage.
+export const CHASSIS_PRESET = {
+  'cube-gt': 'signal',
+  'boxhauler-v8': 'hornet',
+  'wedge-one': 'ultraviolet',
+  'haul-4x4': 'desert-rally',
+  'bighead': 'bubblegum',
+};
+
+export const PRESET_NAME_MAX = 24;
+export const USER_PRESET_MAX = 24;
 
 export const DEFAULT_CAR = {
   chassis: DEFAULT_CHASSIS,
@@ -122,4 +155,72 @@ export function isDark(hex) {
 
 export function contrastTo(hex) {
   return isDark(hex) ? 0xedede7 : 0x0e1a2b;
+}
+
+// --- one car per chassis -----------------------------------------------------
+// Every chassis keeps its own car: paint, parts and number. Stored as
+//   { chassis: the one being driven, cars: { [chassisId]: car } }
+// with every chassis filled in, so nothing downstream ever meets a gap.
+
+const PAINT_KEYS = ['primary', 'secondary', 'wheelColor'];
+
+// Just the three paints of a car or a preset.
+export function paintOf(src) {
+  return { primary: src.primary, secondary: src.secondary, wheelColor: src.wheelColor };
+}
+
+// A chassis nobody has painted yet wears its own scheme from CHASSIS_PRESET.
+export function defaultCarFor(chassisId) {
+  const preset = COLOUR_PRESETS.find((p) => p.id === CHASSIS_PRESET[chassisId]);
+  return normalizeCar({ ...DEFAULT_CAR, ...(preset ? paintOf(preset) : {}), chassis: chassisId });
+}
+
+// `legacy` is the single car older versions saved for whichever chassis was in
+// use. It becomes that chassis's car, and the rest start from their defaults.
+export function normalizeGarage(raw, legacy = null) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  const saved = r.cars && typeof r.cars === 'object' ? r.cars : {};
+  const old = legacy && typeof legacy === 'object' ? normalizeCar(legacy) : null;
+  const cars = {};
+  for (const c of CHASSIS) {
+    const s = saved[c.id];
+    cars[c.id] = s && typeof s === 'object' ? normalizeCar({ ...s, chassis: c.id })
+      : old && old.chassis === c.id ? old
+      : defaultCarFor(c.id);
+  }
+  const chassis = CHASSIS.some((c) => c.id === r.chassis) ? r.chassis
+    : old ? old.chassis : DEFAULT_CHASSIS;
+  return { chassis, cars };
+}
+
+// The player's own colour presets, as they come back from storage: named,
+// three real paints each, ids unique, and no more than USER_PRESET_MAX.
+export function normalizePresets(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const ids = new Set(COLOUR_PRESETS.map((p) => p.id));
+  for (const p of raw) {
+    if (out.length >= USER_PRESET_MAX) break;
+    if (!p || typeof p !== 'object') continue;
+    const name = String(p.name ?? '').trim().slice(0, PRESET_NAME_MAX);
+    if (!name) continue;
+    let id = typeof p.id === 'string' && p.id ? p.id : `u${out.length}`;
+    while (ids.has(id)) id += '_';
+    ids.add(id);
+    out.push({
+      id,
+      name,
+      primary: pick(PAINTS, p.primary, 'signal').id,
+      secondary: pick(PAINTS, p.secondary, 'ink').id,
+      wheelColor: pick(PAINTS, p.wheelColor, 'ink').id,
+    });
+  }
+  return out;
+}
+
+// The preset a car's paint is, the built-in ones first, or null if it is a
+// scheme of its own.
+export function presetFor(car, userPresets = []) {
+  const same = (p) => PAINT_KEYS.every((k) => p[k] === car[k]);
+  return COLOUR_PRESETS.find(same) ?? userPresets.find(same) ?? null;
 }

@@ -13,13 +13,25 @@
     <canvas id="view"></canvas>
 
     <div id="ui">
-      <div class="speed-readout">
-        <span class="speed-value">0</span>
-        <span class="speed-unit">km/h</span>
+      <!-- Speed and revs, bottom right. ui/Speedo.js fills it in and switches
+           between the two faces the garage offers. -->
+      <div class="dash">
+        <!-- Shown while the AI is driving the player's car. -->
+        <div class="auto-badge" hidden>Auto drive</div>
+        <div class="speedo">
+          <span class="speedo-mode">Auto</span>
+          <div class="speedo-digital">
+            <div class="rev-bar"></div>
+            <div class="digi-row">
+              <span class="digi-gear">N</span>
+              <span class="digi-speed">0</span>
+              <span class="digi-unit">mph</span>
+              <span class="digi-rpm">0 rpm</span>
+            </div>
+          </div>
+          <div class="speedo-classic" hidden><canvas class="speedo-canvas"></canvas></div>
+        </div>
       </div>
-
-      <!-- Shown while the AI is driving the player's car. -->
-      <div class="auto-badge" hidden>Auto drive</div>
 
       <!-- Lap timing. Populated by ui/HUD.js; the markup lives here so the
            first frame has something laid out rather than popping in. -->
@@ -28,6 +40,8 @@
         <div class="lap-line lap-current">0:00.000</div>
         <div class="lap-line lap-best"><span class="lap-label">Best</span> <span class="lap-best-time">--:--.---</span></div>
         <div class="lap-line lap-delta"></div>
+        <!-- Sector and record flashes hang just under the timer, off the road. -->
+        <div class="sector-flash" hidden></div>
       </div>
 
       <!-- Race mode: position and the gaps either side of you, top left. -->
@@ -42,8 +56,6 @@
         <div class="start-lamps"><span class="start-lamp"></span><span class="start-lamp"></span><span class="start-lamp"></span></div>
         <div class="start-go" hidden>Go</div>
       </div>
-
-      <div class="sector-flash" hidden></div>
 
       <div class="minimap" hidden>
         <canvas class="minimap-canvas" width="220" height="220"></canvas>
@@ -63,14 +75,22 @@
       </section>
 
       <!-- Garage. The rows are built by ui/Garage.js from the option lists in
-           data/customization.js, so adding a setting is a data change. -->
+           data/customization.js, so adding an option is a data change. -->
       <section class="garage" hidden>
         <div class="garage-panel">
-          <h1>Garage</h1>
+          <header class="garage-head">
+            <h1>Garage</h1>
+            <p class="garage-sub">Each chassis keeps its own paint and parts.</p>
+          </header>
           <ul class="garage-rows"></ul>
-          <p class="garage-hint">Up and down pick a setting, left and right change it. Enter chooses a button. Esc leaves without saving.</p>
+          <div class="garage-actions">
+            <button type="button" class="garage-btn garage-btn-primary">Save car</button>
+            <button type="button" class="garage-btn">Discard changes</button>
+          </div>
+          <p class="garage-hint">Up and down pick a setting. Enter opens it, left and right step through it. Esc leaves without saving.</p>
         </div>
         <aside class="garage-card">
+          <p class="garage-card-kicker">Chassis</p>
           <h2 class="garage-car-name"></h2>
           <p class="garage-car-blurb"></p>
           <dl class="garage-car-stats"></dl>
@@ -110,6 +130,11 @@
               <dt>G</dt><dd>Garage</dd>
               <dt>P</dt><dd>Auto drive</dd>
               <dt>N</dt><dd>Race</dd>
+              <dt>H</dt><dd>Ghost car</dd>
+              <dt>M</dt><dd>Mute</dd>
+              <dt>B</dt><dd>Manual gearbox on or off</dd>
+              <dt>E / Q</dt><dd>Shift up / down in manual</dd>
+              <dt>X</dt><dd>Neutral in manual</dd>
             </dl>
           </div>
           <div>
@@ -122,8 +147,17 @@
               <dt>X</dt><dd>Change camera</dd>
               <dt>Start</dt><dd>Pause</dd>
               <dt>B</dt><dd>Garage</dd>
+              <dt>D-pad up</dt><dd>Ghost car</dd>
+              <dt>D-pad right</dt><dd>Manual gearbox on or off</dd>
+              <dt>RB / LB</dt><dd>Shift up / down in manual</dd>
+              <dt>D-pad down</dt><dd>Neutral in manual</dd>
             </dl>
           </div>
+        </div>
+        <div class="volume-row">
+          <label for="volume">Volume</label>
+          <input id="volume" class="volume-slider" type="range" min="0" max="100" step="1" value="70" />
+          <span class="volume-value">70</span>
         </div>
         <div class="controls-foot">
           <p class="controls-dev">V swaps chassis, T swaps track, O toggles the AI car. Backtick hides the telemetry panel.</p>

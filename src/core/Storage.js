@@ -48,3 +48,9 @@ export function remove(name) {
 export function recordName(trackId, chassisId) {
   return `best.${trackId}.${chassisId}`;
 }
+
+// The best lap's ghost, kept beside its record and under the same two keys: it
+// is the ghost OF that record, so they can never belong to different cars.
+export function ghostName(trackId, chassisId) {
+  return `ghost.${trackId}.${chassisId}`;
+}

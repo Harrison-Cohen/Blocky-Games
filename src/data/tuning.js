@@ -277,6 +277,26 @@ export const STEERING = {
   // steering automatically. Small values make a keyboard slide holdable
   // without taking control away. 0 is pure manual. Range 0-0.4.
   counterSteerAssist: 0.20,
+
+  // Yaw stability, N m per rad/s. Resists the nose rotating FASTER OR SLOWER
+  // than the car's path is actually turning -- the difference between the two
+  // is the sideslip changing, and nothing else. In a steady corner the two are
+  // equal, so this does nothing at all to how hard a car can corner; it only
+  // acts on the transient. Without it, full keyboard lock at speed snapped the
+  // nose round three times faster than the path could follow, the rear went
+  // past its peak, the steering limit swung the front wheels the other way and
+  // the car ran on sideways with D still held -- "it refuses to turn". Off
+  // while the handbrake is on, so handbrake turns still rotate the car, and
+  // faded in with speed, below. 0 is off. Higher is steadier and less lively.
+  // Range 0-20000.
+  yawStability: 14000,
+
+  // Speeds, m/s, over which yawStability fades in. The snap it cures is a
+  // corner-entry problem at speed; below the first number it is off entirely,
+  // so power oversteer out of a slow corner -- the Boxhauler's whole character
+  // -- is untouched. 18 m/s is 65 km/h, 32 m/s is 115 km/h. Range 10-40.
+  yawStabilityFrom: 18,
+  yawStabilityFull: 32,
 };
 
 export const SUSPENSION = {
@@ -379,6 +399,27 @@ export const CAMERA = {
 
   // Far chase multipliers applied to distance and height. Range 1.2-3.
   farMultiplier: 1.9,
+
+  // How far the chase camera swings toward the direction the car is actually
+  // TRAVELLING rather than where its nose points. 0 is welded to the nose, so a
+  // slide swings the whole view with the bodywork; a little of this keeps the
+  // road ahead in frame while the car is sideways. Range 0-0.6.
+  velocityFollow: 0.3,
+
+  // Screen shake on a hit, from a wall or another car: metres of camera jolt
+  // per m/s of impact speed above shakeThreshold, the most it can ever be, and
+  // how fast it dies away (per second). Brushing a wall below the threshold is
+  // a scrape, not a crash, and does not shake at all.
+  // Range: perImpact 0.01-0.06, max 0.2-0.8, decay 4-14, threshold 0.5-4.
+  shakePerImpact: 0.03,
+  shakeMax: 0.45,
+  shakeDecay: 7,
+  shakeThreshold: 1.5,
+  // Jolt on landing, metres per m/s of vertical speed at touchdown. The crest
+  // on Pine Ridge is the one that finds this. Range 0-0.05.
+  shakePerLanding: 0.025,
+  // A faint rumble at top speed, metres at full speed. 0 is off. Range 0-0.03.
+  speedRumble: 0.012,
 };
 
 export const WORLD = {
@@ -968,4 +1009,211 @@ export const CONTACT = {
   // Cars further apart in height than this do not touch -- one is on the
   // flyover and the other is underneath it. Metres. Range 1.5-5.
   maxHeight: 2.5,
+};
+
+// ============================================================================
+// GHOST
+// ----------------------------------------------------------------------------
+// Your best lap, replayed as a translucent copy of the car you set it in. Time
+// trial only. Recorded on the physics clock; see game/Ghost.js.
+// ============================================================================
+export const GHOST = {
+  // Samples per second of lap time. The spec's 30. The ghost is interpolated
+  // between samples, so this is fidelity through quick direction changes, not
+  // smoothness. Range 15-60.
+  hz: 30,
+
+  // Opacity of the ghost car. Range 0.15-0.6.
+  opacity: 0.34,
+
+  // Within this many metres of your car the ghost fades further, down to
+  // closeOpacity, so you are not looking through a shell parked on your
+  // bonnet. Range: fadeNear 3-12, closeOpacity 0.05-0.3.
+  fadeNear: 7,
+  closeOpacity: 0.1,
+
+  // Self light, so the ghost still reads on a night track. 0 is none.
+  // Range 0-0.6.
+  glow: 0.35,
+
+  // A lap longer than this, in seconds, is not recorded -- a car left idling
+  // on the track would otherwise fill memory. Range 120-1200.
+  maxLap: 600,
+};
+
+// ============================================================================
+// EFFECTS
+// ----------------------------------------------------------------------------
+// What the wheels leave behind: dust and gravel on loose surfaces, tyre smoke
+// when the rear lets go, and skid marks on tarmac. Visual only -- none of it
+// reaches the physics. See render/Effects.js.
+// ============================================================================
+export const EFFECTS = {
+  // Particles are one pool of small cubes, one draw call. The most alive at
+  // once; past this the oldest are recycled. Fine particles need a lot of
+  // them, and each one is a matrix write a frame, nothing more. Range 300-5000.
+  maxParticles: 3200,
+
+  // Dust and gravel from the driven wheels on gravel and grass.
+  dustRate: 110,       // per second per wheel at dustFullSpeed. Range 10-200
+  dustFullSpeed: 30,   // m/s at which a wheel throws its full rate. Range 10-50
+  dustMinSpeed: 2.5,   // m/s below which nothing is thrown. Range 0.5-6
+  dustLife: 1.1,       // seconds. Range 0.4-2.5
+  dustSize: 0.15,      // metres, starting edge length. Range 0.06-0.6
+  dustGrow: 2.0,       // how many times bigger it swells. Range 1-5
+  dustCarry: 0.3,      // fraction of the car's velocity it leaves with. Range 0-0.8
+  dustLift: 2.4,       // m/s upwards. Range 0.5-5
+  dustSpread: 1.6,     // m/s of random scatter. Range 0-4
+  // Fraction of it that is small, dark, heavy chips of the surface that fall
+  // straight back down rather than hanging. Range 0-0.5.
+  chipShare: 0.25,
+
+  // Tyre smoke from the rear wheels, once the rear slip angle is past this
+  // multiple of GRIP.peakSlipAngle -- past the limit, not approaching it.
+  // Range 0.8-1.6.
+  smokeSlip: 1.05,
+  smokeRate: 140,      // per second per wheel in a full slide. Range 10-250
+  smokeLife: 1.5,      // seconds. Range 0.6-4
+  smokeSize: 0.18,     // metres. Range 0.08-0.8
+  smokeGrow: 3.2,      // Range 1.5-9
+  smokeRise: 0.9,      // m/s. Range 0-2.5
+  // A light grey rather than near white, so sunlit smoke stays under the bloom
+  // threshold instead of glowing. Was 0xdad8d2.
+  smokeColor: 0xc9c7c1,
+  // A standing start at full throttle lights the rears up for the first few
+  // metres: below launchSmokeSpeed (m/s) with the throttle past launchThrottle.
+  launchSmokeSpeed: 9,  // Range 0-15
+  launchThrottle: 0.9,  // Range 0.5-1
+  // ...and only while the rear tyres are being asked for at least this share
+  // of their grip, so it follows the drive rather than the pedal: revving in
+  // neutral, or pulling away in a tall gear, leaves them clean. Range 0.5-1.
+  launchDriveUse: 0.9,
+  // Launch smoke is its own finer haze. It is laid right under the chase
+  // camera, where slide-sized smoke fills the screen.
+  launchSmokeRate: 160,  // per second per rear wheel. Range 20-300
+  launchSmokeSize: 0.09, // metres. Range 0.04-0.3
+  launchSmokeGrow: 2.2,  // Range 1-5
+  launchSmokeLife: 0.9,  // seconds. Range 0.3-2
+  launchSmokeRise: 0.5,  // m/s. Range 0-2
+
+  // Skid marks, laid by a sliding rear tyre on tarmac. Segments in the ring;
+  // past this the oldest are overwritten. Range 1000-12000.
+  maxSkidSegments: 6000,
+  skidSlip: 1.0,       // multiple of peakSlipAngle at which a tyre marks. Range 0.7-1.6
+  skidLife: 20,        // seconds a mark holds full strength. Range 3-90
+  skidFade: 6,         // seconds it then takes to fade away. Range 1-20
+  skidOpacity: 0.62,   // Range 0.2-0.9
+  skidColor: 0x111214,
+  skidWidth: 0.26,     // metres, for a 0.33 m wheel; scales with wheel size. Range 0.15-0.4
+  skidStep: 0.3,       // metres between segment ends. Range 0.1-1
+};
+
+// ============================================================================
+// GEARBOX (manual mode)
+// ----------------------------------------------------------------------------
+// In automatic, the default, the physics has no gears and nothing here is
+// read. In manual (B, or the garage's Gearbox setting) the gear the player
+// picks decides how much of the drive force reaches the rear tyres, on the
+// player's car only: the AI, auto drive and every check never set manual.
+// The ratios are AUDIO.firstGearTop and each voice's gear count below, so the
+// rev counter, the engine note and the drive all agree. See game/Gearbox.js.
+// ============================================================================
+export const GEARBOX = {
+  // Fraction of the redline above which a gear pulls with the car's full
+  // force. Below it the engine is lugging and the pull falls toward what the
+  // gear gives from a standstill. Shifting up at the redline lands every car
+  // inside this band; shifting early does not. Range 0.3-0.8.
+  pullBand: 0.6,
+  // How hard a tall gear pulls away from a standstill, as a power of its ratio
+  // to first gear. At 1, second pulls about 3/4 of first and top gear about
+  // 1/4. Higher punishes pulling away in the wrong gear harder. Range 0.5-2.
+  lugExponent: 1.0,
+  // Rev limiter: drive fades out between this fraction of the redline and the
+  // redline itself, so a gear held too long stops pulling. Range 0.9-0.99.
+  limiter: 0.97,
+  limiterHz: 14,    // how fast the needle and the note bounce on it. Range 6-25
+  limiterDip: 0.05, // how far each bounce drops the revs, fraction of the redline. Range 0-0.12
+};
+
+// ============================================================================
+// AUDIO
+// ----------------------------------------------------------------------------
+// Synthesised with the Web Audio API, no files. See core/Audio.js. The engine
+// pitch comes from the gearbox. In automatic it exists only to be heard and
+// read on the HUD. In manual its ratios (firstGearTop and each voice's gears)
+// are also the ratios the car drives through; see GEARBOX above.
+// ============================================================================
+export const AUDIO = {
+  // Master volume at first launch, 0-1. The slider on the pause card saves
+  // over it.
+  volume: 0.7,
+
+  // Engine: two saw waves an octave apart through a lowpass filter.
+  engineGain: 0.22,      // Range 0.05-0.5
+  engineOffGain: 0.55,   // fraction of that off the throttle. Range 0.2-1
+  engineSub: 0.6,        // level of the octave-down saw. Range 0-1
+  engineQ: 1.4,          // filter resonance. Range 0.5-6
+  // Filter cutoff in Hz at idle, and how far it opens at the redline with the
+  // throttle pinned. The opening is most of the difference between an engine
+  // that sounds loaded and one that sounds like a kazoo. Range: base 100-800,
+  // range 800-6000.
+  filterBase: 260,
+  filterRange: 3200,
+  // How far the engine drops for the instant of a gear change, as a fraction
+  // of its level. Range 0.1-1 (1 is no dip).
+  shiftDip: 0.3,
+  // Time constant, seconds, for every sound parameter to reach its target.
+  // Lower is snappier and can click. Range 0.01-0.1.
+  smoothing: 0.03,
+
+  // The gearbox. First gear runs out at firstGearTop of the chassis's top
+  // speed, top gear at the top speed itself, and the ones between are spaced
+  // so every upshift drops the revs by the same ratio.
+  firstGearTop: 0.26,    // Range 0.15-0.4
+  shiftUp: 0.94,         // fraction of the redline it changes up at. Range 0.8-0.99
+  shiftDown: 0.7,        // changes down when the lower gear would sit below this. Range 0.4-0.8
+  shiftTime: 0.12,       // seconds the dip lasts. Range 0.05-0.3
+  // Off the line the clutch slips: revs up to launchRpm of the redline with
+  // the throttle pinned, until first gear catches up at clutchCatch of its
+  // own top. Range: launchRpm 0.4-0.9, clutchCatch 0.2-0.8.
+  launchRpm: 0.72,
+  clutchCatch: 0.45,
+  rpmRate: 14,           // how fast the revs chase their target, per second. Range 5-30
+
+  // Each chassis's voice. cylinders set the firing frequency (rpm / 60 *
+  // cylinders / 2), burble the lumpy chop at idle a big V8 has and a four
+  // cylinder does not.
+  voices: {
+    'cube-gt':      { cylinders: 4, idle: 950, redline: 7400, gears: 6, burble: 0.12 },
+    'boxhauler-v8': { cylinders: 8, idle: 700, redline: 6200, gears: 5, burble: 0.35 },
+    'wedge-one':    { cylinders: 10, idle: 1400, redline: 11500, gears: 7, burble: 0.06 },
+    'haul-4x4':     { cylinders: 6, idle: 650, redline: 5200, gears: 5, burble: 0.28 },
+    'bighead':      { cylinders: 3, idle: 1000, redline: 6800, gears: 5, burble: 0.4 },
+  },
+  defaultVoice: { cylinders: 4, idle: 900, redline: 7000, gears: 6, burble: 0.15 },
+
+  // Tyre scrub: band-passed noise rising with slip. Starts at scrubStart and
+  // is full at scrubFull, both multiples of GRIP.peakSlipAngle.
+  scrubGain: 0.3,        // Range 0-0.8
+  scrubStart: 0.85,      // Range 0.5-1.2
+  scrubFull: 1.6,        // Range 1.1-2.5
+  scrubFreq: 850,        // Hz. Range 400-2000
+  scrubQ: 1.2,           // Range 0.5-4
+  // Gravel and grass: a lower, rougher rumble with speed. Range 0-0.6.
+  looseGain: 0.24,
+  looseFreq: 380,        // Hz. Range 150-900
+  // Wind, rising with the square of speed. Range 0-0.3.
+  windGain: 0.07,
+  windFreq: 1400,        // Hz. Range 600-4000
+
+  // Thump on a hit or a landing. Full strength at thumpFull m/s of impact.
+  thumpGain: 0.9,        // Range 0-1.5
+  thumpFull: 10,         // Range 4-20
+
+  // The start: three identical tones as the lamps come on, one an octave up
+  // when they go out.
+  beepFreq: 520,         // Hz. Range 300-1000
+  beepLength: 0.22,      // seconds. Range 0.08-0.5
+  goLength: 0.6,         // seconds. Range 0.2-1.2
+  beepGain: 0.3,         // Range 0-0.8
 };

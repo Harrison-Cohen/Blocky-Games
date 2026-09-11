@@ -19,6 +19,7 @@
 // ============================================================================
 
 import { SIM, INPUT, ENGINE, BRAKES, DRAG, GRIP, STEERING, SUSPENSION, BARRIER } from '../data/tuning.js';
+import { manualDrive, voiceFor } from './Gearbox.js';
 
 const FL = 0, FR = 1, RL = 2, RR = 3;
 // Body axes: +x LEFT, +y up, +z forward. See setChassis() for why x is left.
@@ -146,8 +147,10 @@ export class VehiclePhysics {
     this.wheelsOnTrack = 4;
     this.wheelSpin = 0; // radians, visual only
 
-    // Telemetry, read by the debug overlay. Never read by the model itself.
+    // Telemetry, read by the debug overlay and the wheel effects. Never read
+    // by the model itself.
     this.slipFront = 0; this.slipRear = 0;
+    this.driveUse = 0; // drive force as a share of what the rear tyres can take, 0-1
     this.latForceFront = 0; this.latForceRear = 0;
     this.frontLoad = 0; this.rearLoad = 0;
     this.surface = 'tarmac';
@@ -517,6 +520,18 @@ export class VehiclePhysics {
       const driveCap = maxLatRear * allowance;
       driveForce = clamp(driveForce, -driveCap, driveCap); // rear drive
 
+      // Manual gearbox, the player's car only. The chosen gear passes some
+      // fraction of the force the tyres would take -- after the traction cap,
+      // or every gear would launch the same, grip limited, car. Reverse is
+      // still the brake pedal's, in any gear but neutral. Nothing without
+      // `input.manual` set (the AI, auto drive, every check) reaches this.
+      if (input.manual) {
+        driveForce *= driveForce > 0
+          ? manualDrive(voiceFor(c.id), input.gear, absLong / c.topSpeed)
+          : (input.gear >= 1 ? 1 : 0);
+      }
+      this.driveUse = driveCap > 1 ? clamp(driveForce / driveCap, 0, 1) : 0;
+
       // Load sensitive proportioning. A fixed bias sends the same force to the
       // rear whether it is carrying half the car's weight or a fifth of it, and
       // under hard braking the second case is what pivots the car: the rear
@@ -539,6 +554,7 @@ export class VehiclePhysics {
     } else {
       driveForce = 0;
       brakeForce = 0;
+      this.driveUse = 0;
     }
 
     // --- lateral, with whatever grip is left --------------------------------
@@ -573,6 +589,15 @@ export class VehiclePhysics {
     const aLong = (fLong + slopeLong) / m;
     const aLat = (fLat + slopeLat) / m;
 
+    // How fast the car's PATH is turning: the part of the acceleration across
+    // the velocity, over the speed. Compared against the yaw rate below, the
+    // difference is the sideslip changing -- see STEERING.yawStability.
+    const v2 = Math.max(this.vLong * this.vLong + this.vLat * this.vLat, 1);
+    const pathRate = (this.vLong * aLat - this.vLat * aLong) / v2;
+    const stability = this.airborne ? 0
+      : STEERING.yawStability * (1 - this.handbrakeBlend)
+        * smoothstep(STEERING.yawStabilityFrom, STEERING.yawStabilityFull, speed);
+
     // The +vLat*yawRate / -vLong*yawRate terms are the rotating-frame
     // correction. Without them the car does not actually go round a corner.
     this.vLong += (aLong + this.vLat * this.yawRate) * dt;
@@ -580,7 +605,8 @@ export class VehiclePhysics {
 
     // Yaw
     const yawTorque = latFront * Math.cos(steerAngle) * this.a - latRear * this.b
-      - SUSPENSION.yawDamping * this.yawRate;
+      - SUSPENSION.yawDamping * this.yawRate
+      - stability * (this.yawRate - pathRate);
     this.yawRate += (yawTorque / SUSPENSION.yawInertia) * dt;
     this.yaw += this.yawRate * dt;
 
