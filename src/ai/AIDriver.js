@@ -336,8 +336,15 @@ export class AIDriver {
       const step = AI.passRate * dt;
       this._pass += clamp(passTarget - this._pass, -step, step);
       // The lane may sit either side of the line, so the limit is the road's
-      // edge, not the symmetric room the wander is held to.
-      const lim = line.limit[aim.index], off = line.offset[aim.index];
+      // edge, not the symmetric room the wander is held to -- and it is the
+      // same edge the lane was chosen inside (AI.passEdge plus the car's own
+      // half width), or the line itself where the line runs wider. Held only
+      // to the line's limit, a car passing on the outside of Copper Flats'
+      // long left-hander aimed a metre from the edge and ran the exit on the
+      // kerb.
+      const off = line.offset[aim.index];
+      const edge = t.halfWidth[aim.index] - AI.passEdge - this.chassis.bodyWidth / 2;
+      const lim = Math.min(line.limit[aim.index], Math.max(edge, Math.abs(off)));
       bias = clamp(bias + this._pass, -lim - off, lim - off);
     }
     const ax = aim.x + t.lx[aim.index] * bias;

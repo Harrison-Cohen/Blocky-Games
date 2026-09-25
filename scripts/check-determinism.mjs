@@ -32,7 +32,7 @@ function inputForStep(n){
 }
 
 function runAt(fps, jitter, seed){
-  const c=getChassis('boxhauler-v8');
+  const c=getChassis('mustang-gt');
   const v=new VehiclePhysics(c);
   const sp=ground.spawn();
   v.reset(sp.x, ground.sample(sp.x, sp.z).height + c.suspensionRest, sp.z, sp.yaw);
@@ -71,7 +71,7 @@ const { Vehicle } = await import(R+'game/Vehicle.js');
 const { carAppearance, DEFAULT_CAR } = await import(R+'data/customization.js');
 
 function runWith(car){
-  const c=getChassis('boxhauler-v8');
+  const c=getChassis('mustang-gt');
   const veh=new Vehicle(c, carAppearance(car));
   const sp=ground.spawn();
   veh.physics.reset(sp.x, ground.sample(sp.x, sp.z).height + c.suspensionRest, sp.z, sp.yaw);
@@ -127,10 +127,14 @@ for (const chassis of CHASSIS) {
     // behind it and its centre creeps the other way, and a 1900 kg truck is
     // still inside that first metre long after a 780 kg open-wheeler has left
     // it. A time limit tests how fast a car reverses, not which way it goes.
-    let along = 0, lateral = 0, steps = 0;
-    while (along > -5 && steps < 900) {
+    // The distance is along the car's path, not straight back down its first
+    // heading: at full lock a car that turns a circle under 10 m across goes
+    // round it and never gets 5 m straight back.
+    let along = 0, lateral = 0, steps = 0, travelled = 0;
+    while (travelled < 5 && steps < 900) {
       veh.step(1 / SIM.hz, N(0, 0.7, wheel, 0), ground);
       steps++;
+      travelled += p.speed / SIM.hz;
       along = (p.x - x0) * sy + (p.z - z0) * cy;
       lateral = (p.x - x0) * cy - (p.z - z0) * sy; // + is the car's left
     }
@@ -141,7 +145,7 @@ for (const chassis of CHASSIS) {
     const dyaw = p.yaw - yaw0;
     const pathOk = Math.sign(lateral) === Math.sign(wheel) && Math.abs(lateral) > 0.2;
     const noseOk = Math.sign(dyaw) === -Math.sign(wheel);
-    const ok = along <= -5 && pathOk && noseOk;
+    const ok = travelled >= 5 && along < -1 && pathOk && noseOk;
     if (!ok) allOk = false;
     console.log(`${chassis.name.padEnd(14)} reversing, ${name}  -> path `
       + `${lateral > 0 ? 'LEFT ' : 'RIGHT'} ${Math.abs(lateral).toFixed(2)} m, nose `

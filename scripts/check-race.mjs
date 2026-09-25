@@ -29,7 +29,8 @@ const tracks = [];
 for (const f of readdirSync(dir).sort()) {
   if (!f.endsWith('.js') || f === 'index.js') continue;
   const data = (await import(dir + f)).default;
-  if (data && data.id && (!filter || data.id.includes(filter))) tracks.push(data);
+  // A drag strip is raced two cars at a time, not in a field: npm run drag.
+  if (data && data.id && !data.drag && (!filter || data.id.includes(filter))) tracks.push(data);
 }
 tracks.sort((a, b) => a.order - b.order);
 
@@ -38,7 +39,7 @@ let failed = false;
 const fail = (msg) => { failed = true; console.log(`  FAIL  ${msg}`); };
 
 function runRace(track, line, difficulty, opponents = RACE.maxOpponents) {
-  const player = { physics: new VehiclePhysics(getChassis('cube-gt')), chassis: getChassis('cube-gt'),
+  const player = { physics: new VehiclePhysics(getChassis('porsche-911')), chassis: getChassis('porsche-911'),
     name: 'Player', number: 7, color: 0xff7a1a };
   const field = OPPONENTS.slice(0, opponents).map((spec) => {
     const chassis = getChassis(spec.chassis);

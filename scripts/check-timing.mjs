@@ -91,7 +91,10 @@ function drive(track, chassis, laps, sabotage) {
     const lat = dx * cy - dz * sy;
     const aim = Math.atan2(lat, Math.max(fwd, 1));
     const damp = v.yawRate * 0.45 * Math.min(1, v.speed / 15);
-    const target = Math.max(-1, Math.min(1, aim * 1.9 - damp));
+    // The steering is a share of full lock, so the same command turns a car
+    // with more lock further. The gain was set on 0.54 rad of lock; held to
+    // that, a car given a tighter turning circle is not driven twitchier.
+    const target = Math.max(-1, Math.min(1, aim * 1.9 * 0.54 / chassis.steerRate - damp));
     steerCmd += Math.max(-0.05, Math.min(0.05, target - steerCmd));
 
     let want = Infinity;

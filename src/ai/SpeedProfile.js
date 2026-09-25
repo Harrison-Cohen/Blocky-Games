@@ -138,7 +138,7 @@ export class SpeedProfile {
         const vi = this.v[i];
         // What the engine can push at this speed.
         const frac = Math.min(1, vi / c.topSpeed);
-        const powerFactor = Math.max(0, 1 - Math.pow(frac, ENGINE.powerFalloff));
+        const powerFactor = Math.max(0, 1 - Math.pow(frac, c.powerFalloff ?? ENGINE.powerFalloff));
         const engine = c.power * ENGINE.powerScale * powerFactor;
         // What the driven tyres can take, given what they are already doing
         // laterally. The straight-line allowance is not used here: a profile

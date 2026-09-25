@@ -110,7 +110,7 @@ export class Speedo {
     if (!v) return;
     const t = this._text;
     const speed = Math.round(Math.abs(mph));
-    const cue = manual && rpm >= v.redline * AUDIO.shiftUp;
+    const cue = manual && v.gears > 1 && rpm >= v.redline * AUDIO.shiftUp;
     const mode = manual ? 'Manual' : 'Auto';
     if (t.mode !== mode) { this.modeEl.textContent = mode; t.mode = mode; }
     if (t.cue !== cue) { this.el.classList.toggle('shift-cue', cue); t.cue = cue; }

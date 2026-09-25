@@ -292,8 +292,13 @@ export class PostFX {
     this._readMeter();
   }
 
+  // The composer frees only its own two targets; the occlusion and bloom
+  // passes own theirs, and a graphics level change throws this whole chain
+  // away, so they are freed here or they leak.
   dispose() {
     this.composer.dispose();
+    if (this.ao) this.ao.dispose();
+    this.bloom.dispose();
     this.meter.dispose();
     this.finish.dispose();
   }

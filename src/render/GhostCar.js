@@ -7,6 +7,7 @@
 // made translucent -- fading the shared red would fade every red car on track.
 
 import { buildCar } from '../game/CarBuilder.js';
+import { springRate } from '../game/VehiclePhysics.js';
 import { ghost as ghostMaterial, setGhostOpacity } from './Materials.js';
 import { GHOST, SUSPENSION, SIM } from '../data/tuning.js';
 
@@ -40,7 +41,7 @@ export class GhostCar {
     });
     // Wheels at rest on their springs: the ghost does not record suspension.
     const rest = chassis.suspensionRest ?? SUSPENSION.restLength;
-    const sag = (chassis.mass * SIM.gravity) / 4 / SUSPENSION.springRate;
+    const sag = (chassis.mass * SIM.gravity) / 4 / springRate(chassis);
     for (const w of built.wheels) w.position.y = -(rest - sag) + chassis.wheelRadius;
     this.root = built.root;
     this.body = built.body;

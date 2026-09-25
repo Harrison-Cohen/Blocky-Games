@@ -184,12 +184,16 @@ console.log('\nManual gearbox: felt when chosen, never quicker than the automati
     const idle = run(chassis, 5, () => 0);
     const back = run(chassis, 3, () => 1, 1);
     const backN = run(chassis, 3, () => 0, 1);
+    // A single-speed car's first gear is its top gear, so only a car with
+    // more than one can pull away harder in first.
+    const single = v.gears === 1;
     check(same && held.vLong <= cap + 0.05 && held.vLong > cap * 0.9
-      && topGo.vLong < firstGo.vLong * 0.8 && idle.speed < 0.05
+      && (single || topGo.vLong < firstGo.vLong * 0.8) && idle.speed < 0.05
       && back.vLong < -1 && Math.abs(backN.vLong) < 0.05,
       `${chassis.name.padEnd(13)} shifted at the redline ${same ? 'is' : 'is NOT'} the automatic (${gear} of ${v.gears}), `
       + `first runs out at ${mph(held.vLong)} of ${mph(cap)} mph, `
-      + `top gear pulls away at ${Math.round((100 * topGo.vLong) / firstGo.vLong)}% of first, `
+      + (single ? 'one gear, '
+        : `top gear pulls away at ${Math.round((100 * topGo.vLong) / firstGo.vLong)}% of first, `)
       + `neutral ${idle.speed.toFixed(2)} m/s, reverse ${back.vLong.toFixed(1)} in gear and ${backN.vLong.toFixed(2)} in neutral`);
   }
   // The readout agrees with the drive: held in first it sits on the limiter,
@@ -203,6 +207,82 @@ console.log('\nManual gearbox: felt when chosen, never quicker than the automati
   for (let f = 0; f < 120; f++) gb.update(1 / 60, 0, 1);
   check(pinned && gb.limiting && gb.label === 'N' && gb.rpm <= gb.voice.redline + 1,
     'the rev counter sits on the limiter where the drive cuts, and neutral revs up to it');
+}
+
+// --- the gearbox tune ------------------------------------------------------------
+// The garage's gearbox tune, per chassis. A tune the same as stock must be the
+// chassis itself, so nothing any other check measures can move; anything that
+// is not a tune comes back stock; and every part of a tune is felt, in the
+// direction the garage says, through the real physics.
+console.log('\nGearbox tune: stock is the car itself, and every setting is felt');
+{
+  const { stockTune, normalizeTune, isStockTune, tunedChassis } = await import(SRC + 'game/Gearbox.js');
+  const { straightLine } = await import(SRC + 'game/Performance.js');
+  const { GEARBOX } = await import(SRC + 'data/tuning.js');
+  const junk = [null, 7, 'short', {}, { finalDrive: 'short', tops: 'long', shiftUp: NaN }, { tops: [0.5] }];
+  for (const chassis of CHASSIS) {
+    const id = chassis.id, st = stockTune(id);
+    const same = tunedChassis(chassis, st) === chassis
+      && junk.every((j) => isStockTune(id, normalizeTune(id, j)));
+    const base = straightLine(chassis);
+    const run = (t) => straightLine(tunedChassis(chassis, { ...st, ...t }));
+    // Shorter: at least as quick off the line, and out of revs sooner.
+    const short = run({ finalDrive: GEARBOX.finalDriveMax });
+    const long = run({ finalDrive: GEARBOX.finalDriveMin });
+    let ok = same && short.topSpeedMph < base.topSpeedMph - 5 && long.topSpeedMph > base.topSpeedMph + 5
+      && short.zeroToSixty <= base.zeroToSixty + 0.01 && long.zeroToSixty >= base.zeroToSixty - 0.01;
+    let extra = '';
+    if (st.tops.length > 1) {
+      // Changing up early drops the revs out of the band; a short top gear
+      // runs out on its limiter.
+      const early = run({ shiftUp: GEARBOX.shiftPointMin });
+      const tops = st.tops.slice();
+      tops[tops.length - 1] = 0.8;
+      const shortTop = run({ tops });
+      ok = ok && early.quarterMile > base.quarterMile + 0.05 && shortTop.topSpeedMph < base.topSpeedMph - 5;
+      extra = `, early shifts +${(early.quarterMile - base.quarterMile).toFixed(2)} s over the quarter, `
+        + `a short top gear tops out at ${shortTop.topSpeedMph.toFixed(0)}`;
+    }
+    check(ok, `${chassis.name.padEnd(13)} ${same ? 'stock is the chassis' : 'stock is NOT the chassis'}, `
+      + `final drive ${short.topSpeedMph.toFixed(0)}-${long.topSpeedMph.toFixed(0)} mph and `
+      + `${short.zeroToSixty.toFixed(2)}-${long.zeroToSixty.toFixed(2)} s to 60${extra}`);
+  }
+  // A tuned car in automatic changes gear in the physics: never down under
+  // power, never up under braking, and the rev counter shows the same gear.
+  const c = tunedChassis(CHASSIS[0], { ...stockTune(CHASSIS[0].id), shiftUp: 0.8, finalDrive: 1.1 });
+  const p = new VehiclePhysics(c);
+  p.reset(0, c.suspensionRest, 0, 0);
+  const gb = new Gearbox(c);
+  let gear = p.autoGear, ups = 0, downs = 0, upsBraking = 0, agree = true;
+  for (let f = 0; f < 60 * 40; f++) {
+    p.step(dt, drive(1, 0), flat); p.step(dt, drive(1, 0), flat);
+    gb.update(1 / 60, p.vLong, 1, true, p.autoGear);
+    if (p.autoGear > gear) ups++; else if (p.autoGear < gear) downs++;
+    gear = p.autoGear;
+    if (gb.gear !== p.autoGear) agree = false;
+  }
+  const topGear = gear;
+  for (let f = 0; f < 60 * 30 && p.speed > 0.05; f++) {
+    p.step(dt, drive(0, 1), flat); p.step(dt, drive(0, 1), flat);
+    if (p.autoGear > gear) upsBraking++;
+    gear = p.autoGear;
+  }
+  check(topGear === c.gearing.gears && downs === 0 && upsBraking === 0 && agree && gear === 1,
+    `a tuned automatic changes up through ${topGear} of ${c.gearing.gears} gears in the physics, `
+    + `${downs} down under power, ${upsBraking} up under braking, readout ${agree ? 'in step' : 'OUT of step'}, stops in ${gear}`);
+  const again = (() => {
+    const q = new VehiclePhysics(c);
+    q.reset(0, c.suspensionRest, 0, 0);
+    for (let k = 0; k < SIM.hz * 20; k++) q.step(dt, drive(1, 0), flat);
+    return q.z;
+  })();
+  const once = (() => {
+    const q = new VehiclePhysics(c);
+    q.reset(0, c.suspensionRest, 0, 0);
+    for (let k = 0; k < SIM.hz * 20; k++) q.step(dt, drive(1, 0), flat);
+    return q.z;
+  })();
+  check(again === once, 'a tuned car drives the same run the same way twice');
 }
 
 // --- effects -----------------------------------------------------------------
@@ -302,13 +382,39 @@ check(fx.particles.alive === 0 && fx.skids.count === 0, 'left alone, the smoke c
     `neutral ${neutral.most} particles ${neutral.marks} marks, launch ${launch.most} particles ${launch.marks} marks`);
 }
 
+// --- graphics levels ---------------------------------------------------------
+// A level is overrides on GRAPHICS and WORLD. A misspelt key would silently
+// add a setting nothing reads, so every key must already exist; and Ultra,
+// which names nothing, must put back exactly what tuning.js declares.
+console.log('\nGraphics levels');
+{
+  const { GRAPHICS, WORLD, GRAPHICS_LEVELS, DEFAULT_GRAPHICS_LEVEL } = await import(SRC + 'data/tuning.js');
+  const { setGraphicsLevel } = await import(SRC + 'render/GraphicsLevel.js');
+  const declared = JSON.stringify({ GRAPHICS, WORLD });
+  const unknown = [];
+  for (const l of GRAPHICS_LEVELS) {
+    for (const k of Object.keys(l.graphics || {})) if (!(k in GRAPHICS)) unknown.push(`${l.id}.graphics.${k}`);
+    for (const k of Object.keys(l.world || {})) if (!(k in WORLD)) unknown.push(`${l.id}.world.${k}`);
+  }
+  check(unknown.length === 0, 'every level names only settings that exist', unknown.join(', '));
+  const applied = GRAPHICS_LEVELS.every((l) => setGraphicsLevel(l.id) === l.id
+    && Object.entries(l.graphics || {}).every(([k, v]) => GRAPHICS[k] === v)
+    && Object.entries(l.world || {}).every(([k, v]) => WORLD[k] === v));
+  check(applied, `${GRAPHICS_LEVELS.map((l) => l.name).join(', ')}: each applies its own values`);
+  setGraphicsLevel('low');
+  setGraphicsLevel('ultra');
+  check(JSON.stringify({ GRAPHICS, WORLD }) === declared, 'back to Ultra puts back exactly what tuning.js declares');
+  check(setGraphicsLevel('nonsense') === DEFAULT_GRAPHICS_LEVEL, 'an unknown saved level falls back to the default');
+  setGraphicsLevel(DEFAULT_GRAPHICS_LEVEL);
+}
+
 // --- the ghost car -----------------------------------------------------------
 console.log('\nGhost car');
 {
-  const solid = glossy(carAppearance(normalizeCar({ chassis: 'cube-gt' })).primary, { shininess: 70, specular: 0x4a4a52 });
+  const solid = glossy(carAppearance(normalizeCar({ chassis: 'porsche-911' })).primary, { shininess: 70, specular: 0x4a4a52 });
   const gc = new GhostCar(scene);
   const fakeLap = { poseAt: (t, out) => { Object.assign(out, { x: 0, y: 1, z: 0, yaw: 0, pitch: 0, roll: 0 }); return true; } };
-  gc.set(fakeLap, CHASSIS[0], carAppearance(normalizeCar({ chassis: 'cube-gt' })));
+  gc.set(fakeLap, CHASSIS[0], carAppearance(normalizeCar({ chassis: 'porsche-911' })));
   let meshes = 0, bad = 0;
   gc.root.traverse((n) => {
     if (!n.isMesh) return;

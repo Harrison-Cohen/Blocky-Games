@@ -79,6 +79,7 @@ export class Scene {
   // Swap in a track: its geometry, its light, its horizon. Called once per
   // track load, so it also tears down whatever was there before.
   setTrack(track, mesh) {
+    this.trackData = track.data;
     if (this.trackGroup) {
       this.scene.remove(this.trackGroup);
       this.trackGroup = null;
@@ -113,6 +114,32 @@ export class Scene {
     // The first frames on a new track compile shaders and are slow for a
     // reason that has nothing to do with resolution. Do not judge them.
     this._rs.hold = 2;
+  }
+
+  // A new graphics level, live. Everything that read GRAPHICS or WORLD when it
+  // was built is built again: the post chain, the sun's shadow map, the lamp
+  // pool and the scenery's optional shadows. The first frames after it
+  // compile shaders, so the resolution governor is told to ignore them.
+  applyGraphics(mesh) {
+    if (this.post) this.post.dispose();
+    this.post = GRAPHICS.postFX ? new PostFX(this.renderer, this.scene, this.camera) : null;
+    if (this.post && this.trackData) this.post.setTrack(this.trackData);
+    // Without the post chain nothing adapts the exposure, so it goes back to
+    // the track's own rather than staying wherever the eye had it.
+    if (!this.post && WORLD.toneMappingExposure > 0) {
+      this.renderer.toneMappingExposure = WORLD.toneMappingExposure;
+    }
+    const sh = this.sun.shadow;
+    sh.mapSize.set(WORLD.shadowMapSize, WORLD.shadowMapSize);
+    sh.radius = GRAPHICS.shadowSoftness;
+    if (sh.map) { sh.map.dispose(); sh.map = null; }
+    if (mesh) {
+      mesh.applyShadows();
+      this.trackLights.setTrack(mesh.lights);
+    }
+    this.renderScale = 1;
+    this.settle();
+    this._onResize();
   }
 
   // Everything that follows the car or the camera, once per rendered frame.
@@ -215,6 +242,55 @@ export class Scene {
     if (!this.drawable) return;
     if (this.post) this.post.render(dt);
     else this.renderer.render(this.scene, this.camera);
+  }
+
+  // Another camera like the main one, for the other half of a split screen.
+  makeCamera() {
+    return this.camera.clone();
+  }
+
+  // Split screen: views[0] in the top half, views[1] in the bottom, each with
+  // the sun's shadow fitted to its own car. views: [{ camera, x, y, z }].
+  //
+  // The post chain draws one camera to the whole canvas, so a split screen
+  // renders straight to the canvas without it: no ambient occlusion or bloom,
+  // tone mapped the way the Low graphics level is.
+  renderSplit(views, dt = 0) {
+    if (!this.drawable) return;
+    this._adaptResolution(dt);
+    const r = this.renderer;
+    const w = Math.max(1, window.innerWidth);
+    const h = Math.max(1, window.innerHeight);
+    const top = Math.floor(h / 2);
+    r.setScissorTest(true);
+    views.forEach((v, k) => {
+      const cam = v.camera;
+      // Viewports count from the bottom left.
+      const y = k === 0 ? h - top : 0;
+      const vh = k === 0 ? top : h - top;
+      const aspect = w / vh;
+      if (Math.abs(cam.aspect - aspect) > 1e-4) { cam.aspect = aspect; cam.updateProjectionMatrix(); }
+      this.fitShadowTo(v.x, v.y, v.z);
+      this.sky.update(cam.position, k === 0 ? dt : 0);
+      r.setViewport(0, y, w, vh);
+      r.setScissor(0, y, w, vh);
+      r.render(this.scene, cam);
+    });
+    r.setScissorTest(false);
+    r.setViewport(0, 0, w, h);
+  }
+
+  // Back to one view: the main camera's own aspect again.
+  endSplit() {
+    this._onResize();
+  }
+
+  // Build every shader the scene can need now, hidden objects included,
+  // rather than the first time each one comes into view: a shader built
+  // mid-lap stalls that frame, by a quarter of a second on Copper Flats.
+  // Programs already built cost nothing here, so calling it again is cheap.
+  prewarm() {
+    this.renderer.compile(this.scene, this.camera);
   }
 
   add(obj) { this.scene.add(obj); }

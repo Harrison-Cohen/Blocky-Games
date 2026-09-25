@@ -45,6 +45,7 @@ THREE.Object3D.prototype.add = function (o) {
 const { buildCar, LENS_DEPTH } = await import(SRC + 'game/CarBuilder.js');
 const { CHASSIS } = await import(SRC + 'data/cars.js');
 const { SIM, SUSPENSION } = await import(SRC + 'data/tuning.js');
+const { springRate } = await import(SRC + 'game/VehiclePhysics.js');
 const { LIVERIES, SPOILERS, ROOF_ITEMS, WHEEL_STYLES, carAppearance, DEFAULT_CAR } =
   await import(SRC + 'data/customization.js');
 
@@ -67,17 +68,41 @@ const grow = (b, m) => new THREE.Box3(
   new THREE.Vector3(b.min.x - m, b.min.y - m, b.min.z - m),
   new THREE.Vector3(b.max.x + m, b.max.y + m, b.max.z + m));
 
-function covered(box, others) {
+// The cars modelled on real ones are lofted: curved panels, not boxes, which
+// buildCar hands back as `volumes`, inside(x, y, z) tests in the same body
+// frame the boxes are in. A bounding box round a curved panel is mostly air,
+// so every test below asks the panels themselves.
+const inVolume = (vols, x, y, z) => vols.some((v) => v(x, y, z));
+
+// Any point of an n x n x n grid over the box, corners included, for which
+// fn is true.
+function anyPoint(box, n, fn) {
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) for (let k = 0; k < n; k++) {
+    const x = box.min.x + (box.max.x - box.min.x) * (i / (n - 1));
+    const y = box.min.y + (box.max.y - box.min.y) * (j / (n - 1));
+    const z = box.min.z + (box.max.z - box.min.z) * (k / (n - 1));
+    if (fn(x, y, z)) return true;
+  }
+  return false;
+}
+const touchesVolume = (box, vols) =>
+  vols.length > 0 && anyPoint(grow(box, TOUCH), 5, (x, y, z) => inVolume(vols, x, y, z));
+// Sealed inside one curved panel: every point of the box is inside it.
+const buriedInVolume = (box, vols) => vols.some((v) => !anyPoint(box, 4, (x, y, z) => !v(x, y, z)));
+
+function covered(box, others, vols = []) {
   const N = 14;
   let inside = 0;
   for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) for (let k = 0; k < N; k++) {
     const x = box.min.x + (box.max.x - box.min.x) * (i + 0.5) / N;
     const y = box.min.y + (box.max.y - box.min.y) * (j + 0.5) / N;
     const z = box.min.z + (box.max.z - box.min.z) * (k + 0.5) / N;
+    let hit = false;
     for (const o of others) {
       if (x >= o.min.x && x <= o.max.x && y >= o.min.y && y <= o.max.y &&
-          z >= o.min.z && z <= o.max.z) { inside++; break; }
+          z >= o.min.z && z <= o.max.z) { hit = true; break; }
     }
+    if (hit || inVolume(vols, x, y, z)) inside++;
   }
   return inside / (N * N * N);
 }
@@ -108,9 +133,9 @@ for (const livery of LIVERIES) {
 for (const chassis of CHASSIS) {
   boxes.length = 0;
   bodyDone = false;
-  buildCar(chassis);
+  const vols = buildCar(chassis).volumes || [];
 
-  console.log(`\n${chassis.name}   ${boxes.length} parts`);
+  console.log(`\n${chassis.name}   ${boxes.length} parts${vols.length ? `, ${vols.length} curved panels` : ''}`);
 
   // The four light lenses are the last things added. If that ever stops being
   // true this test would quietly measure the wrong boxes, so prove it.
@@ -125,7 +150,7 @@ for (const chassis of CHASSIS) {
   // is hanging in the air; near one it is sealed inside and never drawn.
   const names = ['head L', 'head R', 'tail L', 'tail R'];
   lamps.forEach((l, i) => {
-    const frac = covered(l, shell);
+    const frac = covered(l, shell, vols);
     check(frac > 0.30 && frac < 0.80, `${names[i]} sits on bodywork`,
       `${(frac * 100).toFixed(0)}% sunk` + (frac >= 0.80 ? ' -- buried' : frac <= 0.30 ? ' -- floating' : ''));
   });
@@ -142,6 +167,8 @@ for (const chassis of CHASSIS) {
       if (grow(other, TOUCH).intersectsBox(box)) touches = true;
       if (grow(other, 1e-4).containsBox(box)) swallowed = true;
     });
+    if (!touches && touchesVolume(box, vols)) touches = true;
+    if (!swallowed && buriedInVolume(box, vols)) swallowed = true;
     if (!touches) floating.push(i);
     if (swallowed) hidden.push(i);
   });
@@ -155,27 +182,36 @@ for (const chassis of CHASSIS) {
   // arch line is meant to sit over the tyre -- that is what an arch is -- so
   // only the part of the wheel below that line is off limits.
   const halfTrack = chassis.trackWidth * 0.5;
-  const wheelWidth = chassis.wheelRadius * (chassis.profile === 'truck' ? 0.95 : 0.78);
+  const wheelWidth = chassis.wheelRadius * 0.78;
   const wheelHalfW = wheelWidth * 0.66;
   const lock = chassis.steerRate;
   const sweptX = wheelHalfW * Math.cos(lock) + chassis.wheelRadius * Math.sin(lock);
   const sweptZ = chassis.wheelRadius * Math.cos(lock) + wheelHalfW * Math.sin(lock);
-  const squash = (chassis.mass * SIM.gravity) / (4 * SUSPENSION.springRate);
+  const squash = (chassis.mass * SIM.gravity) / (4 * springRate(chassis));
   const wheelY = chassis.wheelRadius - (chassis.suspensionRest - squash);
   const archY = wheelY + chassis.wheelRadius * 0.30;
   const a = chassis.wheelbase * (1 - chassis.weightDistribution);
   const b = chassis.wheelbase * chassis.weightDistribution;
 
-  let worst = 0;
+  let worst = 0, curvedHits = 0;
   for (const sx of [1, -1]) {
     for (const [z, ex, ez] of [[a, sweptX, sweptZ], [-b, wheelHalfW, chassis.wheelRadius]]) {
       const tyre = new THREE.Box3(
         new THREE.Vector3(sx * halfTrack - ex, wheelY - chassis.wheelRadius, z - ez),
         new THREE.Vector3(sx * halfTrack + ex, Math.min(wheelY + chassis.wheelRadius, archY), z + ez));
       for (const s of shell) worst = Math.max(worst, overlap(s, tyre));
+      // Curved panels: sample the tyre's space and count what falls inside one.
+      const N = 9;
+      for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) for (let k = 0; k < N; k++) {
+        const px = tyre.min.x + (tyre.max.x - tyre.min.x) * (i / (N - 1));
+        const py = tyre.min.y + (tyre.max.y - tyre.min.y) * (j / (N - 1));
+        const pz = tyre.min.z + (tyre.max.z - tyre.min.z) * (k / (N - 1));
+        if (inVolume(vols, px, py, pz)) curvedHits++;
+      }
     }
   }
-  check(worst < 1e-6, 'no bodywork inside a tyre at full lock', `${worst.toFixed(5)} m3`);
+  check(worst < 1e-6 && curvedHits === 0, 'no bodywork inside a tyre at full lock',
+    `${worst.toFixed(5)} m3 of box${vols.length ? `, ${curvedHits} points inside curved panels` : ''}`);
 
   // Now the whole cosmetic matrix. Only the structural checks run here: the
   // lens seating cannot change, because no cosmetic option moves a lamp.
@@ -188,7 +224,7 @@ for (const chassis of CHASSIS) {
   for (const car of configs) {
     boxes.length = 0;
     bodyDone = false;
-    buildCar(chassis, carAppearance(car));
+    const carVols = buildCar(chassis, carAppearance(car)).volumes || [];
     const bad = [];
     boxes.forEach((box, i) => {
       let touches = false;
@@ -198,6 +234,8 @@ for (const chassis of CHASSIS) {
         if (grow(other, TOUCH).intersectsBox(box)) touches = true;
         if (grow(other, 1e-4).containsBox(box)) swallowed = true;
       });
+      if (!touches && touchesVolume(box, carVols)) touches = true;
+      if (!swallowed && buriedInVolume(box, carVols)) swallowed = true;
       if (!touches) bad.push(`${i} floats`);
       if (swallowed && i >= shellCount) bad.push(`${i} hidden`);
     });

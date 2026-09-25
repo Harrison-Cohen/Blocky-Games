@@ -27,6 +27,9 @@
 //                driver is untidy on a straight and precise at an apex.
 //   reaction     how fast their hands move, in units of lock per second.
 
+// Every car wears a real factory colour, and no two share one, so the field
+// reads apart on the minimap -- and none of them is the player's default
+// Guards red.
 export const OPPONENTS = [
   {
     id: 'vera',
@@ -41,9 +44,9 @@ export const OPPONENTS = [
   {
     id: 'rusk',
     name: 'Danny Rusk',
-    chassis: 'boxhauler-v8',
-    car: { primary: 'lime', secondary: 'offwhite', livery: 'split',
-           wheelStyle: 'deepdish', wheelColor: 'ink', spoiler: 'ducktail',
+    chassis: 'chevelle-ss',
+    car: { primary: 'lemans-blue', secondary: 'offwhite', livery: 'stripes',
+           wheelStyle: 'deepdish', wheelColor: 'gt-silver', spoiler: 'none',
            roofItem: 'none', headlight: 'warm', number: 21 },
     style: { gripUse: 0.63, brakeMargin: 0.94, lineBias: 0.5,
              wander: 0.45, wanderRate: 0.44, phase: 1.7, reaction: 4.6 },
@@ -51,39 +54,39 @@ export const OPPONENTS = [
   {
     id: 'mira',
     name: 'Mira Halvorsen',
-    chassis: 'cube-gt',
-    car: { primary: 'acid', secondary: 'ink', livery: 'checker',
-           wheelStyle: 'fivespoke', wheelColor: 'offwhite', spoiler: 'lip',
-           roofItem: 'none', headlight: 'warm', number: 9 },
+    chassis: 'porsche-911',
+    car: { primary: 'miami-blue', secondary: 'jet-black', livery: 'none',
+           wheelStyle: 'fivespoke', wheelColor: 'jet-black', spoiler: 'ducktail',
+           roofItem: 'none', headlight: 'cold', number: 9 },
     style: { gripUse: 0.67, brakeMargin: 0.98, lineBias: -0.4,
              wander: 0.30, wanderRate: 0.53, phase: 3.1, reaction: 5.8 },
   },
   {
     id: 'boone',
     name: 'Cal Boone',
-    chassis: 'haul-4x4',
-    car: { primary: 'sand', secondary: 'ink', livery: 'quarters',
-           wheelStyle: 'knobby', wheelColor: 'ink', spoiler: 'none',
-           roofItem: 'lightbar', headlight: 'amber', number: 66 },
+    chassis: 'mustang-gt',
+    car: { primary: 'offwhite', secondary: 'jet-black', livery: 'stripes',
+           wheelStyle: 'fivespoke', wheelColor: 'jet-black', spoiler: 'lip',
+           roofItem: 'none', headlight: 'warm', number: 66 },
     style: { gripUse: 0.61, brakeMargin: 0.90, lineBias: 0.7,
              wander: 0.52, wanderRate: 0.37, phase: 5.0, reaction: 4.2 },
   },
   {
     id: 'tock',
     name: 'Tock',
-    chassis: 'bighead',
-    car: { primary: 'signal', secondary: 'ink', livery: 'none',
-           wheelStyle: 'blocky', wheelColor: 'ink', spoiler: 'wing',
-           roofItem: 'box', headlight: 'blue', number: 1 },
+    chassis: 'lamborghini-huracan',
+    car: { primary: 'verde-mantis', secondary: 'jet-black', livery: 'none',
+           wheelStyle: 'fivespoke', wheelColor: 'jet-black', spoiler: 'wing',
+           roofItem: 'none', headlight: 'blue', number: 1 },
     style: { gripUse: 0.65, brakeMargin: 0.96, lineBias: -0.6,
              wander: 0.38, wanderRate: 0.68, phase: 2.4, reaction: 5.2 },
   },
   {
     id: 'varga',
     name: 'Ines Varga',
-    chassis: 'cube-gt',
-    car: { primary: 'rose', secondary: 'ink', livery: 'stripes',
-           wheelStyle: 'fivespoke', wheelColor: 'offwhite', spoiler: 'ducktail',
+    chassis: 'ferrari-enzo',
+    car: { primary: 'giallo-modena', secondary: 'jet-black', livery: 'none',
+           wheelStyle: 'fivespoke', wheelColor: 'jet-black', spoiler: 'none',
            roofItem: 'none', headlight: 'cold', number: 17 },
     style: { gripUse: 0.66, brakeMargin: 1.0, lineBias: 0.3,
              wander: 0.28, wanderRate: 0.58, phase: 4.2, reaction: 6.0 },

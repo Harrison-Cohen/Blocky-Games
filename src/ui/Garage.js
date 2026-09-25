@@ -26,13 +26,17 @@ import * as THREE from 'three';
 import { buildCar, mountHeight } from '../game/CarBuilder.js';
 import { flat } from '../render/Materials.js';
 import { PAINTS, hexToCss } from '../data/palette.js';
-import { CHASSIS } from '../data/cars.js';
+import { CHASSIS, bodyCenter, gameSpecs } from '../data/cars.js';
 import {
   LIVERIES, WHEEL_STYLES, SPOILERS, ROOF_ITEMS, HEADLIGHT_COLORS, COLOUR_PRESETS,
   NUMBER_MIN, NUMBER_MAX, NUMBER_DIGITS, PRESET_NAME_MAX, USER_PRESET_MAX,
   normalizeCar, carAppearance, paintOf, presetFor, normalizePresets,
 } from '../data/customization.js';
-import { SPEEDO_STYLES, normalizeSpeedo, toMph } from './Speedo.js';
+import { SPEEDO_STYLES, normalizeSpeedo } from './Speedo.js';
+import { GRAPHICS_LEVELS, GEARBOX } from '../data/tuning.js';
+import { normalizeGraphicsLevel } from '../render/GraphicsLevel.js';
+import { voiceFor, normalizeTune, isStockTune, tunedChassis, stockTune } from '../game/Gearbox.js';
+import { straightLine } from '../game/Performance.js';
 
 // Radians per second. Slow enough to read the car, fast enough that you do not
 // wait for the far side to come round.
@@ -45,6 +49,21 @@ export const GEARBOX_MODES = [
   { id: 'auto', name: 'Automatic' },
   { id: 'manual', name: 'Manual' },
 ];
+
+// Settings that belong to the player rather than to a car: changing one does
+// not rebuild the car on the turntable.
+const PREF_KEYS = new Set(['speedo', 'gearbox', 'graphics']);
+
+// The gearbox tune (Gearbox.js): one row per gear, for the car with the most.
+// A car with fewer hides the rest, and a one-speed car has only its final
+// drive. Every car's tune is its own, like its paint.
+const ORDINALS = ['First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth'];
+const MAX_GEARS = Math.max(...CHASSIS.map((c) => voiceFor(c.id).gears));
+const GEAR_ROWS = [];
+for (let k = 1; k <= MAX_GEARS; k++) {
+  GEAR_ROWS.push({ key: `gear${k}`, gear: k, label: `${ORDINALS[k - 1] ?? `Gear ${k}`} gear runs to`, kind: 'stepper' });
+}
+const MPH = 2.236936;
 
 // The list, top to bottom. Sections are headings; everything else takes focus.
 const ITEMS = [
@@ -63,25 +82,35 @@ const ITEMS = [
   { key: 'roofItem', label: 'Roof item', kind: 'select' },
   { key: 'headlight', label: 'Headlights', kind: 'select' },
   { key: 'number', label: 'Driver number', kind: 'number' },
-  { section: 'Dashboard' },
-  { key: 'speedo', label: 'Speedometer', kind: 'select' },
+  { section: 'Gearbox' },
   { key: 'gearbox', label: 'Gearbox', kind: 'select' },
+  { key: 'finalDrive', label: 'Final drive', kind: 'stepper' },
+  { key: 'shiftUp', label: 'Automatic changes up at', kind: 'stepper' },
+  ...GEAR_ROWS,
+  { key: 'stockGearbox', label: 'Put the gearbox back to stock', kind: 'link' },
+  { section: 'Settings' },
+  { key: 'speedo', label: 'Speedometer', kind: 'select' },
+  { key: 'graphics', label: 'Graphics', kind: 'select' },
   { key: 'actions', kind: 'buttons' },
 ];
 const FIELDS = ITEMS.filter((it) => !it.section);
 
-// The chassis card. Each stat has a bar against the biggest of the five, so
-// the cars compare at a glance; the figure beside it is the real value.
+// The chassis card: what the car does in this game, which `npm run specs`
+// holds the physics to -- the real car's figures scaled by STREET in
+// tuning.js. Each has a bar against the best of the cars, so they compare at
+// a glance -- `lower` where less is better.
+// `perf` marks the three a gearbox tune moves: shown with the tune, they are the
+// car's figure moved by what the tune does to it in a measured standing start.
 const STATS = [
-  { label: 'Top speed', get: (c) => toMph(c.topSpeed), show: (v) => `${Math.round(v)} mph` },
-  { label: 'Power', get: (c) => c.power, show: (v) => `${(v / 1000).toFixed(1)} kN` },
-  { label: 'Grip front / rear', get: (c) => (c.gripFront + c.gripRear) / 2,
-    show: (v, c) => `${c.gripFront.toFixed(2)} / ${c.gripRear.toFixed(2)}` },
-  { label: 'Steering lock', get: (c) => c.steerRate, show: (v) => `${Math.round((v * 180) / Math.PI)}°` },
-  { label: 'Downforce', get: (c) => c.downforce, show: (v) => v.toFixed(1) },
-  { label: 'Grip off road', get: (c) => c.offroadGrip, show: (v) => v.toFixed(2) },
-  { label: 'Mass', get: (c) => c.mass, show: (v) => `${v} kg` },
-  { label: 'Centre of mass', get: (c) => c.centerOfMassHeight, show: (v) => `${v.toFixed(2)} m` },
+  { label: 'Top speed', get: (c) => gameSpecs(c).topSpeedMph, show: (v) => `${Math.round(v)} mph`, perf: 'topSpeedMph' },
+  { label: '0-60 mph', get: (c) => gameSpecs(c).zeroToSixty, show: (v) => `${v.toFixed(2)} s`, lower: true, perf: 'zeroToSixty' },
+  { label: 'Quarter mile', get: (c) => gameSpecs(c).quarterMile, show: (v) => `${v.toFixed(2)} s`, lower: true, perf: 'quarterMile' },
+  { label: 'Power', get: (c) => c.specs.hp, show: (v) => (v == null ? 'Not published' : `${v} hp`) },
+  { label: 'Weight', get: (c) => c.mass, show: (v) => `${v} kg`, lower: true },
+  { label: 'Cornering grip', get: (c) => gameSpecs(c).skidpadG, show: (v) => `${v.toFixed(2)} g` },
+  { label: 'Turning circle', get: (c) => gameSpecs(c).turningCircle, show: (v) => `${v.toFixed(1)} m`, lower: true },
+  { label: 'Weight front / rear', get: (c) => c.weightDistribution,
+    show: (v) => `${Math.round(v * 100)} / ${Math.round((1 - v) * 100)}`, bar: false },
 ];
 
 const isDigitKey = (code) => /^(Digit|Numpad)[0-9]$/.test(code);
@@ -96,6 +125,7 @@ export class Garage {
     this.nameEl = this.el.querySelector('.garage-car-name');
     this.blurbEl = this.el.querySelector('.garage-car-blurb');
     this.statsEl = this.el.querySelector('.garage-car-stats');
+    this.kickerEl = this.el.querySelector('.garage-card-kicker');
     this.buttons = [...this.el.querySelectorAll('.garage-btn')];
 
     this.visible = false;
@@ -106,7 +136,11 @@ export class Garage {
     this.cars = {};
     for (const c of CHASSIS) this.cars[c.id] = normalizeCar({ chassis: c.id });
     this.chassisId = CHASSIS[0].id;
-    this.prefs = { speedo: normalizeSpeedo(null), manual: false };
+    this.prefs = { speedo: normalizeSpeedo(null), manual: false, graphics: normalizeGraphicsLevel(null) };
+    this.tunes = {};
+    for (const c of CHASSIS) this.tunes[c.id] = stockTune(c.id);
+    this._stockPerf = {};
+    this._perfKey = null;
     this.presets = [];
     this._note = null;
     this._elapsed = 0;
@@ -127,6 +161,7 @@ export class Garage {
   }
 
   get car() { return this.cars[this.chassisId]; }
+  get tune() { return this.tunes[this.chassisId]; }
 
   // --- the turntable -------------------------------------------------------
 
@@ -185,6 +220,9 @@ export class Garage {
     // the wheels hang below it, so both need placing or the car floats.
     const mh = mountHeight(chassis);
     this.built.root.position.y = mh;
+    // A real car's body is not centred on its centre of mass; turn it about
+    // the middle of the body, so it does not swing round the turntable.
+    this.built.root.position.z = -bodyCenter(chassis);
     for (const w of this.built.wheels) w.position.y = chassis.wheelRadius - mh;
     this.turntable.add(this.built.root);
 
@@ -256,6 +294,31 @@ export class Garage {
         box.addEventListener('blur', () => { box.value = String(this.car.number); });
         li.append(box);
         this.numberInput = box;
+      } else if (it.kind === 'stepper') {
+        // A value stepped either way: left and right, or the two buttons.
+        const box = document.createElement('div');
+        box.className = 'garage-field garage-stepper';
+        const step = (d, sign, name) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.tabIndex = -1;
+          b.className = 'garage-step';
+          b.textContent = sign;
+          b.setAttribute('aria-label', `${name} ${it.label.toLowerCase()}`);
+          b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._focus(FIELDS.indexOf(it));
+            this._step(d);
+          });
+          return b;
+        };
+        const text = document.createElement('span');
+        text.className = 'garage-value-text';
+        box.append(step(-1, '−', 'Less'), text, step(1, '+', 'More'));
+        li.append(box);
+        li._text = text;
+      } else if (it.kind === 'link') {
+        label.classList.add('garage-link');
       } else if (it.kind === 'savePreset') {
         label.classList.add('garage-link');
         const name = document.createElement('input');
@@ -299,10 +362,86 @@ export class Garage {
       bar.className = 'garage-stat-bar';
       const fill = document.createElement('i');
       bar.append(fill);
+      bar.hidden = s.bar === false;
       row.append(dt, dd, bar);
       this.statsEl.append(row);
-      return { dd, fill, max: Math.max(...CHASSIS.map((c) => s.get(c))) || 1 };
+      const all = CHASSIS.map((c) => s.get(c));
+      return { row, dd, fill, best: (s.lower ? Math.min(...all) : Math.max(...all)) || 1 };
     });
+    if (!this.tuneNoteEl) {
+      this.tuneNoteEl = document.createElement('p');
+      this.tuneNoteEl.className = 'garage-card-note';
+      this.tuneNoteEl.textContent = 'Figures in orange are with this gearbox tune.';
+      this.statsEl.after(this.tuneNoteEl);
+    }
+  }
+
+  // --- the gearbox tune ------------------------------------------------------
+
+  _gears() { return voiceFor(this.chassisId).gears; }
+
+  // Rows that do not apply to this chassis are hidden: gears it does not have,
+  // and on a one-speed car the shift point and the gears altogether.
+  _shown(it) {
+    const n = this._gears();
+    if (it.gear) return n > 1 && it.gear <= n;
+    if (it.key === 'shiftUp') return n > 1;
+    return true;
+  }
+
+  _tuneText(it) {
+    const t = this.tune;
+    if (it.key === 'finalDrive') {
+      const pct = Math.round(Math.abs(t.finalDrive - 1) * 100);
+      return pct === 0 ? 'Stock' : `${pct}% ${t.finalDrive > 1 ? 'shorter' : 'longer'}`;
+    }
+    if (it.key === 'shiftUp') {
+      const rpm = Math.round((voiceFor(this.chassisId).redline * t.shiftUp) / 10) * 10;
+      return `${rpm.toLocaleString('en-US')} rpm`;
+    }
+    // Where the gear runs out: its share of the speed the engine runs out at,
+    // which the final drive moves.
+    const top = this.chassis.topSpeed / t.finalDrive;
+    return `${Math.round(t.tops[it.gear - 1] * top * MPH)} mph`;
+  }
+
+  // One step of a tune row. A gear stops at its neighbours rather than
+  // pushing them along.
+  _tuneStep(it, d) {
+    const t = this.tune, G = GEARBOX;
+    const next = { finalDrive: t.finalDrive, tops: t.tops.slice(), shiftUp: t.shiftUp };
+    const round = (v) => Math.round(v * 1000) / 1000;
+    if (it.key === 'finalDrive') next.finalDrive = round(t.finalDrive + d * G.finalDriveStep);
+    else if (it.key === 'shiftUp') next.shiftUp = round(t.shiftUp + d * G.shiftPointStep);
+    else {
+      const k = it.gear - 1, n = t.tops.length;
+      const lo = k === 0 ? G.firstGearMin : t.tops[k - 1] + G.gearGap;
+      const hi = k === n - 1 ? 1 : t.tops[k + 1] - G.gearGap;
+      next.tops[k] = Math.min(hi, Math.max(lo, t.tops[k] + d * G.gearStep));
+    }
+    this.tunes[this.chassisId] = normalizeTune(this.chassisId, next);
+    this._paint();
+  }
+
+  _resetTune() {
+    this.tunes[this.chassisId] = stockTune(this.chassisId);
+    this._paint();
+  }
+
+  // What the tune does to the car's standing start and top speed, against the
+  // same run on the stock gearbox. A few milliseconds, once per change.
+  _tuneDelta() {
+    const key = `${this.chassisId}|${JSON.stringify(this.tune)}`;
+    if (this._perfKey !== key) {
+      const base = this.chassis;
+      const stock = this._stockPerf[base.id] || (this._stockPerf[base.id] = straightLine(base));
+      const tuned = straightLine(tunedChassis(base, this.tune));
+      const d = {};
+      for (const k of ['topSpeedMph', 'zeroToSixty', 'quarterMile']) d[k] = (tuned[k] ?? stock[k]) - stock[k];
+      this._perfDelta = d;
+      this._perfKey = key;
+    }
+    return this._perfDelta;
   }
 
   // --- values --------------------------------------------------------------
@@ -310,8 +449,12 @@ export class Garage {
   _options(key) {
     switch (key) {
       case 'chassis': return CHASSIS.map((c) => ({ id: c.id, name: c.name }));
+      // This car's own factory colours first, then the general schemes, then
+      // the player's. Another car's factory colours are not offered.
       case 'preset': return [
-        ...COLOUR_PRESETS.map((p) => ({ id: p.id, name: p.name, paints: p })),
+        ...COLOUR_PRESETS.filter((p) => p.chassis === this.chassisId)
+          .map((p) => ({ id: p.id, name: p.name, paints: p, factory: true })),
+        ...COLOUR_PRESETS.filter((p) => !p.chassis).map((p) => ({ id: p.id, name: p.name, paints: p })),
         ...this.presets.map((p) => ({ id: p.id, name: p.name, paints: p, user: true })),
       ];
       case 'primary': case 'secondary': case 'wheelColor': return PAINTS;
@@ -322,6 +465,7 @@ export class Garage {
       case 'headlight': return HEADLIGHT_COLORS;
       case 'speedo': return SPEEDO_STYLES;
       case 'gearbox': return GEARBOX_MODES;
+      case 'graphics': return GRAPHICS_LEVELS;
       default: return [];
     }
   }
@@ -334,6 +478,7 @@ export class Garage {
     }
     if (key === 'speedo') return this.prefs.speedo;
     if (key === 'gearbox') return this.prefs.manual ? 'manual' : 'auto';
+    if (key === 'graphics') return this.prefs.graphics;
     return this.car[key];
   }
 
@@ -344,8 +489,9 @@ export class Garage {
       if (opt) Object.assign(this.car, paintOf(opt.paints));
     } else if (key === 'speedo') this.prefs.speedo = id;
     else if (key === 'gearbox') this.prefs.manual = id === 'manual';
+    else if (key === 'graphics') this.prefs.graphics = id;
     else this.car[key] = id;
-    if (key !== 'speedo' && key !== 'gearbox') this._rebuild();
+    if (!PREF_KEYS.has(key)) this._rebuild();
     this._paint();
   }
 
@@ -366,10 +512,16 @@ export class Garage {
   }
 
   _paint() {
+    const stock = isStockTune(this.chassisId, this.tune);
     FIELDS.forEach((it, i) => {
       const el = this.rowEls[i];
       el.classList.toggle('focused', i === this.index);
-      if (it.kind === 'select') {
+      if (it.kind !== 'buttons') el.hidden = !this._shown(it);
+      if (it.kind === 'stepper') {
+        el._text.textContent = this._tuneText(it);
+      } else if (it.kind === 'link') {
+        el.classList.toggle('stock', stock);
+      } else if (it.kind === 'select') {
         const id = this._get(it.key);
         const opt = this._options(it.key).find((o) => o.id === id);
         el._text.textContent = opt ? opt.name : 'Custom';
@@ -389,11 +541,17 @@ export class Garage {
     const c = this.chassis;
     this.nameEl.textContent = c.name;
     this.blurbEl.textContent = c.blurb;
+    this.kickerEl.textContent = c.specs ? `${c.specs.engine}, ${c.specs.drive.toLowerCase()}` : 'Chassis';
+    const delta = stock ? null : this._tuneDelta();
     STATS.forEach((s, k) => {
-      const v = s.get(c), el = this.statEls[k];
+      const moved = !!(delta && s.perf);
+      const v = s.get(c) + (moved ? delta[s.perf] : 0), el = this.statEls[k];
       el.dd.textContent = s.show(v, c);
-      el.fill.style.width = `${Math.max(3, (100 * v) / el.max).toFixed(1)}%`;
+      el.row.classList.toggle('tuned', moved);
+      const frac = s.lower ? el.best / v : v / el.best;
+      el.fill.style.width = `${Math.min(100, Math.max(3, 100 * frac)).toFixed(1)}%`;
     });
+    this.tuneNoteEl.hidden = stock;
   }
 
   // --- moving and editing ----------------------------------------------------
@@ -414,8 +572,11 @@ export class Garage {
     this.rowEls[i].scrollIntoView({ block: 'nearest' });
   }
 
+  // Skipping the rows this chassis does not have.
   _move(d) {
-    this._focus(this.index + d);
+    let i = this.index;
+    do { i = (i + d + FIELDS.length) % FIELDS.length; } while (!this._shown(FIELDS[i]));
+    this._focus(i);
     this._paint();
   }
 
@@ -429,6 +590,8 @@ export class Garage {
       this.numberInput.value = String(this.car.number);
       this._rebuild();
       this._paint();
+    } else if (it.kind === 'stepper') {
+      this._tuneStep(it, d);
     } else if (it.kind === 'select') {
       const opts = this._options(it.key);
       const at = opts.findIndex((o) => o.id === this._get(it.key));
@@ -452,7 +615,8 @@ export class Garage {
   _activate(pad = false) {
     const it = FIELDS[this.index];
     if (it.kind === 'select') this._openList();
-    else if (it.kind === 'number') this._move(1);
+    else if (it.kind === 'number' || it.kind === 'stepper') this._move(1);
+    else if (it.kind === 'link') this._resetTune();
     else if (it.kind === 'savePreset') {
       if (pad) this._savePreset('');
       else this._startNaming();
@@ -469,6 +633,8 @@ export class Garage {
       else this._openList();
     } else if (it.kind === 'savePreset' && !this.naming && !e.target.closest('input, button')) {
       this._startNaming();
+    } else if (it.kind === 'link') {
+      this._resetTune();
     }
     this._paint();
   }
@@ -503,7 +669,7 @@ export class Garage {
     let group = null;
     L.options.forEach((o, k) => {
       if (L.key === 'preset') {
-        const g = o.user ? 'Yours' : 'Presets';
+        const g = o.user ? 'Yours' : o.factory ? `${this.chassis.name} factory colours` : 'Presets';
         if (g !== group) {
           const h = document.createElement('div');
           h.className = 'garage-list-head';
@@ -520,6 +686,12 @@ export class Garage {
       const name = document.createElement('span');
       name.className = 'garage-option-name';
       name.textContent = o.name;
+      if (o.note) {
+        const note = document.createElement('small');
+        note.className = 'garage-option-note';
+        note.textContent = o.note;
+        name.append(note);
+      }
       row.append(chips, name);
       if (o.user) {
         const del = document.createElement('button');
@@ -663,12 +835,19 @@ export class Garage {
 
   // --- open, close, input --------------------------------------------------
 
-  // state: { chassis, cars: { [chassisId]: car }, speedo, manual, presets }
+  // state: { chassis, cars: { [chassisId]: car }, speedo, manual, graphics, presets,
+  //   tunes: { [chassisId]: tune } }
   open(state) {
     this.cars = {};
     for (const c of CHASSIS) this.cars[c.id] = normalizeCar({ ...(state.cars?.[c.id] || {}), chassis: c.id });
+    this.tunes = {};
+    for (const c of CHASSIS) this.tunes[c.id] = normalizeTune(c.id, state.tunes?.[c.id]);
     this.chassisId = CHASSIS.some((c) => c.id === state.chassis) ? state.chassis : CHASSIS[0].id;
-    this.prefs = { speedo: normalizeSpeedo(state.speedo), manual: !!state.manual };
+    this.prefs = {
+      speedo: normalizeSpeedo(state.speedo),
+      manual: !!state.manual,
+      graphics: normalizeGraphicsLevel(state.graphics),
+    };
     this.presets = normalizePresets(state.presets);
     this.visible = true;
     this.index = 0;
@@ -698,7 +877,8 @@ export class Garage {
     window.removeEventListener('keydown', this._onKeyDown);
     if (document.activeElement && this.el.contains(document.activeElement)) document.activeElement.blur();
     const result = save
-      ? { chassis: this.chassisId, cars: this.cars, speedo: this.prefs.speedo, manual: this.prefs.manual }
+      ? { chassis: this.chassisId, cars: this.cars, speedo: this.prefs.speedo, manual: this.prefs.manual,
+        graphics: this.prefs.graphics, tunes: this.tunes }
       : null;
     if (this.onClose) this.onClose(result);
   }
@@ -794,14 +974,18 @@ export class Garage {
     // and fitting the LENGTH vertically is what left the open-wheeler sitting
     // tiny in a screen full of empty turntable.
     const vHalf = Math.tan((this.camera.fov * Math.PI) / 360);
-    const dist = Math.max(this._span * 0.80 / (vHalf * aspect),
-      (this.chassis.bodyHeight + 0.7) * 0.62 / vHalf) + 1.1;
 
     // The car sits in the middle of the open space between the settings panel
-    // and the chassis card, wherever the layout has put them.
+    // and the chassis card, wherever the layout has put them, and is framed to
+    // fit that space rather than the whole window: framed to the window, a
+    // real car's five metres ran its nose under the card.
     const left = this.panelEl.getBoundingClientRect().right;
     const right = this.cardEl.getBoundingClientRect().left;
-    const offset = right > left + 100 ? ((left + right) * 0.5 - w * 0.5) / (w * 0.5) : 0;
+    const open = right > left + 100;
+    const free = open ? (right - left) / w : 1;
+    const offset = open ? ((left + right) * 0.5 - w * 0.5) / (w * 0.5) : 0;
+    const dist = Math.max(this._span * 0.56 / (vHalf * aspect * free),
+      (this.chassis.bodyHeight + 0.7) * 0.62 / vHalf) + 1.1;
     const shift = offset * dist * vHalf * aspect * 0.9;
     this.camera.position.set(-shift, this._focusY + dist * 0.23, dist * 0.96);
     this.camera.lookAt(-shift, this._focusY, 0);

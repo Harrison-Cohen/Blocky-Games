@@ -1,18 +1,16 @@
-// The race setup card and the race results screen.
+// The race results screen, and the Menu every card in the game is built on.
 //
-// Both are a list of rows with one focus, like the garage: up and down move
+// A Menu is a list of rows with one focus, like the garage: up and down move
 // between rows, left and right change a setting, Enter chooses a button, Esc
 // goes back. The buttons are rows too, so the gamepad never needs a cursor.
-// Milestone 9's track select screen takes over the setup; the settings and
-// their defaults are the same ones (RACE in tuning.js).
+// The race settings themselves live on the track select screen (Screens.js).
 
-import { RACE } from '../data/tuning.js';
 import { formatTime } from '../game/LapTimer.js';
 import { hexToCss } from '../data/palette.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-class Menu {
+export class Menu {
   constructor(el, listEl) {
     this.el = el;
     this.listEl = listEl;
@@ -20,26 +18,69 @@ class Menu {
     this.index = 0;
     this.visible = false;
     this.onBack = null;
+    // The pad's Start button: whatever the card means by it (the title
+    // screen starts, the pause card resumes). Unset, it does nothing.
+    this.onPadStart = null;
+    // Told whenever the focus lands on a row, with the row.
+    this.onFocus = null;
     this._onKeyDown = this._onKeyDown.bind(this);
   }
 
+  // A row is { label, value() , step(d) } for a setting, { label, action() }
+  // for a button, or { section } for a heading the focus passes over. `cls`
+  // adds classes to its line.
   setRows(rows, focus = 0) {
     this.rows = rows;
     this.index = clamp(focus, 0, rows.length - 1);
+    if (rows[this.index] && rows[this.index].section) this.index = this._next(this.index, 1);
     this.listEl.replaceChildren();
     rows.forEach((row, i) => {
       const li = document.createElement('li');
-      li.className = row.action ? 'race-row race-row-action' : 'race-row';
+      if (row.section) {
+        li.className = 'race-section';
+        li.textContent = row.section;
+        row._li = li;
+        this.listEl.append(li);
+        return;
+      }
+      // A row with a value is a line in a list, even when Enter on it does
+      // something (a track you can start on); one without is a button.
+      li.className = row.action && !row.value ? 'race-row race-row-action' : 'race-row';
+      if (row.cls) li.className += ` ${row.cls}`;
       const label = document.createElement('span');
       label.className = 'race-row-label';
       label.textContent = row.label;
       li.append(label);
-      if (!row.action) {
+      if (row.value) {
         row._value = document.createElement('span');
         row._value.className = 'race-row-value';
-        li.append(row._value);
+        // A setting gets a - and a + either side of its value, for the mouse.
+        if (row.step) {
+          const box = document.createElement('span');
+          box.className = 'race-stepper';
+          const btn = (text, d) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'race-step';
+            b.textContent = text;
+            b.tabIndex = -1;
+            b.addEventListener('click', (e) => { e.stopPropagation(); this.index = i; this._step(d); });
+            return b;
+          };
+          box.append(btn('\u2212', -1), row._value, btn('+', 1));
+          li.append(box);
+        } else {
+          li.append(row._value);
+        }
       }
-      li.addEventListener('click', () => { this.index = i; this._activate(); });
+      // A click on a list line that can also start something picks it first
+      // and starts it on the second click, so looking is not committing.
+      li.addEventListener('click', () => {
+        const again = this.index === i;
+        this.index = i;
+        if (row.value && row.action && !again) this.paint();
+        else this._activate();
+      });
       row._li = li;
       this.listEl.append(li);
     });
@@ -48,9 +89,23 @@ class Menu {
 
   paint() {
     this.rows.forEach((row, i) => {
+      if (row.section) return;
       row._li.classList.toggle('focused', i === this.index);
       if (row._value) row._value.textContent = row.value();
     });
+    const row = this.rows[this.index];
+    if (row && row._li.scrollIntoView) row._li.scrollIntoView({ block: 'nearest' });
+    if (this.onFocus && row) this.onFocus(row);
+  }
+
+  // The next row from i in direction d that the focus can land on.
+  _next(i, d) {
+    const n = this.rows.length;
+    for (let k = 1; k <= n; k++) {
+      const j = (i + d * k + n * k) % n;
+      if (!this.rows[j].section) return j;
+    }
+    return i;
   }
 
   show() {
@@ -67,7 +122,7 @@ class Menu {
     window.removeEventListener('keydown', this._onKeyDown);
   }
 
-  _move(d) { this.index = (this.index + d + this.rows.length) % this.rows.length; this.paint(); }
+  _move(d) { this.index = this._next(this.index, d); this.paint(); }
 
   _step(d) {
     const row = this.rows[this.index];
@@ -102,48 +157,8 @@ class Menu {
     if (m.right) this._step(1);
     if (m.confirm) this._activate();
     if (m.back && this.onBack) this.onBack();
+    else if (m.start && this.onPadStart) this.onPadStart();
   }
-}
-
-export class RaceSetup {
-  constructor(root) {
-    const el = root.querySelector('.race-setup');
-    this.menu = new Menu(el, el.querySelector('.race-rows'));
-    this.menu.onBack = () => this.close();
-    this.settings = null;
-    this.onStart = null;   // (settings) => void
-    this.onLeave = null;   // () => void, leave the race in progress
-    this.onClose = null;   // () => void, back to whatever was happening
-  }
-
-  get visible() { return this.menu.visible; }
-
-  open(settings, inRace) {
-    this.settings = { ...settings };
-    const s = this.settings;
-    const levels = Object.keys(RACE.levels);
-    const rows = [
-      { label: 'Laps', value: () => String(s.laps), step: (d) => { s.laps = clamp(s.laps + d, 1, 10); } },
-      { label: 'Opponents', value: () => String(s.opponents),
-        step: (d) => { s.opponents = clamp(s.opponents + d, 1, RACE.maxOpponents); } },
-      { label: 'Difficulty', value: () => RACE.levels[s.difficulty].name,
-        step: (d) => { s.difficulty = levels[(levels.indexOf(s.difficulty) + d + levels.length) % levels.length]; } },
-      { label: inRace ? 'Restart race' : 'Start race', action: () => { if (this.onStart) this.onStart({ ...s }); } },
-    ];
-    if (inRace) rows.push({ label: 'Leave race', action: () => { if (this.onLeave) this.onLeave(); } });
-    rows.push({ label: inRace ? 'Back to race' : 'Back to time trial', action: () => this.close() });
-    this.menu.setRows(rows, 3);
-    this.menu.show();
-  }
-
-  hide() { this.menu.hide(); }
-
-  close() {
-    this.menu.hide();
-    if (this.onClose) this.onClose();
-  }
-
-  handlePad(m) { this.menu.handlePad(m); }
 }
 
 export class RaceResults {
@@ -154,6 +169,7 @@ export class RaceResults {
     this.menu = new Menu(this.el, this.el.querySelector('.race-results-actions'));
     this.menu.onBack = () => { if (this.onLeave) this.onLeave(); };
     this.onAgain = null;
+    this.onTracks = null;
     this.onLeave = null;
     this._key = '';
   }
@@ -165,6 +181,7 @@ export class RaceResults {
     this.render(results, meta);
     this.menu.setRows([
       { label: 'Race again', action: () => { if (this.onAgain) this.onAgain(); } },
+      { label: 'Change track or settings', action: () => { if (this.onTracks) this.onTracks(); } },
       { label: 'Back to time trial', action: () => { if (this.onLeave) this.onLeave(); } },
     ], 0);
     this.menu.show();

@@ -26,6 +26,15 @@ const KEY_BINDINGS = {
 // button that was already held as a fresh press.
 const PAD_EDGES = new Set([9, 3, 2, 8, 1, 12, 5, 4, 13, 15]);
 
+// The two keyboard driving sets. In manual, the left and right keys of the set
+// you are NOT driving with are the shifters: right up, left down. Driving on
+// W A S D shifts on the arrows, driving on the arrows shifts on D and A.
+const SETS = {
+  wasd: { pedals: ['KeyW', 'KeyS'], left: 'KeyA', right: 'KeyD', up: 'D', down: 'A' },
+  arrows: { pedals: ['ArrowUp', 'ArrowDown'], left: 'ArrowLeft', right: 'ArrowRight', up: '→', down: '←' },
+};
+const OTHER = { wasd: 'arrows', arrows: 'wasd' };
+
 function deadzone(v, dz) {
   const a = Math.abs(v);
   if (a < dz) return 0;
@@ -58,17 +67,36 @@ export class Input {
       toggleDebug: false, results: false,
       garage: false, ghost: false, mute: false,
       manual: false, shiftUp: false, shiftDown: false, neutral: false,
+      // Player 2's, in two-player mode.
+      shiftUp2: false, shiftDown2: false, neutral2: false, cycleCamera2: false,
     };
 
     // Menu navigation, produced from the gamepad only. The keyboard half is
     // handled by whichever screen is open, because a menu wants key repeat and
     // digits and the driving path wants neither.
     // alt is X / square: deletes a preset of your own in the garage's list.
-    this.menu = { up: false, down: false, left: false, right: false, confirm: false, back: false, alt: false };
+    // start is Start: the title screen starts, the pause card resumes.
+    this.menu = { up: false, down: false, left: false, right: false, confirm: false, back: false, alt: false, start: false };
 
     // Set while a screen owns the input. Driving keys stop accumulating and
     // driving actions stop firing, but menu edges keep coming through.
     this.suspended = false;
+
+    // Manual gearbox on the keyboard. The game sets manualKeys when manual is
+    // switched on or off. The set you drive with is whichever one's throttle
+    // or brake you pressed last, and the other set's left and right shift.
+    this.manualKeys = false;
+    this.drivingSet = 'wasd';
+
+    // Two players, on the drag strip: W A S D and the first gamepad drive
+    // `state`, the arrows and the second gamepad drive `state2`. In manual,
+    // player 1 shifts on E and Q, player 2 on / and . with , for neutral.
+    this.twoPlayer = false;
+    this.state2 = {
+      throttle: 0, brake: 0, steer: 0, handbrake: 0,
+      steerIsAnalog: false, pedalsAreAnalog: false, manual: false, gear: 1,
+    };
+    this._prevButtons2 = [];
 
     this._prevButtons = [];
     this._stickLatch = 0;
@@ -104,11 +132,26 @@ export class Input {
     if (e.repeat || this.suspended) return;
     this.keys.add(e.code);
 
-    // Gearbox: B switches between automatic and manual; in manual, E shifts
-    // up, Q down, and X drops to neutral.
+    // The pedals you press say which set you are driving with.
+    if (SETS.wasd.pedals.includes(e.code)) this.drivingSet = 'wasd';
+    else if (SETS.arrows.pedals.includes(e.code)) this.drivingSet = 'arrows';
+
+    // Gearbox: B switches between automatic and manual. In manual the other
+    // set's right and left shift up and down, and X drops to neutral.
     if (e.code === 'KeyB') this.actions.manual = true;
-    if (e.code === 'KeyE') this.actions.shiftUp = true;
-    if (e.code === 'KeyQ') this.actions.shiftDown = true;
+    if (this.twoPlayer) {
+      // Each player's own shifters, clear of both sets of driving keys.
+      if (e.code === 'Slash') e.preventDefault(); // Firefox's quick find
+      if (e.code === 'KeyE') this.actions.shiftUp = true;
+      if (e.code === 'KeyQ') this.actions.shiftDown = true;
+      if (e.code === 'Slash') this.actions.shiftUp2 = true;
+      if (e.code === 'Period') this.actions.shiftDown2 = true;
+      if (e.code === 'Comma') this.actions.neutral2 = true;
+    } else if (this.manualKeys) {
+      const shifter = SETS[OTHER[this.drivingSet]];
+      if (e.code === shifter.right) this.actions.shiftUp = true;
+      if (e.code === shifter.left) this.actions.shiftDown = true;
+    }
     if (e.code === 'KeyX') this.actions.neutral = true;
 
     if (e.code === 'KeyG') this.actions.garage = true;
@@ -116,8 +159,8 @@ export class Input {
     if (e.code === 'Escape') this.actions.pause = true;
     if (e.code === 'KeyC') this.actions.cycleCamera = true;
     if (e.code === 'KeyV') this.actions.nextChassis = true;
-    // Until the track select screen exists, this is how you reach the other
-    // circuits. Same standing as V: a dev key, not the shipping way in.
+    // The next circuit where you stand. The track select screen is the way
+    // in; this is a shortcut for comparing tracks, with the same standing as V.
     if (e.code === 'KeyT') this.actions.nextTrack = true;
     if (e.code === 'KeyO') this.actions.rivals = true;
     if (e.code === 'KeyP') this.actions.autoDrive = true;
@@ -164,14 +207,27 @@ export class Input {
       this.keys.clear();
       s.throttle = 0; s.brake = 0; s.steer = 0; s.handbrake = 0;
       s.steerIsAnalog = false; s.pedalsAreAnalog = false;
+      const s2 = this.state2;
+      s2.throttle = 0; s2.brake = 0; s2.steer = 0; s2.handbrake = 0;
+      s2.steerIsAnalog = false; s2.pedalsAreAnalog = false;
       this._pollMenuPad();
       return s;
     }
 
+    if (this.twoPlayer) return this._pollTwo();
+
     // --- keyboard ---
     let kThrottle = this._held(KEY_BINDINGS.throttle) ? 1 : 0;
     let kBrake = this._held(KEY_BINDINGS.brake) ? 1 : 0;
-    let kSteer = (this._held(KEY_BINDINGS.right) ? 1 : 0) - (this._held(KEY_BINDINGS.left) ? 1 : 0);
+    let kSteer;
+    if (this.manualKeys) {
+      // In manual only the set you drive with steers: the other set's left
+      // and right are the shifters, and a shift must not also turn the car.
+      const set = SETS[this.drivingSet];
+      kSteer = (this.keys.has(set.right) ? 1 : 0) - (this.keys.has(set.left) ? 1 : 0);
+    } else {
+      kSteer = (this._held(KEY_BINDINGS.right) ? 1 : 0) - (this._held(KEY_BINDINGS.left) ? 1 : 0);
+    }
     let kHandbrake = this._held(KEY_BINDINGS.handbrake) ? 1 : 0;
 
     // --- gamepad ---
@@ -250,12 +306,71 @@ export class Input {
     return s;
   }
 
+  setTwoPlayer(on) {
+    this.twoPlayer = !!on;
+    const s = this.state2;
+    s.throttle = 0; s.brake = 0; s.steer = 0; s.handbrake = 0;
+    this._prevButtons2 = [];
+  }
+
+  // Two players: each has one keyboard set and, if there is one, a gamepad of
+  // their own, the first connected for player 1 and the second for player 2.
+  _pollTwo() {
+    const pads = [];
+    const all = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (const p of all) if (p && p.connected) pads.push(p);
+    this._drivePlayer(this.state, SETS.wasd, pads[0] || null, this._prevButtons, true);
+    this._drivePlayer(this.state2, SETS.arrows, pads[1] || null, this._prevButtons2, false);
+    return this.state;
+  }
+
+  _drivePlayer(s, set, pad, prev, first) {
+    let throttle = this.keys.has(set.pedals[0]) ? 1 : 0;
+    let brake = this.keys.has(set.pedals[1]) ? 1 : 0;
+    let steer = (this.keys.has(set.right) ? 1 : 0) - (this.keys.has(set.left) ? 1 : 0);
+    let handbrake = first && this.keys.has('Space') ? 1 : 0;
+    let steerAnalog = false, pedalAnalog = false;
+    if (pad) {
+      const raw = deadzone(pad.axes[0] ?? 0, INPUT.stickDeadzone);
+      if (raw) {
+        steer = Math.sign(raw) * Math.pow(Math.abs(raw), INPUT.steerGamma);
+        steerAnalog = true;
+      }
+      const value = (b) => (b ? (typeof b.value === 'number' ? b.value : (b.pressed ? 1 : 0)) : 0);
+      const gT = deadzone(value(pad.buttons[7]), INPUT.triggerDeadzone);
+      const gB = deadzone(value(pad.buttons[6]), INPUT.triggerDeadzone);
+      if (gT > 0 || gB > 0) { throttle = gT; brake = gB; pedalAnalog = true; }
+      handbrake = Math.max(handbrake, value(pad.buttons[0]));
+      const edge = (i) => {
+        const b = pad.buttons[i];
+        const now = !!(b && b.pressed);
+        const was = !!prev[i];
+        prev[i] = now;
+        return now && !was;
+      };
+      const A = this.actions;
+      if (edge(9)) A.pause = true; // Start
+      if (edge(5)) A[first ? 'shiftUp' : 'shiftUp2'] = true; // RB
+      if (edge(4)) A[first ? 'shiftDown' : 'shiftDown2'] = true; // LB
+      if (edge(13)) A[first ? 'neutral' : 'neutral2'] = true; // D-pad down
+      if (edge(2)) A[first ? 'cycleCamera' : 'cycleCamera2'] = true; // X
+      if (edge(3) && first) A.reset = true; // Y
+    }
+    s.steerIsAnalog = steerAnalog;
+    s.pedalsAreAnalog = pedalAnalog;
+    // The same one sign flip as poll(): see there.
+    s.steer = -steer;
+    s.throttle = throttle;
+    s.brake = brake;
+    s.handbrake = handbrake;
+  }
+
   // Menu edges. Read while a screen is open, from the d-pad, the left stick
   // and the face buttons. The stick is edge-triggered off a threshold so a
   // held stick steps one row rather than scrolling the whole list away.
   _pollMenuPad() {
     const m = this.menu;
-    m.up = m.down = m.left = m.right = m.confirm = m.back = m.alt = false;
+    m.up = m.down = m.left = m.right = m.confirm = m.back = m.alt = m.start = false;
 
     const pad = this._findGamepad();
     if (!pad) { this._stickLatch = 0; return; }
@@ -275,8 +390,9 @@ export class Input {
     if (edge(0)) m.confirm = true;
     if (edge(1)) m.back = true;
     if (edge(2)) m.alt = true;
+    if (edge(9)) m.start = true;
     for (let i = 0; i < pad.buttons.length; i++) {
-      if (i > 15 || i > 2 && i < 12) this._prevButtons[i] = pad.buttons[i].pressed;
+      if (i > 15 || i > 2 && i < 12 && i !== 9) this._prevButtons[i] = pad.buttons[i].pressed;
     }
 
     const x = pad.axes[0] ?? 0;
@@ -297,5 +413,11 @@ export class Input {
       return true;
     }
     return false;
+  }
+
+  // The keys that shift right now, as the on-screen hint should name them.
+  shiftKeyNames() {
+    const shifter = SETS[OTHER[this.drivingSet]];
+    return { up: shifter.up, down: shifter.down };
   }
 }

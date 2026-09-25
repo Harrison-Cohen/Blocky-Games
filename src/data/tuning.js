@@ -27,6 +27,16 @@ export const SIM = {
   maxFrameDelta: 0.25,
 
   gravity: 9.81,
+
+  // Mass, kg, that the spring, damper, brake and yaw stability numbers below
+  // are given for. A heavier car gets proportionally stiffer springs, firmer
+  // dampers, stronger brakes and more yaw stability, so every car sits at the
+  // same depth on its springs, is damped alike, can stop on its tyres rather
+  // than its brakes and settles after turn-in alike. On one shared set, a
+  // 1745 kg Mustang sat twice as deep as the Wedge One, stopped in twice the
+  // distance and swung its nose past the corner after turning in. 780 is the
+  // Wedge One. Range 600-2000.
+  referenceMass: 780,
 };
 
 export const INPUT = {
@@ -58,7 +68,9 @@ export const INPUT = {
 export const ENGINE = {
   // Shape of the power falloff with speed. Engine force is scaled by
   // (1 - (v/topSpeed)^falloff). 1 is linear and feels gutless up top, 3 keeps
-  // pull late and makes top speed abrupt. Range 1.5-4.
+  // pull late and makes top speed abrupt. A chassis can set its own
+  // (powerFalloff in cars.js); the real cars do, so their pull through the
+  // quarter mile matches the real car's. Range 1.5-4.
   powerFalloff: 2.4,
 
   // Global multiplier on every chassis's `power`. Same idea as GRIP's
@@ -76,7 +88,11 @@ export const ENGINE = {
   // low-speed acceleration feeling dead without inflating top-end power.
   // Range 1.0-2.0.
   launchBoost: 2.6,
-  launchSpeed: 14.0, // m/s over which launchBoost blends away. Range 4-20.
+  // m/s over which launchBoost blends away. It stands in for the low gears, so
+  // a chassis whose low gears reach further can set its own (launchSpeed in
+  // cars.js); the real cars do, tuned to their 0-60 and quarter mile.
+  // Range 4-20 here, up to 45 per chassis.
+  launchSpeed: 14.0,
 
   // The most of the driven axle's grip the throttle is allowed to use WHILE
   // CORNERING, leaving the rest to turn the car. 1 lets the throttle consume
@@ -123,10 +139,47 @@ export const ENGINE = {
   reverseThreshold: 1.2,
 };
 
+// The five real cars, made quicker for a game.
+//
+// Each real car in cars.js carries the real car's published figures. Driven
+// as the real cars, at 1 g and a 3-6 second 0-60, they felt heavy and slow
+// beside the Wedge One's 2 g. These scale all five by the same amount, so
+// each stays exactly as far from the others as the real cars are: the
+// Chevelle is still the slowest and loosest, the Huracan still the quickest
+// off the line. `npm run specs` holds every real car to its real figures
+// scaled by these (gameSpecs() in cars.js):
+//
+//   0-60 mph       the real time / accel
+//   quarter mile   the real time / sqrt(accel), the same car pulling accel x
+//   skidpad        the real g * grip
+//   turning circle the real circle / turn
+//   top speed is the real car's, unscaled
+//
+// The garage shows the scaled figures, since they are what the car does here.
+// Changing any of them moves the targets, not the cars: run
+// `node scripts/fit-specs.mjs` for the numbers to put back in cars.js, then
+// `npm run specs`.
+export const STREET = {
+  // Acceleration, as a multiple of the real car's. 1 is the real car.
+  // Range 1-2.2.
+  accel: 1.8,
+  // Cornering grip, as a multiple of the real car's skidpad. 1 is the real
+  // car; the Wedge One corners at about 2.1 g. At 1.45 the real cars went
+  // round a 23-33 m circle at 40 mph to the Wedge One's 17 m and felt clunky;
+  // at 1.8 the grippiest are about 1.9 g and the Chevelle 1.4 g. Range 1-2.2.
+  grip: 1.8,
+  // Steering lock, as a shrink of the real car's turning circle: 1.2 turns a
+  // 911's 11.2 m circle into 9.3 m, tighter than the Wedge One's 11.1 m. It
+  // decides hairpins and anything under about 20 mph; above that the grip
+  // above does. Range 1-1.4.
+  turn: 1.2,
+};
+
 export const BRAKES = {
-  // Peak braking force in Newtons at the tires, before grip limits it.
-  // 14000 N on a 1200 kg car is roughly 1.2 g, which is a firm sports brake.
-  // Range 6000-24000.
+  // Peak braking force in Newtons at the tires, before grip limits it, for a
+  // car of SIM.referenceMass; each car's scales with its mass. 14000 N on
+  // 780 kg is 1.8 g, so every car can brake to the limit of its tyres and
+  // grip decides how hard it stops. Range 6000-24000.
   maxForce: 14000,
 
   // Fraction of braking sent to the front axle. Real cars are 60-70% front.
@@ -142,7 +195,8 @@ export const BRAKES = {
   // reluctant to turn in. Range 0-1.
   proportioning: 1.0,
 
-  // Handbrake force on the rear axle only, Newtons. Range 3000-12000.
+  // Handbrake force on the rear axle only, Newtons, for a car of
+  // SIM.referenceMass and scaled with mass like maxForce. Range 3000-12000.
   handbrakeForce: 5200,
 };
 
@@ -288,7 +342,9 @@ export const STEERING = {
   // the car ran on sideways with D still held -- "it refuses to turn". Off
   // while the handbrake is on, so handbrake turns still rotate the car, and
   // faded in with speed, below. 0 is off. Higher is steadier and less lively.
-  // Range 0-20000.
+  // Given for a car of SIM.referenceMass and scaled with mass: a heavier car's
+  // tyres make proportionally more yaw torque, so one shared number steadied
+  // a Mustang half as much as the Wedge One. Range 0-20000.
   yawStability: 14000,
 
   // Speeds, m/s, over which yawStability fades in. The snap it cures is a
@@ -303,14 +359,17 @@ export const SUSPENSION = {
   // Spring rate per corner, Newtons per meter of compression. Higher is
   // stiffer, less body movement, more nervous over bumps. This is deliberately
   // soft: visible dive and roll is most of what sells the feel, and the body
-  // motion is the readout you steer by. Range 18000-70000.
+  // motion is the readout you steer by. Given for a car of SIM.referenceMass;
+  // each car's scales with its mass, so all of them sit alike. Range
+  // 18000-70000.
   springRate: 26000,
 
   // Damper rate per corner, Newtons per m/s of compression speed. Too low
   // floats and oscillates, too high goes wooden and skips over bumps.
-  // Critical is roughly 2 * sqrt(springRate * cornerMass), which at this
-  // spring rate lands near 5500 for a mid-weight car, so this is about 0.65
-  // critical: sporty, settles in one motion. Range 1800-8000.
+  // Critical is roughly 2 * sqrt(springRate * cornerMass), about 4500 for the
+  // reference car, so this is about 0.8 critical: sporty, settles in one
+  // motion. Scaled with mass like springRate, which keeps that ratio on every
+  // car. Range 1800-8000.
   damperRate: 3600,
 
   // Fallback resting spring length in meters, the gap between the suspension
@@ -420,6 +479,19 @@ export const CAMERA = {
   shakePerLanding: 0.025,
   // A faint rumble at top speed, metres at full speed. 0 is off. Range 0-0.03.
   speedRumble: 0.012,
+
+  // Behind the title and track select screens the camera flies the loaded
+  // track, down the middle of the road, in the direction of the lap.
+  // tourSpeed is m/s along the road (range 6-30). tourHeight is metres above
+  // the road (range 2.5-6; Harbor Nine's tunnel roof is at 7.4). tourLookAhead
+  // is how far up the road it looks, metres (range 15-60), tourLookSpring how
+  // fast the view turns into a corner (range 0.5-4, lower is lazier), and
+  // tourFov its field of view (range 45-75).
+  tourSpeed: 14,
+  tourHeight: 4.2,
+  tourLookAhead: 34,
+  tourLookSpring: 1.4,
+  tourFov: 58,
 };
 
 export const WORLD = {
@@ -628,6 +700,105 @@ export const GRAPHICS = {
 
   // How far past white a lit brake light goes, so it blooms. Range 1-5.
   brakeGlow: 3.2,
+};
+
+// ============================================================================
+// GRAPHICS LEVELS
+// ----------------------------------------------------------------------------
+// The garage's Graphics setting. Each level overrides some of the GRAPHICS and
+// WORLD values above; anything a level does not name keeps the value written
+// above. Ultra names nothing, so the blocks above are still the one place the
+// top end is tuned, and every other level is a set of steps down from it.
+//
+// Measured on the user's Mac at 2880 x 1800 with dynamic resolution off,
+// Ultra took 23.5 ms a frame on Copper Flats (25.7 ms on Harbor Nine). What
+// each thing cost on its own:
+//   ambient occlusion        ~9 ms    ao, aoScale
+//   4x MSAA                  ~9 ms    msaa (2x saves about a third of it)
+//   bloom                    ~6 ms    postFX (it has no switch of its own)
+//   pixel ratio 2 -> 1.5     ~3.6 ms  maxPixelRatio (2 -> 1 saves ~11 ms)
+//   16 lamps instead of 4    ~1.5 ms  lightPool, night tracks only
+//   headlight shadows, rival beams, shadow map size, prop shadows: under 1 ms
+// So the levels step down occlusion, MSAA and resolution first and leave the
+// shadows nearly alone. Dynamic resolution stays on at every level. As set
+// below they measured Low 3.5, Medium 10.6, High 19.8 and Ultra 23.9 ms on
+// Copper Flats, and 3.0, 10.5, 21.4 and 27.0 ms on Harbor Nine.
+// `note` is the line the garage shows under each name.
+// ============================================================================
+export const GRAPHICS_LEVELS = [
+  {
+    id: 'low',
+    name: 'Low',
+    note: 'Lower resolution, no post effects',
+    // No post chain at all: no occlusion, no bloom, no eye adaptation. The
+    // renderer still tone maps and anti-aliases the frame on its own.
+    graphics: {
+      postFX: false, shadowSoftness: 1.5, propShadows: false,
+      lightPool: 4, rivalHeadlights: 0, headlightShadows: false,
+    },
+    world: { maxPixelRatio: 1, shadowMapSize: 1024 },
+  },
+  {
+    id: 'medium',
+    name: 'Medium',
+    note: 'No ambient shading, smaller shadows',
+    // Ambient occlusion off, the single biggest cost, but bloom and 2x MSAA
+    // kept, at 1.5 pixels per point on a 2x display. Occlusion kept at a
+    // third of the screen measured 16.6 ms here, too close to High's 19.8.
+    graphics: {
+      ao: false, msaa: 2,
+      lightPool: 8, rivalHeadlights: 1, headlightShadows: false,
+    },
+    world: { maxPixelRatio: 1.5, shadowMapSize: 2048 },
+  },
+  {
+    id: 'high',
+    name: 'High',
+    note: 'Full resolution, lighter anti-aliasing',
+    // Occlusion worked out at 40% of the screen rather than half: about a
+    // third less of its cost, and soft shading shows no difference.
+    graphics: { msaa: 2, aoScale: 0.4, lightPool: 10, rivalHeadlights: 2 },
+    world: { shadowMapSize: 2048 },
+  },
+  {
+    id: 'ultra',
+    name: 'Ultra',
+    note: 'Everything at full quality',
+    // Nothing overridden: exactly the GRAPHICS and WORLD blocks above.
+    graphics: {},
+    world: {},
+  },
+];
+
+// The level a first launch uses, and what an unknown saved level falls back to.
+export const DEFAULT_GRAPHICS_LEVEL = 'ultra';
+
+// Drag racing, on a track with a `drag` block (src/game/Drag.js). Timed the
+// way a real dragway times a pass. (DRAG, above, is aerodynamic drag.)
+export const STRIP = {
+  // Seconds staged on the line before the tree starts. Range 0.5-4.
+  stageTime: 2.0,
+  // A full, sportsman tree: the three ambers light this far apart and the
+  // green comes this long after the last one. 0.5 is the real full tree.
+  // Range 0.3-0.6.
+  amberGap: 0.5,
+  // How far the front tyre rolls before the clock starts, metres: seven
+  // inches, the real rollout. Leaving the line before the green is a red
+  // light. Range 0-0.3.
+  rollout: 0.1778,
+  // Length of a speed trap, metres, ending at the mark it times: 66 feet, as
+  // a real strip's. Range 10-30.
+  trap: 20.1168,
+  // Seconds after the last car finishes before the time slip shows.
+  // Range 0.5-3.
+  slipDelay: 1.2,
+  // Seconds after the green a car has to finish in before its pass is no
+  // time. Range 15-60.
+  timeout: 30,
+  // How far past the centre line a car's front axle may stray, metres,
+  // before it has crossed into the other lane, which loses the race.
+  // Range 0.2-1.5.
+  centreLine: 0.6,
 };
 
 export const TIMING = {
@@ -853,12 +1024,18 @@ export const AI = {
   awareTime: 1.1,
 
   // Clear air a driver leaves beside a car it is passing, metres, on top of the
-  // two cars' half widths. Lower is closer racing and more rubbing. Range 0.3-1.5.
-  passGap: 0.7,
+  // two cars' half widths. Lower is closer racing and more rubbing. 0.7 was
+  // too close once the real cars were made quicker and the field ran nearer
+  // the Wedge One's pace: a Wedge caught in the pack on Pine Ridge rubbed for
+  // 5.7% of the race. 0.85 was too close again once they cornered harder
+  // (STREET.grip 1.8), at 9.3%. Range 0.3-1.5.
+  passGap: 1.0,
 
   // The closest a passing lane comes to the edge of the tarmac, metres, before
-  // the car's own half width. Range 0.3-2.
-  passEdge: 0.6,
+  // the car's own half width. At 0.6, with the real cars cornering harder, a
+  // car passing on the outside of Copper Flats' long left-hander ran the
+  // exit on the kerb for four seconds. Range 0.3-2.
+  passEdge: 1.0,
 
   // How fast a driver moves across into a passing lane, metres per second, and
   // how long it keeps to that lane once the car it was passing is out of its
@@ -867,9 +1044,10 @@ export const AI = {
   passHold: 1.2,
 
   // When there is no room to pass: the following distance kept, a fixed gap
-  // plus this many seconds at the current speed. Ranges 2-8, 0.15-0.6.
+  // plus this many seconds at the current speed. 0.45 with the harder
+  // cornering real cars, which close up in the corners. Ranges 2-8, 0.15-0.6.
   followGap: 4,
-  followTime: 0.3,
+  followTime: 0.45,
 
   // Whatever else a driver is doing -- passing included -- it never closes on
   // a car in its own path faster than it could brake to that car's speed in
@@ -898,8 +1076,8 @@ export const AI = {
 // RACE
 // ----------------------------------------------------------------------------
 // Race mode: the grid, the countdown, how hard the field is, and what happens
-// at the flag. The track select screen (milestone 9) will set laps, opponents
-// and difficulty; these are the defaults it starts from.
+// at the flag. The track select screen sets laps, opponents and difficulty;
+// these are the defaults it starts from before you have chosen any.
 // ============================================================================
 export const RACE = {
   // Defaults for a new race. Range 1-10, 1-7.
@@ -922,8 +1100,8 @@ export const RACE = {
 
   // What the difficulty is measured against: the lap this chassis would do on
   // this track at this gripUse, from its speed profile. That is a clean, quick
-  // Cube GT lap, the car a new player starts in.
-  referenceChassis: 'cube-gt',
+  // Porsche 911 lap, the car a new player starts in.
+  referenceChassis: 'porsche-911',
   referenceGrip: 0.66,
 
   // Difficulty. `pace` is the lap time each opponent is tuned to, as a
@@ -1086,8 +1264,11 @@ export const EFFECTS = {
   launchThrottle: 0.9,  // Range 0.5-1
   // ...and only while the rear tyres are being asked for at least this share
   // of their grip, so it follows the drive rather than the pedal: revving in
-  // neutral, or pulling away in a tall gear, leaves them clean. Range 0.5-1.
-  launchDriveUse: 0.9,
+  // neutral, or pulling away in a tall gear, leaves them clean. Every car
+  // launches at 1 and settles to 0.6-0.7 by walking pace; pulling away in
+  // top gear asks for 0.4 at most. 0.9 was right on the old, looser tyres and
+  // left a 911 on the new ones about 40 cm of marks. Range 0.45-1.
+  launchDriveUse: 0.55,
   // Launch smoke is its own finer haze. It is laid right under the chase
   // camera, where slide-sized smoke fills the screen.
   launchSmokeRate: 160,  // per second per rear wheel. Range 20-300
@@ -1109,14 +1290,19 @@ export const EFFECTS = {
 };
 
 // ============================================================================
-// GEARBOX (manual mode)
+// GEARBOX (manual mode, and the garage's gearbox tune)
 // ----------------------------------------------------------------------------
-// In automatic, the default, the physics has no gears and nothing here is
-// read. In manual (B, or the garage's Gearbox setting) the gear the player
-// picks decides how much of the drive force reaches the rear tyres, on the
+// In automatic, on a stock gearbox, the physics has no gears and nothing here
+// is read. In manual (B, or the garage's Gearbox setting) the gear the player
+// picks decides how much of the drive force reaches the tyres, on the
 // player's car only: the AI, auto drive and every check never set manual.
 // The ratios are AUDIO.firstGearTop and each voice's gear count below, so the
 // rev counter, the engine note and the drive all agree. See game/Gearbox.js.
+//
+// A tuned gearbox (the garage's Gearbox section, kept per chassis) drives
+// through its gears in automatic too: the physics changes gear at the tune's
+// shift point and pulls through the same bands as manual. The AI and every
+// check drive stock gearboxes.
 // ============================================================================
 export const GEARBOX = {
   // Fraction of the redline above which a gear pulls with the car's full
@@ -1133,6 +1319,42 @@ export const GEARBOX = {
   limiter: 0.97,
   limiterHz: 14,    // how fast the needle and the note bounce on it. Range 6-25
   limiterDip: 0.05, // how far each bounce drops the revs, fraction of the redline. Range 0-0.12
+
+  // --- the gearbox tune -----------------------------------------------------
+  // Final drive, as a multiple of the stock ratio. A shorter one (above 1)
+  // multiplies the torque at the wheels, so the drive force rises by it, and
+  // spins the engine faster at every road speed, so the speed the engine runs
+  // out at falls by it: more pull wherever the tyres can take it -- mostly
+  // above 80 mph, since every car is grip limited below that -- and a lower top
+  // speed. A longer one is the reverse. The garage steps it by finalDriveStep.
+  // Range: min 0.6-1, max 1-1.5, step 0.01-0.1.
+  finalDriveMin: 0.8,
+  finalDriveMax: 1.25,
+  finalDriveStep: 0.05,
+  // Where each gear runs out, as a fraction of the speed the engine runs out
+  // at, stepped by gearStep. Neighbouring gears are kept at least gearGap
+  // apart and first gear no shorter than firstGearMin; top gear can be no
+  // taller than 1. Range: step 0.005-0.03, gap 0.01-0.1, first 0.04-0.15.
+  gearStep: 0.01,
+  gearGap: 0.03,
+  firstGearMin: 0.06,
+  // Where the automatic changes up, a fraction of the redline (AUDIO.shiftUp
+  // is stock). Low and every upshift drops the revs out of pullBand and the
+  // car bogs; the top is kept below `limiter`, or the automatic would sit on
+  // the limiter and never change up. Changes down move with it. Range: min
+  // 0.6-0.8, max below limiter, step 0.005-0.05.
+  shiftPointMin: 0.7,
+  shiftPointMax: 0.96,
+  shiftPointStep: 0.01,
+  // A tuned gearbox's engine has a power curve: full power at powerPeak of
+  // the redline, falling away either side as 1 - powerDrop * (revs - peak)^2
+  // -- 0.8 of peak at pullBand and 0.93 at the redline, as set. A tuned car
+  // pulls by its power at its own revs over its power at the stock gearbox's,
+  // so ratios and a shift point that keep the revs near the peak gain a
+  // little on stock, and ones that drop them low lose more. A stock gearbox
+  // never reads this. Range: peak 0.7-0.95, drop 1-6.
+  powerPeak: 0.85,
+  powerDrop: 3.2,
 };
 
 // ============================================================================
@@ -1183,12 +1405,20 @@ export const AUDIO = {
   // Each chassis's voice. cylinders set the firing frequency (rpm / 60 *
   // cylinders / 2), burble the lumpy chop at idle a big V8 has and a four
   // cylinder does not.
+  // The real cars have their real engine layout, idle, redline and gear
+  // count. firstGearTop, where given, replaces the one above for that car.
   voices: {
-    'cube-gt':      { cylinders: 4, idle: 950, redline: 7400, gears: 6, burble: 0.12 },
-    'boxhauler-v8': { cylinders: 8, idle: 700, redline: 6200, gears: 5, burble: 0.35 },
-    'wedge-one':    { cylinders: 10, idle: 1400, redline: 11500, gears: 7, burble: 0.06 },
-    'haul-4x4':     { cylinders: 6, idle: 650, redline: 5200, gears: 5, burble: 0.28 },
-    'bighead':      { cylinders: 3, idle: 1000, redline: 6800, gears: 5, burble: 0.4 },
+    // First gear runs to about 40 mph, eighth is an overdrive it never tops out.
+    'porsche-911':         { cylinders: 6, idle: 850, redline: 7500, gears: 8, burble: 0.12, firstGearTop: 0.138 },
+    'mustang-gt':          { cylinders: 8, idle: 700, redline: 7500, gears: 6, burble: 0.32, firstGearTop: 0.225 },
+    // A Muncie four-speed: first to about 56 mph, top runs out near top speed.
+    'chevelle-ss':         { cylinders: 8, idle: 750, redline: 6000, gears: 4, burble: 0.45, firstGearTop: 0.375 },
+    'ferrari-enzo':        { cylinders: 12, idle: 1000, redline: 8200, gears: 6, burble: 0.04, firstGearTop: 0.171 },
+    'lamborghini-huracan': { cylinders: 10, idle: 1000, redline: 8500, gears: 7, burble: 0.08, firstGearTop: 0.157 },
+    // Electric: one gear to top speed, no idle, and a motor whine at `whine`
+    // times the motor speed in place of firing pulses (Audio.js).
+    'tesla-roadster':      { electric: true, whine: 3, cylinders: 0, idle: 0, redline: 18000, gears: 1, burble: 0, firstGearTop: 1 },
+    'wedge-one':           { cylinders: 10, idle: 1400, redline: 11500, gears: 7, burble: 0.06 },
   },
   defaultVoice: { cylinders: 4, idle: 900, redline: 7000, gears: 6, burble: 0.15 },
 

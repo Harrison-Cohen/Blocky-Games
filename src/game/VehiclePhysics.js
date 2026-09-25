@@ -19,7 +19,7 @@
 // ============================================================================
 
 import { SIM, INPUT, ENGINE, BRAKES, DRAG, GRIP, STEERING, SUSPENSION, BARRIER } from '../data/tuning.js';
-import { manualDrive, voiceFor } from './Gearbox.js';
+import { manualDrive, voiceFor, autoGear } from './Gearbox.js';
 
 const FL = 0, FR = 1, RL = 2, RR = 3;
 // Body axes: +x LEFT, +y up, +z forward. See setChassis() for why x is left.
@@ -74,6 +74,13 @@ function rollPenalty(lf, rf) {
 export function speedGripLoad(chassis, v) {
   const r = v / GRIP.speedGripRef;
   return chassis.mass * SIM.gravity * GRIP.speedGrip * r * r;
+}
+
+// A car's spring rate per corner. SUSPENSION.springRate is for a car of
+// SIM.referenceMass and scales with mass, so every car sits at the same depth
+// on its springs. Exported for everything that stands a car at rest.
+export function springRate(chassis) {
+  return SUSPENSION.springRate * chassis.mass / SIM.referenceMass;
 }
 
 function surfaceMult(surface, chassis) {
@@ -138,6 +145,8 @@ export class VehiclePhysics {
     // on the fixed clock and cannot vary with display refresh rate.
     this.steer = 0; this.throttle = 0; this.brake = 0; this.handbrakeBlend = 0;
     this.steerAngleUsed = 0;
+    // The gear a tuned gearbox is in, in automatic. See the drive, below.
+    this.autoGear = 1;
 
     this.compression = [0, 0, 0, 0];
     this.cornerLoad = [0, 0, 0, 0];
@@ -225,6 +234,12 @@ export class VehiclePhysics {
     const sinR = Math.sin(this.roll), cosR = Math.cos(this.roll);
     const sinY = Math.sin(this.yaw), cosY = Math.cos(this.yaw);
 
+    // Springs, dampers, brakes and yaw stability scale with the car's mass:
+    // SIM.referenceMass.
+    const massK = m / SIM.referenceMass;
+    const spring = SUSPENSION.springRate * massK;
+    const damper = SUSPENSION.damperRate * massK;
+
     let totalSpringForce = 0;
     let groundedCount = 0;
     let offTarmac = 0;
@@ -295,10 +310,10 @@ export class VehiclePhysics {
         continue;
       }
 
-      let f = SUSPENSION.springRate * comp - SUSPENSION.damperRate * mountVy;
+      let f = spring * comp - damper * mountVy;
       if (comp > SUSPENSION.maxTravel) {
         // Bump stop. Stops a hard landing from punching the body through the road.
-        f += SUSPENSION.springRate * SUSPENSION.bumpStopRate * (comp - SUSPENSION.maxTravel);
+        f += spring * SUSPENSION.bumpStopRate * (comp - SUSPENSION.maxTravel);
       }
       f = Math.max(f, 0); // a spring can push, never pull
 
@@ -477,19 +492,19 @@ export class VehiclePhysics {
 
     if (this.throttle > 0) {
       const frac = clamp(absLong / c.topSpeed, 0, 1);
-      const powerFactor = Math.max(0, 1 - Math.pow(frac, ENGINE.powerFalloff));
-      const launch = 1 + (ENGINE.launchBoost - 1) * (1 - smoothstep(0, ENGINE.launchSpeed, absLong));
+      const powerFactor = Math.max(0, 1 - Math.pow(frac, c.powerFalloff ?? ENGINE.powerFalloff));
+      const launch = 1 + (ENGINE.launchBoost - 1) * (1 - smoothstep(0, c.launchSpeed ?? ENGINE.launchSpeed, absLong));
       driveForce = c.power * ENGINE.powerScale * this.throttle * powerFactor * launch;
     }
 
     if (this.brake > 0) {
       if (this.vLong > ENGINE.reverseThreshold) {
-        brakeForce = -BRAKES.maxForce * this.brake;
+        brakeForce = -BRAKES.maxForce * massK * this.brake;
       } else if (this.vLong > -c.topSpeed * 0.35) {
         // Standing still or already rolling back: brake becomes reverse.
         driveForce = -c.power * ENGINE.powerScale * ENGINE.reverseFactor * this.brake;
       } else {
-        brakeForce = BRAKES.maxForce * this.brake; // slowing a reverse
+        brakeForce = BRAKES.maxForce * massK * this.brake; // slowing a reverse
       }
     }
 
@@ -517,18 +532,34 @@ export class VehiclePhysics {
         GRIP.peakSlipAngle * ENGINE.launchFade, Math.abs(slipRear));
       const allowance = ENGINE.tractionLimit +
         (ENGINE.launchTraction - ENGINE.tractionLimit) * straight;
-      const driveCap = maxLatRear * allowance;
-      driveForce = clamp(driveForce, -driveCap, driveCap); // rear drive
+      // All-wheel drive (`awd` in cars.js): both axles' tyres push, so the cap
+      // is both axles' grip, and the force is shared between them in
+      // proportion to it -- which also leaves the front less to steer with
+      // under power, as a real four-wheel-drive car has. Everything else is
+      // driven through the rear.
+      const driveGrip = c.awd ? maxLatFront + maxLatRear : maxLatRear;
+      const driveCap = driveGrip * allowance;
+      driveForce = clamp(driveForce, -driveCap, driveCap);
 
       // Manual gearbox, the player's car only. The chosen gear passes some
       // fraction of the force the tyres would take -- after the traction cap,
       // or every gear would launch the same, grip limited, car. Reverse is
       // still the brake pedal's, in any gear but neutral. Nothing without
       // `input.manual` set (the AI, auto drive, every check) reaches this.
+      //
+      // A tuned gearbox (`gearing`, from tunedChassis in Gearbox.js) drives
+      // through its gears in automatic as well, changing gear here, on the
+      // fixed clock, at its own shift point. A stock chassis has no `gearing`
+      // and never reaches that branch, so every untuned car is unchanged.
+      const gearing = c.gearing;
+      const frac = absLong / c.topSpeed;
       if (input.manual) {
         driveForce *= driveForce > 0
-          ? manualDrive(voiceFor(c.id), input.gear, absLong / c.topSpeed)
+          ? manualDrive(gearing || voiceFor(c.id), input.gear, frac)
           : (input.gear >= 1 ? 1 : 0);
+      } else if (gearing) {
+        this.autoGear = this.vLong < -0.5 ? 1 : autoGear(gearing, this.autoGear, frac);
+        if (driveForce > 0) driveForce *= manualDrive(gearing, this.autoGear, frac);
       }
       this.driveUse = driveCap > 1 ? clamp(driveForce / driveCap, 0, 1) : 0;
 
@@ -546,10 +577,11 @@ export class VehiclePhysics {
       let hb = 0;
       if (this.handbrakeBlend > 0 && absLong > 0.4) {
         // The handbrake is a rear-axle force that ignores the bias entirely.
-        hb = -Math.sign(this.vLong) * BRAKES.handbrakeForce * this.handbrakeBlend;
+        hb = -Math.sign(this.vLong) * BRAKES.handbrakeForce * massK * this.handbrakeBlend;
       }
-      longFront = bf;
-      longRear = driveForce + br + hb;
+      const frontDrive = c.awd && driveGrip > 1 ? driveForce * (maxLatFront / driveGrip) : 0;
+      longFront = bf + frontDrive;
+      longRear = driveForce - frontDrive + br + hb;
       brakeForce = bf + br + hb;
     } else {
       driveForce = 0;
@@ -595,7 +627,7 @@ export class VehiclePhysics {
     const v2 = Math.max(this.vLong * this.vLong + this.vLat * this.vLat, 1);
     const pathRate = (this.vLong * aLat - this.vLat * aLong) / v2;
     const stability = this.airborne ? 0
-      : STEERING.yawStability * (1 - this.handbrakeBlend)
+      : STEERING.yawStability * massK * (1 - this.handbrakeBlend)
         * smoothstep(STEERING.yawStabilityFrom, STEERING.yawStabilityFull, speed);
 
     // The +vLat*yawRate / -vLong*yawRate terms are the rotating-frame
@@ -628,9 +660,17 @@ export class VehiclePhysics {
     // Roll. Positive roll drops the +x side, which is the car's LEFT. So a
     // right-hand corner (lateral acceleration toward -x) rolls positive, and
     // the car leans out of the turn as it should.
+    //
+    // The cornering force leans the body about its roll centre (`rollCentre`
+    // in cars.js, metres up from the ground), not the ground, so the lever is
+    // the height between the two. Here that is also all the weight transfer
+    // there is: a real roll centre passes the rest through the suspension
+    // links, and the real cars here corner far harder than their bodies could
+    // -- at 1.9 g a 911 transferred more than its inside wheels carried and
+    // cornered on two. A car without one leans about the ground, unchanged.
     const rollTorque =
       rollSpringTorque -
-      aLat * m * c.centerOfMassHeight -
+      aLat * m * (c.centerOfMassHeight - (c.rollCentre ?? 0)) -
       SUSPENSION.rollDamping * this.rollRate;
     this.rollRate += (rollTorque / SUSPENSION.rollInertia) * dt;
     this.roll = clamp(this.roll + this.rollRate * dt, -SUSPENSION.maxRoll, SUSPENSION.maxRoll);

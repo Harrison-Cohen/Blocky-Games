@@ -164,7 +164,9 @@ export class SoundEngine {
     }
     const v = s.voice;
     const rev = clamp01((s.rpm - v.idle) / Math.max(1, v.redline - v.idle));
-    const fire = (s.rpm / 60) * (v.cylinders / 2);
+    // An electric motor has no firing pulses: its note is the whine of the
+    // motor and its inverter, `whine` times the motor's speed.
+    const fire = v.electric ? (s.rpm / 60) * v.whine : (s.rpm / 60) * (v.cylinders / 2);
     this.oscA.frequency.setTargetAtTime(fire, t, k);
     this.oscB.frequency.setTargetAtTime(fire / 2, t, k);
     // Once every two turns of the crank: the cam, and the lope of a big engine.
@@ -175,6 +177,8 @@ export class SoundEngine {
       AUDIO.filterBase + AUDIO.filterRange * Math.pow(rev, 1.3) * (0.4 + 0.6 * load), t, k);
     let level = AUDIO.engineGain * (AUDIO.engineOffGain + (1 - AUDIO.engineOffGain) * load) * (0.65 + 0.35 * rev);
     if (s.shifting) level *= AUDIO.shiftDip;
+    // Standing still, an electric car makes no sound at all.
+    if (v.electric) level *= clamp01(rev * 6);
     this.engineGain.gain.setTargetAtTime(level, t, s.shifting ? 0.01 : k);
 
     const slide = clamp01((s.slip - AUDIO.scrubStart) / (AUDIO.scrubFull - AUDIO.scrubStart)) * clamp01(s.speed / 8);

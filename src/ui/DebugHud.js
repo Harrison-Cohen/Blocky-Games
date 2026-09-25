@@ -4,13 +4,16 @@
 
 import { SIM } from '../data/tuning.js';
 import { toMph } from './Speedo.js';
+import { load, save } from '../core/Storage.js';
 
 export class DebugHud {
   constructor(root) {
     this.el = document.createElement('div');
     this.el.className = 'debug-hud';
     root.appendChild(this.el);
-    this.visible = true;
+    // Shown until you hide it, and hidden from then on until you show it.
+    this.visible = load('telemetry', true) !== false;
+    this.el.hidden = !this.visible;
     this._acc = 0;
     this._frames = 0;
     this._fps = 0;
@@ -20,6 +23,7 @@ export class DebugHud {
   toggle() {
     this.visible = !this.visible;
     this.el.hidden = !this.visible;
+    save('telemetry', this.visible);
   }
 
   update(vehicle, loop, camera, frameDelta, track, scene) {

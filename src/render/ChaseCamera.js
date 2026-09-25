@@ -9,7 +9,8 @@
 
 import * as THREE from 'three';
 import { CAMERA } from '../data/tuning.js';
-import { bodyLift } from '../game/CarBuilder.js';
+import { bodyLift, cockpitEye } from '../game/CarBuilder.js';
+import { realTopSpeed } from '../data/cars.js';
 
 export const CAMERA_MODES = ['Chase', 'Cockpit', 'Far chase'];
 
@@ -57,6 +58,50 @@ export class ChaseCamera {
     return CAMERA_MODES[this.mode];
   }
 
+  // Behind the title and track select screens: fly the track down the middle
+  // of the road at CAMERA.tourSpeed, looking up it. `from` (metres along the
+  // centreline) starts a new tour; after that it carries on where it was.
+  // Returns the point it is looking at, for the shadows to follow.
+  tour(track, dt, from = null) {
+    const L = track.length;
+    if (from !== null || this._tourS === undefined || this._tourTrack !== track) {
+      this._tourS = from ?? track.startSample * track.ds - 60;
+      this._tourTrack = track;
+      this._tourLook = null;
+    }
+    this._tourS = (((this._tourS + CAMERA.tourSpeed * dt) % L) + L) % L;
+    const at = (s, out) => {
+      const f = (((s % L) + L) % L) / track.ds;
+      const i = Math.floor(f) % track.count, j = (i + 1) % track.count, u = f - Math.floor(f);
+      out.set(track.px[i] + (track.px[j] - track.px[i]) * u,
+        track.py[i] + (track.py[j] - track.py[i]) * u,
+        track.pz[i] + (track.pz[j] - track.pz[i]) * u);
+      return out;
+    };
+    at(this._tourS, this._idealPos);
+    this._idealPos.y += CAMERA.tourHeight;
+    at(this._tourS + CAMERA.tourLookAhead, this._idealLook);
+    this._idealLook.y += 1;
+    if (!this._tourLook) this._tourLook = this._idealLook.clone();
+    else {
+      const k = CAMERA.tourLookSpring;
+      this._tourLook.x = smoothTo(this._tourLook.x, this._idealLook.x, k, dt);
+      this._tourLook.y = smoothTo(this._tourLook.y, this._idealLook.y, k, dt);
+      this._tourLook.z = smoothTo(this._tourLook.z, this._idealLook.z, k, dt);
+    }
+    this.camera.position.copy(this._idealPos);
+    this.camera.up.set(0, 1, 0);
+    this.camera.lookAt(this._tourLook);
+    if (this.camera.fov !== CAMERA.tourFov) {
+      this.camera.fov = CAMERA.tourFov;
+      this.camera.updateProjectionMatrix();
+    }
+    // Back behind the car with a cut, not a sweep across the map.
+    this._initialized = false;
+    this.fov = CAMERA.fovMin;
+    return this._tourLook;
+  }
+
   // state:   interpolated render state from VehiclePhysics.interpolate()
   // speed:   current speed in m/s
   // chassis: the car being driven. Needed for its top speed, so the FOV ramp
@@ -65,7 +110,7 @@ export class ChaseCamera {
   // physics: optional, the car's VehiclePhysics, for the direction it is
   //          actually travelling in -- see CAMERA.velocityFollow.
   update(state, speed, chassis, dt, physics = null) {
-    const speedFrac = Math.min(speed / Math.max(chassis.topSpeed, 1), 1);
+    const speedFrac = Math.min(speed / Math.max(realTopSpeed(chassis), 1), 1);
     const sinY = Math.sin(state.yaw), cosY = Math.cos(state.yaw);
 
     this._shakeTime += dt;
@@ -80,10 +125,12 @@ export class ChaseCamera {
 
     if (this.mode === 1) {
       // Cockpit. Rigid to the body, so pitch and roll are felt directly.
-      // The eye is placed from this chassis's own dimensions: high in the cab
-      // of the truck, down in the tub of the open wheeler.
-      const eyeY = bodyLift(chassis) + CAMERA.cockpitLift + chassis.bodyHeight * CAMERA.cockpitHeightFrac;
-      const eyeZ = chassis.bodyLength * CAMERA.cockpitForwardFrac;
+      // A real car's eye is where its driver's is (CarBuilder's SHAPES); the
+      // open wheeler's is worked out from its body box, down in the tub.
+      const eye = cockpitEye(chassis);
+      const eyeY = eye ? eye.y
+        : bodyLift(chassis) + CAMERA.cockpitLift + chassis.bodyHeight * CAMERA.cockpitHeightFrac;
+      const eyeZ = eye ? eye.z : chassis.bodyLength * CAMERA.cockpitForwardFrac;
       const px = state.x + eyeZ * sinY;
       const pz = state.z + eyeZ * cosY;
       // Positive pitch is nose UP in the model, so the eye -- ahead of the

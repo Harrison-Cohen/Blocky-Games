@@ -1,7 +1,9 @@
 # Racing game
 
-Blocky 3D browser racing sim. Time trial and race against AI opponents.
-Five tracks, five chassis, customizable cars, precise lap timing.
+Blocky 3D browser racing sim. Time trial, race against AI opponents, and a
+drag strip for one or two players (split screen). Six tracks (one a drag
+strip), seven chassis (six modelled on real cars), customizable cars, precise
+lap and drag timing.
 
 Full spec is in PROMPT.md. Read it before starting new work on a milestone.
 
@@ -21,11 +23,13 @@ npm run timing  # lap timing, sectors and the validation rules
 npm run parts   # no car part floats or is sealed inside another; cars sit on hills
 npm run ai      # the racing line is a racing line, and the AI laps it clean
 npm run race    # a full field races every track to the flag, cleanly
-npm run fx      # the ghost replays exactly, the gearbox never hunts, skid marks sit on the road
+npm run fx      # the ghost replays exactly, the gearbox never hunts, a gearbox tune is felt, skid marks sit on the road
+npm run specs   # every real car does its 0-60, quarter mile, top speed, grip and turning circle (real, scaled by STREET)
+npm run drag    # drag passes are timed right: reaction, splits, ET, trap speed, red lights and fouls
 ```
 
 The check scripts run headless against the real Track, VehiclePhysics and
-CarBuilder, with no browser and no renderer. Run all seven before calling a
+CarBuilder, with no browser and no renderer. Run all nine before calling a
 milestone done.
 
 ## Stack
@@ -54,7 +58,8 @@ any package, including dev dependencies.
 - AI cars run the same `VehiclePhysics` as the player and are driven by an
   input layer. Never move an AI car by interpolating it along a spline.
 - Cosmetic customization never changes handling. Chassis is the only thing
-  that changes stats.
+  that changes stats, apart from the garage's gearbox tune (final drive, gear
+  ratios, shift point), which is kept per chassis apart from the cosmetics.
 
 ## Look and feel
 

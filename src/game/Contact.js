@@ -59,7 +59,9 @@ function closest(p1x, p1z, q1x, q1z, p2x, p2z, q2x, q2z) {
   return hit;
 }
 
-// cars: [{ physics, halfLen, halfWid }]. Sets physics.inContact and raises
+// cars: [{ physics, halfLen, halfWid, offset }], offset being how far the
+// body's middle sits ahead of the centre of mass (0 if left out). Sets
+// physics.inContact and raises
 // physics.contactSpeed, the closing speed of the hardest hit, for anything that
 // wants to shake the camera or play a thump. Returns the number of contacts.
 export function resolveContacts(cars, dt) {
@@ -71,17 +73,22 @@ export function resolveContacts(cars, dt) {
     for (let j = i + 1; j < cars.length; j++) {
       const B = cars[j], pb = B.physics;
       if (Math.abs(pa.y - pb.y) > CONTACT.maxHeight) continue;
+      const sa = Math.sin(pa.yaw), ca = Math.cos(pa.yaw);
+      const sb = Math.sin(pb.yaw), cb = Math.cos(pb.yaw);
+      // The middle of each body, which on a car with real overhangs is not
+      // its centre of mass; see bodyCenter in cars.js.
+      const oa = A.offset || 0, ob = B.offset || 0;
+      const ax = pa.x + sa * oa, az = pa.z + ca * oa;
+      const bx = pb.x + sb * ob, bz = pb.z + cb * ob;
       const reach = A.halfLen + B.halfLen + CONTACT.pad * 2;
-      const cdx = pa.x - pb.x, cdz = pa.z - pb.z;
+      const cdx = ax - bx, cdz = az - bz;
       if (cdx * cdx + cdz * cdz > reach * reach) continue;
 
       const ra = A.halfWid + CONTACT.pad, rb = B.halfWid + CONTACT.pad;
       const ha = Math.max(0, A.halfLen - A.halfWid), hb = Math.max(0, B.halfLen - B.halfWid);
-      const sa = Math.sin(pa.yaw), ca = Math.cos(pa.yaw);
-      const sb = Math.sin(pb.yaw), cb = Math.cos(pb.yaw);
       const c = closest(
-        pa.x - sa * ha, pa.z - ca * ha, pa.x + sa * ha, pa.z + ca * ha,
-        pb.x - sb * hb, pb.z - cb * hb, pb.x + sb * hb, pb.z + cb * hb);
+        ax - sa * ha, az - ca * ha, ax + sa * ha, az + ca * ha,
+        bx - sb * hb, bz - cb * hb, bx + sb * hb, bz + cb * hb);
       let nx = c.ax - c.bx, nz = c.az - c.bz;
       const d = Math.hypot(nx, nz);
       const overlap = ra + rb - d;

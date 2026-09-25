@@ -16,7 +16,7 @@ import { AIDriver } from '../ai/AIDriver.js';
 import { SpeedProfile } from '../ai/SpeedProfile.js';
 import { Standings } from '../ai/Standings.js';
 import { resolveContacts } from '../game/Contact.js';
-import { getChassis } from '../data/cars.js';
+import { getChassis, bodyCenter } from '../data/cars.js';
 import { RACE, AI, SUSPENSION } from '../data/tuning.js';
 
 const IDLE = { throttle: 0, brake: 0, steer: 0, handbrake: 0, steerIsAnalog: true, pedalsAreAnalog: true };
@@ -58,7 +58,7 @@ export class Race {
     this.level = RACE.levels[settings.difficulty] ?? RACE.levels.club;
     this.difficulty = settings.difficulty;
 
-    // Tune every opponent to a lap time. The reference is a clean Cube GT lap
+    // Tune every opponent to a lap time. The reference is a clean 911 lap
     // on this track; the difficulty sets how far off it the field runs, and
     // each driver's own style moves them a little either side of that.
     const refChassis = getChassis(RACE.referenceChassis);
@@ -84,6 +84,7 @@ export class Race {
       isPlayer: false,
       halfLen: f.chassis.bodyLength / 2,
       halfWid: f.chassis.bodyWidth / 2,
+      offset: bodyCenter(f.chassis),
       driver: new AIDriver(track, line, f.chassis, {
         name: f.spec.name, ...f.spec.style, gripUse, speedScale, brakeMargin,
         mistakeRate: this.level.mistakes, seed: 1000 + k * 7919,
@@ -94,6 +95,7 @@ export class Race {
       id: 'player', name: player.name, number: player.number, color: player.color,
       chassis: player.chassis, physics: player.physics, isPlayer: true,
       halfLen: player.chassis.bodyLength / 2, halfWid: player.chassis.bodyWidth / 2,
+      offset: bodyCenter(player.chassis),
       driver: null,
     };
     this.entries.push(this.player);

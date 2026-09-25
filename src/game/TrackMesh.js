@@ -75,6 +75,9 @@ export class TrackMesh {
     this._buildBarriers();
     this._buildBridges();
     this._buildStartLine();
+    // A drag strip's tree of lights; the game switches its lamps.
+    this.dragTree = null;
+    if (track.data.drag) this._buildDrag();
     this._buildProps();
 
     // The track never moves. Three.js otherwise walks this whole subtree every
@@ -621,6 +624,65 @@ export class TrackMesh {
     this.group.add(gantry);
   }
 
+  // A drag strip's own furniture, from its `drag` block: the finish line, a
+  // line at the eighth mile, and the tree of start lights standing between
+  // the lanes just past the start line. Each lit lamp is a mesh of its own
+  // that the game shows and hides (Game._updateDrag); an unlit one sits
+  // behind it.
+  _buildDrag() {
+    const t = this.track;
+    const d = t.data.drag;
+    const m = new THREE.Matrix4();
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    const at = (metres) => (t.startSample + Math.round(metres / t.ds)) % t.count;
+    const line = (metres, colour, depth) => {
+      const i = at(metres);
+      const mesh = new THREE.Mesh(geo, flat(colour, { offset: 2 }));
+      this._basis(i, m, 0, 0.015, t.halfWidth[i] * 2, 0.03, depth);
+      mesh.applyMatrix4(m);
+      mesh.receiveShadow = true;
+      this.group.add(mesh);
+    };
+    line(d.distance, 0xedede7, 0.6);
+    if (d.distance > 201.168) line(201.168, 0xb9b7ae, 0.3);
+
+    const i = at(6);
+    const tree = new THREE.Group();
+    tree.position.set(t.px[i], t.heightAtSample(i, 0), t.pz[i]);
+    tree.rotation.y = Math.atan2(t.tx[i], t.tz[i]);
+    // Which way the group's +x points, the track's left or its right, so each
+    // lane's column of lamps stands on that lane's side.
+    const left = Math.sign(t.tz[i] * t.lx[i] - t.tx[i] * t.lz[i]) || 1;
+    const box = (w, h, dd, x, y, z, mat, shadow = true) => {
+      const b = new THREE.Mesh(geo, mat);
+      b.scale.set(w, h, dd);
+      b.position.set(x, y, z);
+      b.castShadow = shadow;
+      tree.add(b);
+      return b;
+    };
+    box(0.22, 1.6, 0.22, 0, 0.8, 0, flat(0x55524c));
+    box(0.62, 1.9, 0.30, 0, 2.5, 0, flat(0x1a1c20));
+    // Top to bottom, facing the cars: stage, three ambers, green, red.
+    const lamps = [['stage', 0xffffff], ['amber', 0xffb020], ['amber', 0xffb020],
+      ['amber', 0xffb020], ['green', 0x3cff8a], ['red', 0xff3020]];
+    const out = { stage: [], ambers: [[], [], []], green: [], red: [] };
+    const off = flat(0x2c2e33);
+    lamps.forEach(([kind, hex], row) => {
+      const y = 3.25 - row * 0.3;
+      for (const k of [0, 1]) {
+        const x = left * (k === 0 ? 0.15 : -0.15);
+        box(0.18, 0.18, 0.04, x, y, -0.16, off, false);
+        const lit = box(0.2, 0.2, 0.05, x, y, -0.17, flat(hex, { emissive: hex, glow: 2.2 }), false);
+        lit.visible = false;
+        if (kind === 'amber') out.ambers[row - 1].push(lit);
+        else out[kind].push(lit);
+      }
+    });
+    this.group.add(tree);
+    this.dragTree = out;
+  }
+
   // --- scenery -------------------------------------------------------------
   //
   // Scenery is DATA. A prop spec in a track file is a list of boxes with
@@ -805,6 +867,14 @@ export class TrackMesh {
     return buckets;
   }
 
+  // GRAPHICS.propShadows changed with the graphics level: the scenery a track
+  // opted out of shadows follows it, without rebuilding the track.
+  applyShadows() {
+    for (const m of this.propMeshes) {
+      if (m.userData.optionalShadow) m.castShadow = GRAPHICS.propShadows;
+    }
+  }
+
   _buildProps() {
     const specs = this.track.data.props || [];
     this.propMeshes = [];
@@ -868,6 +938,9 @@ export class TrackMesh {
             mesh.computeBoundingSphere();
             // Something that gives off light does not also cast a shadow.
             mesh.castShadow = shadow && !look.unlit && !look.emissive;
+            // Opted out by the track, so it follows GRAPHICS.propShadows when
+            // the graphics level changes; see applyShadows.
+            mesh.userData.optionalShadow = spec.shadow === false && !look.unlit && !look.emissive;
             mesh.receiveShadow = true;
             this.group.add(mesh);
             this.propMeshes.push(mesh);

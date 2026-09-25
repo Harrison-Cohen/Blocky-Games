@@ -58,7 +58,29 @@ export const NUMBER_DIGITS = 4;
 // Named paint schemes: primary, secondary and wheel colour that go together.
 // Ids from palette.js, like everything else the garage stores. The player can
 // save their own alongside these; see normalizePresets.
+//
+// The first ones are each real car's own factory colours, tied to it by
+// `chassis`: the garage offers them only for that car, and first. The rest
+// are general schemes any car can wear.
 export const COLOUR_PRESETS = [
+  { id: '911-guards-red', name: 'Guards red', chassis: 'porsche-911', primary: 'guards-red', secondary: 'jet-black', wheelColor: 'gt-silver' },
+  { id: '911-miami-blue', name: 'Miami blue', chassis: 'porsche-911', primary: 'miami-blue', secondary: 'jet-black', wheelColor: 'jet-black' },
+  { id: '911-gt-silver', name: 'GT silver', chassis: 'porsche-911', primary: 'gt-silver', secondary: 'jet-black', wheelColor: 'gt-silver' },
+  { id: 'mustang-race-red', name: 'Race red', chassis: 'mustang-gt', primary: 'race-red', secondary: 'jet-black', wheelColor: 'jet-black' },
+  { id: 'mustang-grabber-blue', name: 'Grabber blue', chassis: 'mustang-gt', primary: 'grabber-blue', secondary: 'jet-black', wheelColor: 'jet-black' },
+  { id: 'mustang-oxford-white', name: 'Oxford white', chassis: 'mustang-gt', primary: 'offwhite', secondary: 'jet-black', wheelColor: 'jet-black' },
+  { id: 'chevelle-lemans-blue', name: 'LeMans blue', chassis: 'chevelle-ss', primary: 'lemans-blue', secondary: 'offwhite', wheelColor: 'gt-silver' },
+  { id: 'chevelle-tuxedo-black', name: 'Tuxedo black', chassis: 'chevelle-ss', primary: 'jet-black', secondary: 'offwhite', wheelColor: 'gt-silver' },
+  { id: 'chevelle-daytona-yellow', name: 'Daytona yellow', chassis: 'chevelle-ss', primary: 'daytona-yellow', secondary: 'jet-black', wheelColor: 'gt-silver' },
+  { id: 'enzo-rosso-corsa', name: 'Rosso Corsa', chassis: 'ferrari-enzo', primary: 'rosso-corsa', secondary: 'jet-black', wheelColor: 'gt-silver' },
+  { id: 'enzo-giallo-modena', name: 'Giallo Modena', chassis: 'ferrari-enzo', primary: 'giallo-modena', secondary: 'jet-black', wheelColor: 'jet-black' },
+  { id: 'enzo-nero', name: 'Nero', chassis: 'ferrari-enzo', primary: 'jet-black', secondary: 'rosso-corsa', wheelColor: 'gt-silver' },
+  { id: 'huracan-verde-mantis', name: 'Verde Mantis', chassis: 'lamborghini-huracan', primary: 'verde-mantis', secondary: 'jet-black', wheelColor: 'jet-black' },
+  { id: 'huracan-arancio-borealis', name: 'Arancio Borealis', chassis: 'lamborghini-huracan', primary: 'arancio-borealis', secondary: 'jet-black', wheelColor: 'jet-black' },
+  { id: 'huracan-bianco-monocerus', name: 'Bianco Monocerus', chassis: 'lamborghini-huracan', primary: 'offwhite', secondary: 'jet-black', wheelColor: 'jet-black' },
+  { id: 'roadster-red', name: 'Red Multi-Coat', chassis: 'tesla-roadster', primary: 'red-multicoat', secondary: 'jet-black', wheelColor: 'jet-black' },
+  { id: 'roadster-silver', name: 'Midnight Silver', chassis: 'tesla-roadster', primary: 'midnight-silver', secondary: 'jet-black', wheelColor: 'jet-black' },
+  { id: 'roadster-white', name: 'Pearl White', chassis: 'tesla-roadster', primary: 'pearl-white', secondary: 'jet-black', wheelColor: 'gt-silver' },
   { id: 'signal', name: 'Signal', primary: 'signal', secondary: 'ink', wheelColor: 'ink' },
   { id: 'stealth', name: 'Stealth', primary: 'ink', secondary: 'signal', wheelColor: 'ink' },
   { id: 'hornet', name: 'Hornet', primary: 'acid', secondary: 'ink', wheelColor: 'ink' },
@@ -74,14 +96,18 @@ export const COLOUR_PRESETS = [
   { id: 'moss', name: 'Moss', primary: 'lime', secondary: 'ink', wheelColor: 'sand' },
 ];
 
-// Each chassis starts in its own scheme, so the five cars are five different
-// cars before anyone opens the garage.
+// Each chassis starts in its own scheme -- the real cars in their best known
+// factory colour -- so the cars are different cars before anyone opens the
+// garage.
 export const CHASSIS_PRESET = {
-  'cube-gt': 'signal',
-  'boxhauler-v8': 'hornet',
+  'porsche-911': '911-guards-red',
+  'mustang-gt': 'mustang-race-red',
+  'chevelle-ss': 'chevelle-lemans-blue',
+  'ferrari-enzo': 'enzo-rosso-corsa',
+  'lamborghini-huracan': 'huracan-verde-mantis',
+  // Red Multi-Coat: the colour the second-generation Roadster was shown in.
+  'tesla-roadster': 'roadster-red',
   'wedge-one': 'ultraviolet',
-  'haul-4x4': 'desert-rally',
-  'bighead': 'bubblegum',
 };
 
 export const PRESET_NAME_MAX = 24;
@@ -169,10 +195,19 @@ export function paintOf(src) {
   return { primary: src.primary, secondary: src.secondary, wheelColor: src.wheelColor };
 }
 
+// What a chassis starts with besides its paint: the stripes a Mustang and an
+// SS are known for.
+const CHASSIS_LOOK = {
+  'mustang-gt': { livery: 'stripes' },
+  'chevelle-ss': { livery: 'stripes' },
+};
+
 // A chassis nobody has painted yet wears its own scheme from CHASSIS_PRESET.
 export function defaultCarFor(chassisId) {
   const preset = COLOUR_PRESETS.find((p) => p.id === CHASSIS_PRESET[chassisId]);
-  return normalizeCar({ ...DEFAULT_CAR, ...(preset ? paintOf(preset) : {}), chassis: chassisId });
+  return normalizeCar({
+    ...DEFAULT_CAR, ...(CHASSIS_LOOK[chassisId] || {}), ...(preset ? paintOf(preset) : {}), chassis: chassisId,
+  });
 }
 
 // `legacy` is the single car older versions saved for whichever chassis was in
@@ -218,9 +253,12 @@ export function normalizePresets(raw) {
   return out;
 }
 
-// The preset a car's paint is, the built-in ones first, or null if it is a
-// scheme of its own.
+// The preset a car's paint is -- that car's own factory colours first, then
+// the general schemes, then the player's -- or null if it is a scheme of its
+// own. Another car's factory colours never name this one's paint.
 export function presetFor(car, userPresets = []) {
   const same = (p) => PAINT_KEYS.every((k) => p[k] === car[k]);
-  return COLOUR_PRESETS.find(same) ?? userPresets.find(same) ?? null;
+  return COLOUR_PRESETS.find((p) => p.chassis === car.chassis && same(p))
+    ?? COLOUR_PRESETS.find((p) => !p.chassis && same(p))
+    ?? userPresets.find(same) ?? null;
 }

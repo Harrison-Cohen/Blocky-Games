@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Racing game</title>
+    <title>Full Lock</title>
     <!-- Inline so it costs no request and cannot 404. -->
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230E1A2B'/%3E%3Crect x='5' y='13' width='22' height='8' fill='%23FF7A1A'/%3E%3Crect x='9' y='9' width='12' height='5' fill='%23FF7A1A'/%3E%3Crect x='7' y='21' width='5' height='4' fill='%23EDEDE7'/%3E%3Crect x='20' y='21' width='5' height='4' fill='%23EDEDE7'/%3E%3C/svg%3E" />
     <link rel="preload" href="/fonts/martian-mono-latin-var.woff2" as="font" type="font/woff2" crossorigin />
@@ -32,6 +32,28 @@
           <div class="speedo-classic" hidden><canvas class="speedo-canvas"></canvas></div>
         </div>
       </div>
+
+      <!-- Player 2's dashboard, bottom right of the lower half in a two-player
+           drag race. The same markup, so the same ui/Speedo.js drives it. -->
+      <div class="dash dash-p2" hidden>
+        <div class="speedo">
+          <span class="speedo-mode">Auto</span>
+          <div class="speedo-digital">
+            <div class="rev-bar"></div>
+            <div class="digi-row">
+              <span class="digi-gear">N</span>
+              <span class="digi-speed">0</span>
+              <span class="digi-unit">mph</span>
+              <span class="digi-rpm">0 rpm</span>
+            </div>
+          </div>
+          <div class="speedo-classic" hidden><canvas class="speedo-canvas"></canvas></div>
+        </div>
+      </div>
+
+      <!-- The drag strip: each lane's tree of lights and its clock. Built by
+           ui/DragScreens.js. -->
+      <div class="drag-hud" hidden></div>
 
       <!-- Lap timing. Populated by ui/HUD.js; the markup lives here so the
            first frame has something laid out rather than popping in. -->
@@ -69,6 +91,7 @@
         </div>
         <ol class="results-laps"></ol>
         <p class="results-empty">No laps yet. Cross the line to start timing.</p>
+        <ul class="race-rows results-actions"></ul>
         <div class="controls-foot">
           <p class="controls-dev">Tab closes this.</p>
         </div>
@@ -97,13 +120,6 @@
         </aside>
       </section>
 
-      <!-- Race setup. The rows are built by ui/RaceScreens.js. -->
-      <section class="race-setup" hidden>
-        <h1>Race</h1>
-        <ul class="race-rows"></ul>
-        <p class="race-hint">Up and down pick a setting, left and right change it. Enter chooses. Esc goes back.</p>
-      </section>
-
       <section class="race-results" hidden>
         <h1>Race results</h1>
         <p class="race-results-sub"></p>
@@ -112,6 +128,56 @@
           <tbody></tbody>
         </table>
         <ul class="race-rows race-results-actions"></ul>
+      </section>
+
+      <!-- The drag strip's time slip. ui/DragScreens.js. -->
+      <section class="drag-slip" hidden>
+        <h1>Time slip</h1>
+        <p class="drag-slip-head"></p>
+        <p class="race-results-sub drag-slip-sub"></p>
+        <table class="race-table drag-table">
+          <thead><tr></tr></thead>
+          <tbody></tbody>
+        </table>
+        <ul class="race-rows drag-slip-actions"></ul>
+      </section>
+
+      <!-- The screens between drives: title, pause and track select. The rows
+           are built by ui/Screens.js; the controls card below moves into
+           whichever of the title and pause is showing it. -->
+      <section class="menu-screen title-screen" hidden>
+        <div class="menu-panel">
+          <h1 class="title-name">Full Lock</h1>
+          <p class="menu-sub title-tag">Blocky cars, real weight, one clock.</p>
+          <ul class="race-rows"></ul>
+          <p class="race-hint">Up and down to choose, Enter to go. On a gamepad, the d-pad and A.</p>
+        </div>
+      </section>
+
+      <section class="menu-screen pause-screen" hidden>
+        <div class="menu-panel">
+          <h1>Paused</h1>
+          <p class="menu-sub"></p>
+          <ul class="race-rows"></ul>
+          <p class="race-hint">Esc, or Start on a gamepad, goes back to driving.</p>
+        </div>
+      </section>
+
+      <section class="track-select" hidden>
+        <div class="menu-panel ts-panel">
+          <h1 class="ts-title">Time trial</h1>
+          <p class="menu-sub ts-sub"></p>
+          <ul class="race-rows ts-rows"></ul>
+          <p class="race-hint">Up and down pick, left and right change a setting, Enter on a track starts it. Esc goes back.</p>
+        </div>
+        <aside class="ts-card">
+          <h2 class="ts-name"></h2>
+          <p class="ts-blurb"></p>
+          <canvas class="ts-map" width="560" height="340"></canvas>
+          <dl class="ts-facts"></dl>
+          <h3 class="ts-bests-head">Best laps</h3>
+          <ol class="ts-bests"></ol>
+        </aside>
       </section>
 
       <section class="controls-card" hidden>
@@ -129,12 +195,15 @@
               <dt>Tab</dt><dd>Session results</dd>
               <dt>G</dt><dd>Garage</dd>
               <dt>P</dt><dd>Auto drive</dd>
-              <dt>N</dt><dd>Race</dd>
+              <dt>N</dt><dd>Track select, to start a race or a drag race</dd>
               <dt>H</dt><dd>Ghost car</dd>
               <dt>M</dt><dd>Mute</dd>
               <dt>B</dt><dd>Manual gearbox on or off</dd>
-              <dt>E / Q</dt><dd>Shift up / down in manual</dd>
+              <dt>→ / ←</dt><dd>Shift up / down in manual, driving on W A S D</dd>
+              <dt>D / A</dt><dd>Shift up / down in manual, driving on the arrows</dd>
               <dt>X</dt><dd>Neutral in manual</dd>
+              <dt>E / Q</dt><dd>Two-player drag: player 1 shifts up / down</dd>
+              <dt>/ and .</dt><dd>Two-player drag: player 2 shifts up / down, comma neutral</dd>
             </dl>
           </div>
           <div>
@@ -154,14 +223,8 @@
             </dl>
           </div>
         </div>
-        <div class="volume-row">
-          <label for="volume">Volume</label>
-          <input id="volume" class="volume-slider" type="range" min="0" max="100" step="1" value="70" />
-          <span class="volume-value">70</span>
-        </div>
         <div class="controls-foot">
-          <p class="controls-dev">V swaps chassis, T swaps track, O toggles the AI car. Backtick hides the telemetry panel.</p>
-          <p class="controls-go">Press any key to drive</p>
+          <p class="controls-dev">Shortcuts: V swaps chassis, T swaps track, O toggles the pace car. Backtick shows or hides the telemetry panel.</p>
         </div>
       </section>
     </div>

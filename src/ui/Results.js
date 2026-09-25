@@ -10,6 +10,7 @@
 // question the panel should answer rather than raise.
 
 import { formatTime, formatDelta } from '../game/LapTimer.js';
+import { Menu } from './RaceScreens.js';
 
 export class Results {
   constructor(root) {
@@ -18,9 +19,32 @@ export class Results {
     this.possibleEl = root.querySelector('.results-possible');
     this.listEl = root.querySelector('.results-laps');
     this.emptyEl = root.querySelector('.results-empty');
+    this.footEl = this.el.querySelector('.controls-foot');
+    this.titleEl = this.el.querySelector('h1');
+    // Only at the end of a session: the one way on from here.
+    this.menu = new Menu(this.el, this.el.querySelector('.results-actions'));
     this.visible = false;
     this._builtFor = -1;
   }
+
+  // Leaving a time trial with laps on the board: the same card, as the
+  // session's results, until you choose to go on.
+  showEnd(timer, track, onContinue) {
+    const go = () => { this.close(); onContinue(); };
+    this.visible = true;
+    this.el.hidden = false;
+    this.titleEl.textContent = `Session results, ${track}`;
+    this.footEl.hidden = true;
+    this.render(timer, true);
+    this.menu.onBack = go;
+    this.menu.onPadStart = go;
+    this.menu.setRows([{ label: 'Continue', action: go }], 0);
+    this.menu.show();
+  }
+
+  get ending() { return this.menu.visible; }
+
+  handlePad(m) { this.menu.handlePad(m); }
 
   toggle(timer) {
     this.visible = !this.visible;
@@ -32,6 +56,12 @@ export class Results {
   close() {
     this.visible = false;
     this.el.hidden = true;
+    if (this.menu.visible) {
+      this.menu.hide();
+      this.menu.listEl.replaceChildren();
+      this.titleEl.textContent = 'Session';
+      this.footEl.hidden = false;
+    }
   }
 
   render(timer, force = false) {
