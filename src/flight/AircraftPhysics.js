@@ -1,0 +1,527 @@
+// ============================================================================
+// AircraftPhysics
+// ----------------------------------------------------------------------------
+// A rigid body flown by lift, drag, thrust and gravity. Pure state and plain
+// numbers: no Three.js, no DOM, no allocation in step(). Testable in Node.
+//
+// Frame: the same as the car bodies. Body axes +x LEFT, +y up, +z nose. The
+// world has +y up, north +z, east -x. Orientation is a unit quaternion
+// (body -> world) and the angular velocity is in body axes, all right-handed:
+//   +wx is nose DOWN, +wy is nose LEFT, +wz is roll RIGHT (right wing down).
+// There are no Euler angles in the model, which is how the pitch-sign bug in
+// the car's history cannot happen here. Pitch, bank and heading come out of
+// attitude() below, once, for the HUD and the camera.
+//
+// One step, in order:
+//   1. air: density, speed of sound, airspeed in body axes, Mach, dynamic pressure
+//   2. controls: ramp the stick, then the aids, then the surface deflections
+//   3. forces: every lifting surface, body drag, the engines (with vectoring),
+//      the landing gear and the hull against the ground
+//   4. integrate (semi-implicit): rates, then orientation, then velocity, then position
+//   5. bookkeeping: fuel, afterburner tank, engine state, load factor
+// ============================================================================
+
+import { SIM, FLIGHT } from '../data/tuning.js';
+import { atmosphere, createAtmosphere, calibratedAirspeed } from './Atmosphere.js';
+import { Wing, Curve, MachTable } from './Wing.js';
+import { Engine } from './Engine.js';
+import { Gear } from './Gear.js';
+
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
+const smooth = (a, b, x) => {
+  const t = clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
+// Rotation matrix (body -> world), row major, from a unit quaternion.
+function quatToMatrix(qx, qy, qz, qw, r) {
+  const xx = qx * qx, yy = qy * qy, zz = qz * qz;
+  const xy = qx * qy, xz = qx * qz, yz = qy * qz;
+  const wx = qw * qx, wy = qw * qy, wz = qw * qz;
+  r[0] = 1 - 2 * (yy + zz); r[1] = 2 * (xy - wz);     r[2] = 2 * (xz + wy);
+  r[3] = 2 * (xy + wz);     r[4] = 1 - 2 * (xx + zz); r[5] = 2 * (yz - wx);
+  r[6] = 2 * (xz - wy);     r[7] = 2 * (yz + wx);     r[8] = 1 - 2 * (xx + yy);
+}
+
+// Pitch (+ nose up), bank (+ right wing down) and compass heading (clockwise
+// from north, 0..2pi), radians. The only place these signs are decided.
+export function attitude(r, out) {
+  const fx = r[2], fy = r[5], fz = r[8];       // nose, world axes
+  out.pitch = Math.asin(clamp(fy, -1, 1));
+  let h = Math.atan2(-fx, fz);
+  if (h < 0) h += Math.PI * 2;
+  out.heading = h;
+  out.bank = Math.atan2(r[3], r[4]);           // left.y over up.y
+  return out;
+}
+
+export function createAttitude() { return { pitch: 0, bank: 0, heading: 0 }; }
+
+export function createRenderState() {
+  return { x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1,
+    nozzle: 0, abLevel: 0, spool: 0, gear: 1, airbrake: 0, steer: 0, wheelSpin: 0,
+    surfaces: new Float64Array(8), compression: new Float64Array(4) };
+}
+
+// A quaternion from compass heading, pitch and bank. The inverse of attitude().
+export function quatFromAttitude(heading, pitch, bank, out) {
+  const hy = -heading / 2, hp = -pitch / 2, hr = bank / 2;
+  // yaw about +y, then pitch about body x, then roll about body z
+  const ay = Math.sin(hy), aw = Math.cos(hy);
+  const bx = Math.sin(hp), bw = Math.cos(hp);
+  const cz = Math.sin(hr), cw = Math.cos(hr);
+  // (0, ay, 0, aw) * (bx, 0, 0, bw)
+  let w = aw * bw;
+  let x = aw * bx;
+  let y = ay * bw;
+  let z = -ay * bx;
+  // ... * (0, 0, cz, cw)
+  const w2 = w * cw - z * cz;
+  const x2 = x * cw + y * cz;
+  const y2 = y * cw - x * cz;
+  const z2 = z * cw + w * cz;
+  out.qw = w2; out.qx = x2; out.qy = y2; out.qz = z2;
+  return out;
+}
+
+export class AircraftPhysics {
+  constructor(def) {
+    this.def = def;
+    const curves = {};
+    for (const [name, c] of Object.entries(def.curves)) {
+      curves[name] = { lift: new Curve(c.lift), drag: new Curve(c.drag), stall: (c.stall * Math.PI) / 180 };
+    }
+    this.surfaces = def.surfaces.map((s) => new Wing(s, curves));
+    this.liftMach = new MachTable(def.liftMach);
+    this.waveCdA = new MachTable(def.waveCd);
+    this.engines = def.engines.map((e) => new Engine(e));
+    this.gear = new Gear(def.gear.wheels, def.gear.hull);
+    this.stallAlpha = (def.stallAlpha * Math.PI) / 180;
+    // The tail skid point, for the tail strike protection: how far below the
+    // centre of mass it sits when level, and how far behind.
+    const skid = def.gear.hull.find((h) => h.skid);
+    this.tailDrop = skid ? -skid.pos[1] : 0;
+    this.tailArm = skid ? -skid.pos[2] : 0;
+
+    this.atm = createAtmosphere();
+    this.r = new Float64Array(9);
+    this.defl = new Float64Array(this.surfaces.length);
+    this._acc = { fx: 0, fy: 0, fz: 0, tx: 0, ty: 0, tz: 0 };
+    this._wout = { fx: 0, fy: 0, fz: 0 };
+    this._att = createAttitude();
+    this._q = { qx: 0, qy: 0, qz: 0, qw: 1 };
+
+    this.reset({});
+  }
+
+  // Put the aircraft down. opts: { x, y, z, heading, pitch, bank, speed,
+  // fuel (0..1 of the tank), onGround, throttle, gear }.
+  reset(opts = {}) {
+    const d = this.def;
+    this.x = opts.x ?? 0; this.y = opts.y ?? 0; this.z = opts.z ?? 0;
+    quatFromAttitude(opts.heading ?? 0, opts.pitch ?? 0, opts.bank ?? 0, this._q);
+    this.qx = this._q.qx; this.qy = this._q.qy; this.qz = this._q.qz; this.qw = this._q.qw;
+    quatToMatrix(this.qx, this.qy, this.qz, this.qw, this.r);
+    const speed = opts.speed ?? 0;
+    // Velocity along the nose.
+    this.vx = this.r[2] * speed; this.vy = this.r[5] * speed; this.vz = this.r[8] * speed;
+    this.wx = 0; this.wy = 0; this.wz = 0;
+    this.fuel = (opts.fuel ?? 0.6) * d.fuelCapacity;
+    this.mass = d.emptyMass + d.payload + this.fuel;
+
+    // Pilot's controls, as the physics holds them.
+    this.pitchCmd = 0; this.rollCmd = 0; this.yawCmd = 0;
+    this.throttle = opts.throttle ?? (speed > 0 ? 0.8 : 0);
+    this.trim = 0;
+    this.pathRate = 0;
+    this.abFuel = 1;
+    this.abLocked = false;
+    this.abWanted = false;
+    this.gearDown = opts.gear ?? (speed > 0 ? 0 : 1);
+    this.airbrake = 0;
+    this.nozzle = 0;
+    this.defl.fill(0);
+    for (const e of this.engines) e.reset(this.throttle);
+    this.gear.reset();
+
+    // Readouts.
+    this.alpha = 0; this.beta = 0;
+    this.tas = speed; this.cas = speed; this.mach = 0; this.qdyn = 0;
+    this.nz = 1;
+    this.nzRate = 0;
+    this.gPullCap = 1; this.gPushCap = 1;
+    this.agl = 0;
+    this.parked = false;
+    this.altitude = this.y;
+    this.climb = 0;
+    this.thrustTotal = 0;
+    this.stallWarn = false;
+    this.stalled = false;
+    this.onGround = false;
+    this.crashed = false;
+    this.crashReason = '';
+    this.fuelFlow = 0;
+    this.ax = 0; this.ay = 0; this.az = 0;
+
+    this.snapshot();
+  }
+
+  snapshot() {
+    this.prevX = this.x; this.prevY = this.y; this.prevZ = this.z;
+    this.prevQx = this.qx; this.prevQy = this.qy; this.prevQz = this.qz; this.prevQw = this.qw;
+  }
+
+  get speed() { return Math.sqrt(this.vx * this.vx + this.vy * this.vy + this.vz * this.vz); }
+
+  attitude() { return attitude(this.r, this._att); }
+
+  // input: { pitch, roll, yaw (-1..1; pitch + is pull, roll + is right, yaw +
+  // is right), analog, throttleRate (-1..1), throttleKick, ab, brake,
+  // gearDown, airbrake }
+  step(dt, input, ground) {
+    this.snapshot();
+    // A wreck stays where it fell. The skin's contact is stiff enough that
+    // driving on through it at 200 m/s throws the numbers out of range, and
+    // there is nothing to fly: the crash flow (milestone 5) takes over.
+    if (this.crashed) {
+      this.vx = 0; this.vy = 0; this.vz = 0;
+      this.wx = 0; this.wy = 0; this.wz = 0;
+      for (const e of this.engines) e.update(dt, 0, false, 1, 0, false);
+      return;
+    }
+    const d = this.def;
+    const F = FLIGHT;
+    const r = this.r;
+
+    // --- 1. the air ------------------------------------------------------
+    const atm = atmosphere(this.y, this.atm);
+    // Velocity in body axes (no wind yet).
+    const vbx = r[0] * this.vx + r[3] * this.vy + r[6] * this.vz;
+    const vby = r[1] * this.vx + r[4] * this.vy + r[7] * this.vz;
+    const vbz = r[2] * this.vx + r[5] * this.vy + r[8] * this.vz;
+    const v2 = vbx * vbx + vby * vby + vbz * vbz;
+    const tas = Math.sqrt(v2);
+    const mach = tas / atm.a;
+    const qdyn = 0.5 * atm.rho * v2;
+    this.tas = tas; this.mach = mach; this.qdyn = qdyn;
+    this.cas = calibratedAirspeed(tas, atm.p, atm.a);
+    this.alpha = tas > 1 ? Math.atan2(-vby, vbz) : 0;
+    this.beta = tas > 1 ? Math.atan2(vbx, vbz) : 0;
+    this.altitude = this.y;
+    this.climb = this.vy;
+
+    // --- 2. controls -----------------------------------------------------
+    // The stick: digital keys ramp on the fixed clock, analog passes through.
+    const analog = !!input.analog;
+    this.pitchCmd = ramp(this.pitchCmd, input.pitch, analog, dt, FLIGHT.pitchAttack, FLIGHT.pitchRelease);
+    this.rollCmd = ramp(this.rollCmd, input.roll, analog, dt);
+    this.yawCmd = ramp(this.yawCmd, input.yaw, analog, dt, FLIGHT.yawAttack, FLIGHT.yawRelease);
+
+    // The throttle is a lever: held keys and the stick move it, the wheel kicks it.
+    this.throttle = clamp(this.throttle + input.throttleRate * F.throttleRate * dt + input.throttleKick, 0, 1);
+    input.throttleKick = 0;
+
+    const onGround = this.gear.onGround;
+    const grounded = onGround || this.gear.hullHit > 0;
+    const att = attitude(r, this._att);
+    this.agl = this.y - ground.sample(this.x, this.z, this.y).height;
+
+    // Authority fades with dynamic pressure so the aircraft stays tame fast.
+    // It schedules the stick and the damping. It does not schedule the trim:
+    // the deflection that balances the airframe is geometry (the wings sit at
+    // an incidence, so the tail has to be set against it), and is the same at
+    // any speed. Faded with the stick, it ran out at Mach 1 and the aircraft
+    // pitched up on its own.
+    const fade = clamp(F.qFadeRef / (qdyn + 1), F.qFadeMin, 1);
+
+    let pitch = this.pitchCmd;
+    let roll = this.rollCmd;
+    let yaw = this.yawCmd;
+
+    // Damping: the feel. Always on; set a gain to 0 to remove it.
+    // The pitch damping is faded less than the stick (see dampFadePow): the
+    // airframe's own stiffness grows with dynamic pressure, so damping that
+    // stays put as the stick fades is, against it, weak at speed.
+    pitch += -F.dampPitch * Math.pow(fade, F.dampFadePow - 1) * (-this.wx);   // pitch-up rate is -wx
+    roll += -F.dampRoll * this.wz;               // roll-right rate is wz
+    yaw += F.dampYaw * this.wy;                  // yaw-right rate is -wy
+
+    // The aids.
+    this.stalled = this.alpha > this.stallAlpha;
+    this.stallWarn = !onGround && this.alpha > this.stallAlpha * F.warnAlpha && tas > 20;
+    if (F.aids) {
+      // Angle-of-attack softening: pull fades out as the stall nears and the
+      // nose is pushed down past it, so it mushes rather than snapping.
+      const soft = smooth(this.stallAlpha * F.softAlpha, this.stallAlpha, this.alpha);
+      if (pitch > 0) pitch *= 1 - soft;
+      pitch -= F.softPush * soft;
+      // The sideslip limiter: the rudder fades as the sideslip it makes grows.
+      if (yaw * this.beta > 0) {
+        yaw *= 1 - (1 - F.betaFloor) * smooth(F.betaLimit * 0.5, F.betaLimit, Math.abs(this.beta));
+      }
+      // The load limits: pull fades as the aircraft nears its structural g,
+      // looking a little ahead along the load factor's rate; push fades the
+      // same way toward the negative limit.
+      // The load limits are a safety net, not the thing that sets the pull: the
+      // stick's own authority settles a full pull at about 8.5 g and a full push
+      // at about -2 (see dampPitch and pushAuthority), under both limits. Each
+      // limit is a cap on the stick that INTEGRATES: it is cut at gCutRate per g
+      // over the limit per second (looking gLead seconds ahead along the load
+      // factor's rate) and given back at gRelease a second once under. A limit that
+      // is a proportional fade of the stick with the load (the first versions) is
+      // a feedback loop with a gain of five and the airframe's short period in it,
+      // and it limit-cycled: the stabilators chattered two or three times a second
+      // and the load swung by four g. An integrator with its crossover well under
+      // the short period settles instead.
+      const aheadNz = this.nz + this.nzRate * F.gLead;
+      const overPull = aheadNz - d.gLimit, overPush = (d.gLimitNeg ?? -3) - aheadNz;
+      this.gPullCap = clamp(this.gPullCap + (overPull > 0 ? -F.gCutRate * overPull : F.gRelease) * dt, 0, 1);
+      this.gPushCap = clamp(this.gPushCap + (overPush > 0 ? -F.gCutRate * overPush : F.gRelease) * dt, 0, 1);
+      if (pitch > 0) pitch *= this.gPullCap;
+      else if (pitch < 0) pitch *= F.pushAuthority * this.gPushCap;
+
+      // Tail strike protection. With the centre of mass `agl` over the ground, the
+      // tail (tailArm behind it and tailDrop below it) is clear while sin(pitch)
+      // stays under (agl - tailDrop - margin) / tailArm: the pull fades out as the
+      // nose, looked at a little ahead, nears that, and is pushed back past it.
+      if (this.tailArm > 0 && this.agl < F.tailGuardHeight) {
+        const maxPitch = Math.asin(clamp((this.agl - this.tailDrop - F.tailMargin) / this.tailArm, 0, 1));
+        const ahead = att.pitch - this.wx * F.tailLead;
+        if (pitch > 0) pitch *= 1 - smooth(maxPitch - F.tailBand, maxPitch, ahead);
+        pitch -= smooth(maxPitch, maxPitch + F.tailBand, ahead);
+      }
+
+      // Auto-trim: with the stick centred the trim integrates until the
+      // flight path stops curving, so a speed change does not pitch the
+      // aircraft. It holds any climb short of nearly vertical, and a shallow
+      // dive only: in a steep dive it keeps the trim it has and stops
+      // integrating, and the airframe's own stability does the recovering.
+      const gamma = tas > 1 ? Math.asin(clamp(this.vy / tas, -1, 1)) : 0;
+      const shallow = gamma < F.trimMaxClimb && gamma > -F.trimMaxPath;
+      const flying = tas > F.trimMinSpeed && !grounded && !this.stalled;
+      // The integrator's rate follows the fade, so the loop gain (the surface's
+      // force grows with q, the rate falls with it) stays what it was.
+      if (flying && shallow) {
+        if (Math.abs(this.pitchCmd) < 0.03) {
+          this.trim = clamp(this.trim - F.trimRate * fade * this.pathRate * dt, -F.trimLimit, F.trimLimit);
+        } else if (Math.abs(this.pathRate) < F.trimSteady) {
+          // Back pressure holding the path steady: trim it off.
+          this.trim = clamp(this.trim + F.trimHold * fade * this.pitchCmd * dt, -F.trimLimit, F.trimLimit);
+        }
+      } else if (flying) {
+        // Steep: it stops integrating but keeps the trim it found. Relaxing to
+        // zero here (the first version) let the aircraft go: zero is not the
+        // balanced setting at speed, so past a twenty degree climb the nose
+        // kept coming up on its own, all the way to vertical.
+      } else if (!grounded) {
+        this.trim *= Math.exp(-dt / F.trimRelax);
+      }
+
+      // Roll self-levelling when the stick is centred, gently.
+      if (flying && Math.abs(this.rollCmd) < 0.03 && Math.abs(att.pitch) < F.levelMaxPitch) {
+        roll += clamp(-F.levelStrength * att.bank, -F.levelLimit, F.levelLimit);
+      }
+    }
+
+    pitch = clamp(pitch, -1, 1);
+    roll = clamp(roll, -1, 1);
+    yaw = clamp(yaw, -1, 1);
+    // The surfaces' pitch command: the scheduled stick plus the whole trim.
+    const pitchOut = clamp(fade * pitch + (F.aids ? this.trim : 0), -1, 1);
+
+    // --- 3. forces -------------------------------------------------------
+    const acc = this._acc;
+    acc.fx = 0; acc.fy = 0; acc.fz = 0; acc.tx = 0; acc.ty = 0; acc.tz = 0;
+    const out = this._wout;
+    const liftMach = this.liftMach.at(mach);
+    const actK = 1 - Math.exp(-dt / F.actuatorTau);
+    // The flight computer drops the flaperons and leading edges with the gear
+    // down, and takes them up above flapUp (m/s of calibrated airspeed).
+    const flapAlpha = d.flapAlpha * this.gearDown * clamp((F.flapUp - this.cas) / F.flapUpBand, 0, 1);
+    const surfaces = this.surfaces;
+    for (let i = 0; i < surfaces.length; i++) {
+      const s = surfaces[i];
+      const target = s.cPitch * pitchOut + fade * (s.cRoll * roll + s.cYaw * yaw) + s.flap * flapAlpha;
+      this.defl[i] += (target - this.defl[i]) * actK;
+      // Velocity of the surface through the air: v + w x r.
+      const wx = vbx + (this.wy * s.pz - this.wz * s.py);
+      const wy = vby + (this.wz * s.px - this.wx * s.pz);
+      const wz = vbz + (this.wx * s.py - this.wy * s.px);
+      s.force(wx, wy, wz, atm.rho, liftMach, this.defl[i], out);
+      acc.fx += out.fx; acc.fy += out.fy; acc.fz += out.fz;
+      acc.tx += s.py * out.fz - s.pz * out.fy;
+      acc.ty += s.pz * out.fx - s.px * out.fz;
+      acc.tz += s.px * out.fy - s.py * out.fx;
+    }
+
+    // Body drag: the fuselage, the wave drag that rises through Mach 1, the
+    // gear and the airbrake. It acts against the airflow at the centre of mass.
+    this.gearDown += clamp((input.gearDown ? 1 : 0) - this.gearDown, -dt / F.gearTime, dt / F.gearTime);
+    this.airbrake += clamp((input.airbrake ? 1 : 0) - this.airbrake, -dt / F.airbrakeTime, dt / F.airbrakeTime);
+    if (tas > 0.5) {
+      const cda = d.bodyCdA + d.refArea * this.waveCdA.at(mach) +
+        d.gearCdA * this.gearDown + d.airbrakeCdA * this.airbrake;
+      const k = -qdyn * cda / tas;
+      acc.fx += k * vbx; acc.fy += k * vby; acc.fz += k * vbz;
+    }
+
+    // Engines, with thrust vectoring. The nozzle deflects with the pilot's
+    // pull and its authority fades as the surfaces take over.
+    const wantAb = !!input.ab;
+    this.abWanted = wantAb;
+    const abOn = wantAb && !this.abLocked && this.abFuel > 0;
+    const fuelOk = this.fuel > 0;
+    const tvAuth = clamp(1 - qdyn / F.tvQ, 0, 1);
+    this.nozzle = d.tvMax * tvAuth * pitch;
+    const sinN = Math.sin(this.nozzle), cosN = Math.cos(this.nozzle);
+    let thrustTotal = 0, flow = 0, abMean = 0;
+    for (let i = 0; i < this.engines.length; i++) {
+      const e = this.engines[i];
+      e.update(dt, abOn ? 1 : this.throttle, abOn, atm.sigma, mach, fuelOk);
+      thrustTotal += e.thrust;
+      flow += e.fuelFlow;
+      abMean += e.abLevel;
+      // Pull deflects the thrust downward at the tail, pitching the nose up.
+      const fy = -e.thrust * sinN, fz = e.thrust * cosN;
+      acc.fy += fy; acc.fz += fz;
+      acc.tx += e.y * fz - e.z * fy;
+      acc.ty += e.z * 0 - e.x * fz;
+      acc.tz += e.x * fy - e.y * 0;
+    }
+    abMean /= this.engines.length;
+    this.thrustTotal = thrustTotal;
+    this.fuelFlow = flow * F.fuelBurn;
+
+    // Landing gear and the hull, against the ground.
+    this.gear.apply(this, ground, dt, input.yaw, input.brake || 0, this.gearDown, this.mass, acc);
+
+    // --- 4. integrate ----------------------------------------------------
+    const m = this.mass;
+    const Ix = m * d.gyration[0], Iy = m * d.gyration[1], Iz = m * d.gyration[2];
+    // Euler's equations for a body with a diagonal inertia.
+    const wdx = (acc.tx + (Iy - Iz) * this.wy * this.wz) / Ix;
+    const wdy = (acc.ty + (Iz - Ix) * this.wz * this.wx) / Iy;
+    const wdz = (acc.tz + (Ix - Iy) * this.wx * this.wy) / Iz;
+    this.wx += wdx * dt; this.wy += wdy * dt; this.wz += wdz * dt;
+
+    // Orientation: q' = q + 0.5 dt q (0, w), then renormalise.
+    const h = 0.5 * dt;
+    const qx = this.qx, qy = this.qy, qz = this.qz, qw = this.qw;
+    const ex = qx + h * (qw * this.wx + qy * this.wz - qz * this.wy);
+    const ey = qy + h * (qw * this.wy + qz * this.wx - qx * this.wz);
+    const ez = qz + h * (qw * this.wz + qx * this.wy - qy * this.wx);
+    const ew = qw + h * (-qx * this.wx - qy * this.wy - qz * this.wz);
+    const inv = 1 / Math.sqrt(ex * ex + ey * ey + ez * ez + ew * ew);
+    this.qx = ex * inv; this.qy = ey * inv; this.qz = ez * inv; this.qw = ew * inv;
+
+    // Linear: the force in world axes (the matrix from before the rotation),
+    // plus gravity.
+    const ax = (r[0] * acc.fx + r[1] * acc.fy + r[2] * acc.fz) / m;
+    const ay = (r[3] * acc.fx + r[4] * acc.fy + r[5] * acc.fz) / m - SIM.gravity;
+    const az = (r[6] * acc.fx + r[7] * acc.fy + r[8] * acc.fz) / m;
+    this.ax = ax; this.ay = ay; this.az = az;
+    this.vx += ax * dt; this.vy += ay * dt; this.vz += az * dt;
+
+    // The parking hold: on its wheels, the throttle at idle and hardly moving, the
+    // aircraft stays put. Idle thrust beats the tyres' rolling resistance, so left
+    // to the physics it creeps off and keeps accelerating; a real one would be
+    // standing on its brakes. Static friction, in effect: it lets go the moment
+    // the throttle comes up. It is done before the position moves, so not even a
+    // step's worth of the creep gets through.
+    this.parked = this.gear.weightOnWheels > 0.5 && !abOn && this.throttle < F.parkThrottle &&
+      this.vx * this.vx + this.vz * this.vz < F.parkSpeed * F.parkSpeed;
+    if (this.parked) { this.vx = 0; this.vz = 0; this.wy = 0; }
+
+    this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
+    quatToMatrix(this.qx, this.qy, this.qz, this.qw, r);
+
+    // Load factor: the specific force along the aircraft's up axis, in g, and
+    // how fast it is changing (filtered: the limiter looks ahead along it).
+    const nzNow = acc.fy / (m * SIM.gravity);
+    this.nzRate += ((nzNow - this.nz) / dt - this.nzRate) * (1 - Math.exp(-dt / 0.05));
+    this.nz = nzNow;
+
+    // Flight path rate, for the trim: how fast the velocity vector is turning
+    // in the vertical plane, from the acceleration just worked out.
+    const sp = Math.sqrt(this.vx * this.vx + this.vy * this.vy + this.vz * this.vz);
+    if (sp > 20) {
+      const ux = this.vx / sp, uy = this.vy / sp, uz = this.vz / sp;
+      const along = ax * ux + ay * uy + az * uz;
+      const perpY = ay - along * uy;
+      const cosG = Math.sqrt(Math.max(1e-4, 1 - uy * uy));
+      const rate = perpY / sp / cosG;
+      this.pathRate += (rate - this.pathRate) * (1 - Math.exp(-dt / F.trimFilter));
+    } else {
+      this.pathRate = 0;
+    }
+
+    // --- 5. bookkeeping --------------------------------------------------
+    this.fuel = Math.max(0, this.fuel - this.fuelFlow * dt);
+    this.mass = d.emptyMass + d.payload + this.fuel;
+    if (abOn) {
+      this.abFuel = Math.max(0, this.abFuel - (abMean * dt) / F.abDuration);
+      if (this.abFuel <= 0) this.abLocked = true;
+    } else {
+      this.abFuel = Math.min(1, this.abFuel + dt / F.abRefill);
+      if (this.abLocked && this.abFuel >= F.abRelight) this.abLocked = false;
+    }
+
+    this.onGround = this.gear.onGround;
+    if (!this.crashed) {
+      if (this.gear.hullImpact > F.crashSpeed) {
+        this.crashed = true; this.crashReason = 'hit the ground';
+      } else if (this.gear.touchdownSink > F.maxSink) {
+        this.crashed = true; this.crashReason = 'landed too hard';
+      } else if (this.gear.hullHit > 0.35) {
+        this.crashed = true; this.crashReason = 'hit the ground';
+      } else if (this.gear.skidImpact > F.skidCrashSpeed || this.gear.skidHit > F.skidCrashDepth) {
+        this.crashed = true; this.crashReason = 'struck its tail on the ground';
+      }
+    }
+    if (!(this.x === this.x) || !(this.vx === this.vx) || !(this.qw === this.qw)) {
+      this.crashed = true; this.crashReason = 'lost control';
+    }
+  }
+
+  // Interpolated render state; alpha is the fraction between the last two steps.
+  interpolate(alpha, out) {
+    out.x = this.prevX + (this.x - this.prevX) * alpha;
+    out.y = this.prevY + (this.y - this.prevY) * alpha;
+    out.z = this.prevZ + (this.z - this.prevZ) * alpha;
+    // Normalised lerp of the quaternion, taking the short way round.
+    let dot = this.prevQx * this.qx + this.prevQy * this.qy + this.prevQz * this.qz + this.prevQw * this.qw;
+    const s = dot < 0 ? -1 : 1;
+    let x = this.prevQx + (s * this.qx - this.prevQx) * alpha;
+    let y = this.prevQy + (s * this.qy - this.prevQy) * alpha;
+    let z = this.prevQz + (s * this.qz - this.prevQz) * alpha;
+    let w = this.prevQw + (s * this.qw - this.prevQw) * alpha;
+    const inv = 1 / Math.sqrt(x * x + y * y + z * z + w * w);
+    out.qx = x * inv; out.qy = y * inv; out.qz = z * inv; out.qw = w * inv;
+    out.nozzle = this.nozzle;
+    let ab = 0;
+    for (let i = 0; i < this.engines.length; i++) ab += this.engines[i].abLevel;
+    out.abLevel = ab / this.engines.length;
+    let sp = 0;
+    for (let i = 0; i < this.engines.length; i++) sp += this.engines[i].n;
+    out.spool = sp / this.engines.length;
+    out.gear = this.gearDown;
+    out.airbrake = this.airbrake;
+    out.steer = this.gear.steerAngle;
+    out.wheelSpin = this.gear.spin[0];
+    for (let i = 0; i < this.defl.length && i < 8; i++) out.surfaces[i] = this.defl[i];
+    for (let i = 0; i < this.gear.compression.length && i < 4; i++) out.compression[i] = this.gear.compression[i];
+    return out;
+  }
+}
+
+// The stick keys ramp toward the target at the attack rate going out and the
+// release rate coming back, in physics time.
+function ramp(cur, target, analog, dt, attack = FLIGHT.stickAttack, release = FLIGHT.stickRelease) {
+  if (analog) return target;
+  const out = Math.abs(target) > Math.abs(cur) || target * cur < 0;
+  const rate = (out ? attack : release) * dt;
+  const diff = target - cur;
+  if (diff > rate) return cur + rate;
+  if (diff < -rate) return cur - rate;
+  return target;
+}

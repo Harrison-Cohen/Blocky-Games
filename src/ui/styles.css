@@ -1206,3 +1206,80 @@ html, body {
 #ui.menu-open .auto-badge,
 #ui.menu-open .debug-hud,
 #ui.menu-open.split::after { display: none; }
+
+/* --- flight HUD ---------------------------------------------------------------
+   ui/FlightHud.js. The same ink panels and orange rule as the rest; numbers in
+   Martian Mono, labels in Archivo, no capitals. Shown only while flying. */
+.fhud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.fhud[hidden] { display: none; }
+.fhud-panel {
+  position: absolute;
+  padding: 8px 12px 9px;
+  background: rgba(14, 26, 43, 0.82);
+  border-bottom: 3px solid var(--signal);
+  min-width: 150px;
+}
+.fhud-speed { left: max(16px, env(safe-area-inset-left)); top: 50%; transform: translateY(-50%); }
+.fhud-alt { right: max(16px, env(safe-area-inset-right)); top: 50%; transform: translateY(-50%); text-align: right; }
+.fhud-heading { left: 50%; top: max(14px, env(safe-area-inset-top)); transform: translateX(-50%); min-width: 0; text-align: center; padding: 6px 16px 7px; }
+.fhud-label { display: block; font-size: 11px; font-weight: 600; opacity: 0.6; }
+.fhud-big { font-family: var(--mono); font-size: 30px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.fhud-mid { font-family: var(--mono); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fhud-unit { font-family: var(--sans); font-size: 12px; font-weight: 600; margin-left: 6px; opacity: 0.7; }
+.fhud-sub { font-family: var(--mono); font-size: 12px; opacity: 0.8; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.fhud-engine {
+  left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  width: min(340px, calc(100vw - 32px)); padding: 8px 12px 9px;
+}
+.fhud-row { display: grid; grid-template-columns: 62px 1fr; align-items: center; gap: 8px; margin-bottom: 5px; }
+.fhud-bar { height: 8px; background: rgba(237, 237, 231, 0.12); }
+.fhud-bar i { display: block; height: 100%; width: 0; background: var(--offwhite); }
+.fhud-bar.hot i { background: var(--signal); }
+.fhud-bar.warn i { background: var(--yellow); }
+.fhud-nums { display: flex; justify-content: space-between; margin-top: 6px; font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+.fhud-num.over { color: var(--yellow); }
+.fhud-warn {
+  position: absolute; left: 50%; top: 66%; transform: translateX(-50%);
+  padding: 6px 18px 7px; font-size: 22px; font-weight: 700; background: var(--ink);
+  border-bottom: 3px solid var(--yellow); color: var(--yellow);
+}
+.fhud-warn.alert { border-bottom-color: var(--signal); color: var(--signal); }
+.fhud-warn:empty { display: none; }
+.fhud-note {
+  position: absolute; left: 50%; top: 22%; transform: translateX(-50%);
+  padding: 8px 18px; font-size: 15px; font-weight: 600; background: var(--ink); border-bottom: 3px solid var(--signal);
+}
+.fhud-reset {
+  position: absolute; left: 50%; top: 30%; transform: translateX(-50%);
+  padding: 8px 18px; font-family: var(--mono); font-size: 14px; background: var(--ink); border-bottom: 3px solid var(--yellow);
+}
+.fhud-cam {
+  position: absolute; left: max(16px, env(safe-area-inset-left)); bottom: max(16px, env(safe-area-inset-bottom));
+  padding: 5px 10px; font-size: 12px; font-weight: 600; background: rgba(14, 26, 43, 0.82);
+}
+.fhud-note[hidden], .fhud-reset[hidden], .fhud-cam[hidden] { display: none; }
+.fhud-horizon {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+}
+.fhud-horizon[hidden], .fhud-adi[hidden] { display: none; }
+.fhud-adi {
+  position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+/* While flying, none of the driving HUD is on screen. */
+#ui.flight-mode > .dash,
+#ui.flight-mode > .minimap,
+#ui.flight-mode > .lap-hud,
+#ui.flight-mode > .race-hud,
+#ui.flight-mode > .start-lights,
+#ui.flight-mode > .drag-hud,
+#ui.flight-mode > .auto-badge,
+#ui.flight-mode .debug-hud { display: none !important; }
+#ui.menu-open .fhud { display: none; }
+
+.controls-card dd.later { opacity: 0.42; }
+.flight-controls { width: min(780px, calc(100vw - 48px)); }

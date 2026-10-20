@@ -138,6 +138,11 @@ export class Scene {
       this.trackLights.setTrack(mesh.lights);
     }
     this.renderScale = 1;
+    // The most the frame-rate controller may take the picture to, as a multiple
+    // of the resolution asked for. 1 for the cars; the flight world's detail
+    // setting raises it, and the controller climbs toward it while the frame has
+    // room (supersampling) and backs off when it has not.
+    this.maxRenderScale = 1;
     this.settle();
     this._onResize();
   }
@@ -199,7 +204,7 @@ export class Scene {
       if (rs.raisedAt >= 0 && rs.clock - rs.raisedAt < 3) rs.hold = 20;
     } else if (avg < budget * 1.03) {
       rs.good++;
-      if (rs.good >= 4 && this.renderScale < 1) {
+      if (rs.good >= 4 && this.renderScale < this.maxRenderScale) {
         next = this.renderScale * 1.07;
         rs.good = 0;
         rs.raisedAt = rs.clock;
@@ -207,10 +212,29 @@ export class Scene {
     } else {
       rs.good = 0;
     }
-    next = Math.min(1, Math.max(GRAPHICS.minRenderScale, next));
+    next = Math.min(this.maxRenderScale, Math.max(GRAPHICS.minRenderScale, next));
     if (Math.abs(next - this.renderScale) < 0.01) return;
     this.renderScale = next;
     this._onResize();
+  }
+
+  // The ceiling on the render scale (see maxRenderScale). Lowering it takes effect
+  // at once; raising it lets the controller climb.
+  setRenderScaleCeiling(m) {
+    this.maxRenderScale = m;
+    if (this.renderScale > m) {
+      this.renderScale = m;
+      this._onResize();
+    }
+  }
+
+  // How wide the sun's shadow is, as a multiple of the car world's: the shadow
+  // map stays the same size, so wider is coarser but reaches further.
+  setShadowReach(mult) {
+    const r = WORLD.shadowRadius * mult;
+    const cam = this.sun.shadow.camera;
+    cam.left = -r; cam.right = r; cam.top = r; cam.bottom = -r;
+    cam.updateProjectionMatrix();
   }
 
   // Ignore frame times for a moment: something is about to cause a hitch that
@@ -291,6 +315,59 @@ export class Scene {
   // Programs already built cost nothing here, so calling it again is cheap.
   prewarm() {
     this.renderer.compile(this.scene, this.camera);
+  }
+
+  // --- flight -------------------------------------------------------------
+  // The flight game borrows this renderer, its post chain and its two lights.
+  // Entering hides the car world -- the track's lamps, the cars, the particles,
+  // everything but the sun, the hemisphere light and the sky -- and leaving puts
+  // it back exactly as it was. The track itself is swapped by setEnvironment and
+  // brought back by setTrack, as when you pick another circuit.
+  holdCarWorld() {
+    if (this._held) return;
+    this._held = [];
+    this._heldNear = this.camera.near;
+    this._heldFar = this.camera.far;
+    const keep = new Set([this.hemi, this.sun, this.sun.target, this.sky.group, this.sky.cloudGroup]);
+    for (const o of this.scene.children) {
+      if (keep.has(o) || !o.visible) continue;
+      o.visible = false;
+      this._held.push(o);
+    }
+  }
+
+  releaseCarWorld() {
+    if (!this._held) return;
+    for (const o of this._held) o.visible = true;
+    this._held = null;
+    this.camera.near = this._heldNear;
+    this.camera.far = this._heldFar;
+    this.camera.updateProjectionMatrix();
+  }
+
+  // A world that is not a car track: the same job as setTrack, from plain data.
+  // env carries what a track carries ({ data, palette, groundLevel, minimap })
+  // and group is the world's geometry.
+  setEnvironment(env, group) {
+    this.setTrack(env, { group, lights: [], applyShadows() {} });
+  }
+
+  // Fog and the horizon, for a world whose view distance is set by a slider
+  // rather than by a track. color is a packed 0xRRGGBB or a THREE.Color.
+  setFog(color, near, far) {
+    const f = this.scene.fog;
+    if (!f) return;
+    f.color.set(color);
+    f.near = near;
+    f.far = far;
+    if (this.scene.background && this.scene.background.isColor) this.scene.background.set(color);
+  }
+
+  // The camera's depth range, for a view that is kilometres deep.
+  setCameraRange(near, far) {
+    this.camera.near = near;
+    this.camera.far = far;
+    this.camera.updateProjectionMatrix();
   }
 
   add(obj) { this.scene.add(obj); }

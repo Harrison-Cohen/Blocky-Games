@@ -10,6 +10,18 @@ const game = new Game({ canvas, uiRoot });
 
 game.start();
 
+// Flying is a second game on the same canvas. It is built the first time the
+// title's Fly row is chosen, so the car game loads and starts exactly as before.
+let flight = null;
+game.onFly = async () => {
+  if (!flight) {
+    const { FlightGame } = await import('./core/FlightGame.js');
+    flight = new FlightGame(game);
+    if (import.meta.env.DEV) window.flight = flight;
+  }
+  flight.enter();
+};
+
 // Dev only: gives the console a handle on the running game, so the loop can be
 // stepped by hand and telemetry inspected without a controller in the way.
 // Stripped from production builds.

@@ -24,6 +24,8 @@
 
 export default {
   id: 'skyline-interchange',
+  // Where it sits in the flight world (src/world); the car game never reads it.
+  world: { biome: 'city' },
   name: 'Skyline Interchange',
   description: 'Dusk city figure-8. Concrete walls, neon, and a flyover across its own main straight.',
   order: 4,

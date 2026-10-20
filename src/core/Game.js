@@ -199,6 +199,10 @@ export class Game {
     this.speedo.setCar(this.gearbox.voice, realTopSpeed(this.vehicle.chassis));
     this.paused = false;
 
+    // Flying is a second game that borrows this one's renderer (main.js sets
+    // this). Null until then, and the title's Fly row does nothing without it.
+    this.onFly = null;
+
     // The screens between drives. `screen` is the one up, or null while
     // driving: 'title' and 'tracks' fly the camera down the track behind
     // them, 'pause' and 'results' hold it where it was.
@@ -1109,7 +1113,8 @@ export class Game {
       { label: 'Time trial', action: () => this.openTrackSelect('trial', 'Back to the title', () => this.showTitle(0)) },
       { label: 'Race', action: () => this.openTrackSelect('race', 'Back to the title', () => this.showTitle(1)) },
       { label: 'Drag race', action: () => this.openTrackSelect('drag', 'Back to the title', () => this.showTitle(2)) },
-      { label: 'Garage', action: () => this.openGarage(() => this.showTitle(3)) },
+      { label: 'Fly', action: () => { if (this.onFly) this.onFly(); } },
+      { label: 'Garage', action: () => this.openGarage(() => this.showTitle(4)) },
       { label: 'Controls', action: () => this._showControls(this.title) },
       this._volumeRow(),
     ];

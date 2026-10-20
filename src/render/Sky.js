@@ -82,6 +82,8 @@ export class Sky {
       col[i * 3] = OUT.r; col[i * 3 + 1] = OUT.g; col[i * 3 + 2] = OUT.b;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    // What the dome was painted from, so setHorizon can paint it again.
+    this._paint = { geo, R, sx, sy, sz, top: TOP.clone(), sun: SUN.clone(), haze, curve };
     const dome = new THREE.Mesh(geo, skyDome());
     dome.frustumCulled = false;
     dome.renderOrder = -10;
@@ -130,6 +132,32 @@ export class Sky {
 
     // --- clouds -------------------------------------------------------------
     if (cfg.clouds) this._buildClouds(track, cfg);
+  }
+
+  // Recolour the dome's horizon in place, keeping everything else about it: the
+  // flight world's fog leans toward each biome's colour as you fly, and a dome
+  // whose horizon stayed one colour would show a band where the fog and the sky
+  // disagree. Same formula as setTrack, so painting the colour it was built with
+  // gives back the dome it was built as.
+  setHorizon(hex) {
+    const q = this._paint;
+    if (!q) return;
+    HOR.setHex(hex);
+    TOP.copy(q.top);
+    SUN.copy(q.sun);
+    const pos = q.geo.attributes.position, col = q.geo.attributes.color.array;
+    const R = q.R;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i) / R, y = pos.getY(i) / R, z = pos.getZ(i) / R;
+      const t = Math.pow(Math.max(0, y), q.curve);
+      OUT.copy(HOR).lerp(TOP, t);
+      const s = Math.max(0, x * q.sx + y * q.sy + z * q.sz);
+      const low = Math.pow(1 - Math.max(0, y), 3);
+      const glow = q.haze * (Math.pow(s, 6) * 0.8 * low + Math.pow(s, 64) * 1.2);
+      OUT.r += SUN.r * glow; OUT.g += SUN.g * glow; OUT.b += SUN.b * glow;
+      col[i * 3] = OUT.r; col[i * 3 + 1] = OUT.g; col[i * 3 + 2] = OUT.b;
+    }
+    q.geo.attributes.color.needsUpdate = true;
   }
 
   _buildClouds(track, cfg) {

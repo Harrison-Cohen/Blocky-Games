@@ -99,3 +99,43 @@ scenery, share materials across objects of the same color.
   no console errors or warnings.
 - When I report a handling problem, change values in `tuning.js` first and
   only touch the physics code if the model itself is wrong.
+
+## Flight
+
+A second mode: a large open world flown in an F-22 Raptor, a Boeing 737-800
+and an invented helicopter. Full spec is in FLIGHT.md. Read it before starting
+flight work.
+
+Commands, in addition to the nine above:
+
+```
+npm run flight    # trim, stall and recovery, published figures, hover, gear, damage
+npm run world     # height function, chunk seams, airports, track placement, origin rebasing
+npm run combat    # cannon, missiles, flares, combat AI
+npm run airrace   # AI pilots finish every course, gate timing, ghosts
+npm run missions  # every mission type completes and scores
+```
+
+Rules:
+
+- Flight lives in `src/flight` and `src/world`. Car modes must not change
+  behaviour, and all nine car checks must keep passing.
+- Flight physics is headless, fixed 120 Hz, no Three.js and no allocation in
+  `step()`. Aircraft stats live in `src/data/aircraft.js`.
+- AI aircraft run the same `AircraftPhysics` as the player. Never move one along
+  a path. The only exceptions are distant ambient scenery (recorded track laps,
+  air and road traffic), which hands over to live physics when you come near.
+- The ground is one height function used by both the mesh and the physics.
+  No raycasts.
+- The scene graph is placed through `WorldOrigin`. Physics stays in absolute
+  coordinates.
+- Races, missions and arenas are data: one file each, found by a registry.
+  A new track places itself in the world and on the map.
+- Hangar loadout and tuning are kept apart from cosmetics, like gearbox tunes.
+  Cosmetics never change handling.
+- Everything is unlocked through `isUnlocked()`, so progression can be added
+  later.
+- Aircraft are smooth shaded like the cars. The world is flat shaded and
+  faceted.
+- Performance: 60 fps on a MacBook Air M5 at the default render distance and
+  Medium graphics.

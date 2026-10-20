@@ -24,6 +24,8 @@
 
 export default {
   id: 'glacier-pass',
+  // Where it sits in the flight world (src/world); the car game never reads it.
+  world: { biome: 'snow' },
   name: 'Glacier Pass',
   description: 'Alpine switchbacks. Three hairpins up a mountain face, an avalanche gallery, and a long run home.',
   order: 5,

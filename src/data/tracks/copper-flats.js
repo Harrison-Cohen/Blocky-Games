@@ -23,6 +23,8 @@
 
 export default {
   id: 'copper-flats',
+  // Where it sits in the flight world (src/world); the car game never reads it.
+  world: { biome: 'desert' },
   name: 'Copper Flats',
   description: 'Desert mesa. Wide, fast and flowing, with a hairpin that punishes overdriving.',
   order: 1, // position in the track list

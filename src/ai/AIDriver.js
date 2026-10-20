@@ -60,13 +60,18 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 // plays out differently every time cannot be debugged or checked.
 function mulberry32(seed) {
   let a = seed >>> 0;
-  return () => {
+  const next = () => {
     a = (a + 0x6d2b79f5) >>> 0;
     let t = a;
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+  // The generator's whole state is this one number, so a keyframe can save it
+  // and a replay can pick the sequence up exactly where it was.
+  next.getState = () => a;
+  next.setState = (v) => { a = v >>> 0; };
+  return next;
 }
 
 // A driver's habits. Everything here is allowed to differ between opponents and
@@ -83,6 +88,8 @@ export const DEFAULT_STYLE = {
   mistakeRate: 0,            // chance per corner of a mistake; set by difficulty
   seed: 1,                   // for the mistakes, so each driver makes their own
 };
+
+export const DRIVER_STATE_LENGTH = 24;
 
 export class AIDriver {
   constructor(track, line, chassis, style = {}) {
@@ -128,6 +135,32 @@ export class AIDriver {
     this._mistake.late = 0; this._mistake.wide = 0; this._mistake.lift = 0;
     this._lastSample = -1;
     this._rand = mulberry32(this.style.seed);
+  }
+
+  // The driver's state as numbers, and the way back in (see
+  // VehiclePhysics.copyState). The track, the line, the chassis and the style are
+  // not in it: they are the same on both ends.
+  copyState(out = new Float64Array(DRIVER_STATE_LENGTH)) {
+    const m = this._mistake, i = this.input, aim = this._aim;
+    out[0] = this._steer; out[1] = this._throttle; out[2] = this._brake; out[3] = this._clock;
+    out[4] = this.targetSpeed; out[5] = this.sample; out[6] = this.boost;
+    out[7] = this._pass; out[8] = this._passLane; out[9] = this._passHold; out[10] = this._push ?? 0;
+    out[11] = m.late; out[12] = m.wide; out[13] = m.wideSign; out[14] = m.lift;
+    out[15] = this._lastSample; out[16] = this._rand.getState();
+    out[17] = i.throttle; out[18] = i.brake; out[19] = i.steer; out[20] = i.handbrake;
+    out[21] = aim.x; out[22] = aim.z; out[23] = aim.index;
+    return out;
+  }
+
+  loadState(a) {
+    const m = this._mistake, i = this.input, aim = this._aim;
+    this._steer = a[0]; this._throttle = a[1]; this._brake = a[2]; this._clock = a[3];
+    this.targetSpeed = a[4]; this.sample = a[5]; this.boost = a[6];
+    this._pass = a[7]; this._passLane = a[8]; this._passHold = a[9]; this._push = a[10];
+    m.late = a[11]; m.wide = a[12]; m.wideSign = a[13]; m.lift = a[14];
+    this._lastSample = a[15]; this._rand.setState(a[16]);
+    i.throttle = a[17]; i.brake = a[18]; i.steer = a[19]; i.handbrake = a[20];
+    aim.x = a[21]; aim.z = a[22]; aim.index = a[23];
   }
 
   // At the start of a race: keep to this lateral position, the car's grid

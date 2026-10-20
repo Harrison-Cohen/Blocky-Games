@@ -22,26 +22,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { TRACK, WORLD, GRAPHICS } from '../data/tuning.js';
 import { flat, unlit } from '../render/Materials.js';
-
-// Value noise on an integer lattice, for the rolling ground beyond the walls.
-// Hash-based rather than table-based so it needs no setup and is identical on
-// every machine and every load.
-function hash2(ix, iz) {
-  let h = Math.imul(ix, 374761393) ^ Math.imul(iz, 668265263);
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-}
-
-function noise2(x, z, cell) {
-  const fx = x / cell, fz = z / cell;
-  const ix = Math.floor(fx), iz = Math.floor(fz);
-  const tx = fx - ix, tz = fz - iz;
-  const sx = tx * tx * (3 - 2 * tx);
-  const sz = tz * tz * (3 - 2 * tz);
-  const a = hash2(ix, iz), b = hash2(ix + 1, iz);
-  const c = hash2(ix, iz + 1), d = hash2(ix + 1, iz + 1);
-  return (a + (b - a) * sx) * (1 - sz) + (c + (d - c) * sx) * sz;
-}
+import { TrackGround } from './TrackGround.js';
 
 // Deterministic RNG so a track looks identical every load. A track that
 // reshuffles its scenery on refresh makes it impossible to learn.
@@ -54,7 +35,13 @@ function rng(seed) {
 }
 
 export class TrackMesh {
-  constructor(track) {
+  // The car game builds a whole mesh in one go and passes no options. The flight
+  // world builds the same mesh a piece at a time, without a ground of its own
+  // because its terrain chunks draw the ground:
+  //   ground   false skips the 1,800 m padded plane (_buildGround)
+  //   defer    true builds nothing yet; drain steps() to build it, a little at
+  //            a time, and the mesh is finished when the generator is
+  constructor(track, { ground = true, defer = false } = {}) {
     this.track = track;
     this.group = new THREE.Group();
     this.palette = track.palette;
@@ -63,28 +50,47 @@ export class TrackMesh {
     // global amplitude cannot be both.
     this.terrainAmp = track.data.terrain?.amplitude ?? WORLD.terrainAmplitude;
     this.terrainFade = track.data.terrain?.fade ?? WORLD.terrainFade;
+    // The ground itself is TrackGround's: headless, so the flight world can ask
+    // it for heights without this mesh existing.
+    this.terrain = new TrackGround(track, this.terrainAmp, this.terrainFade);
+    this.hasGround = ground;
 
     // World positions of every light a prop declares. The renderer hands its
     // pool of real lights to the nearest of these each frame.
     this.lights = [];
-
-    this._buildGround();
-    this._buildRibbon();
-    this._buildCurbs();
-    this._buildMarkings();
-    this._buildBarriers();
-    this._buildBridges();
-    this._buildStartLine();
     // A drag strip's tree of lights; the game switches its lamps.
     this.dragTree = null;
-    if (track.data.drag) this._buildDrag();
-    this._buildProps();
+    this.propMeshes = [];
+    this.built = false;
+
+    if (!defer) for (const _ of this.steps()) { /* all of it, now */ }
+  }
+
+  // The build, as a generator: it does one piece of work, yields, and does the
+  // next. The car game drains it at once. The flight world takes a few
+  // milliseconds of it a frame, because the whole mesh costs 40-70 ms.
+  *steps() {
+    if (this.hasGround) this._buildGround();
+    yield 'ground';
+    this._buildRibbon();
+    yield 'road';
+    this._buildCurbs();
+    this._buildMarkings();
+    yield 'curbs';
+    this._buildBarriers();
+    yield 'barriers';
+    this._buildBridges();
+    this._buildStartLine();
+    if (this.track.data.drag) this._buildDrag();
+    yield 'furniture';
+    yield* this._buildProps();
 
     // The track never moves. Three.js otherwise walks this whole subtree every
     // frame recomputing world matrices that cannot have changed, in the main
     // pass and again in the shadow pass. Bake them once and turn that off.
     this.group.updateMatrixWorld(true);
     this.group.traverse((o) => { o.matrixAutoUpdate = false; });
+    this.built = true;
   }
 
   // Orientation of anything sitting on the road at sample i: X along the
@@ -106,44 +112,10 @@ export class TrackMesh {
     return m;
   }
 
-  // ABSOLUTE world height of the ground at a point, outside the barriers.
-  //
-  // Referenced to the road that happens to be nearest, not to a single ground
-  // level for the whole circuit. On a hill climb those differ by sixty metres,
-  // and referencing the circuit puts every tree on the ridge down in the
-  // valley and every apron on top of a cliff. Far enough out the reference
-  // fades to the level of the circuit as a whole, because out there the
-  // nearest piece of track changes abruptly as you cross the halfway line
-  // between two straights, and a plain that steps when the road does is worse
-  // than one that is simply flat.
-  //
-  // Flat everywhere the car can actually reach: the noise is measured from the
-  // outer edge of the graded apron, so hills only start well outside the walls.
-  // Scenery uses this too, so props sit ON the ground rather than hovering.
+  // The ground outside the barriers is TrackGround's (headless, same numbers).
+  // Scenery uses it too, so props sit ON the ground rather than hovering.
   _terrainHeight(x, z) {
-    const t = this.track;
-    // Never a bridge deck: the ground under a flyover belongs to whatever runs
-    // beneath it, not to the road eight metres overhead.
-    const near = t.nearestGroundIndex(x, z);
-    const dist = Math.hypot(x - t.px[near], z - t.pz[near]);
-    const flatTo = t.barrierLimit(t.halfWidth[near]) + t.apronWidth;
-    const out = dist - flatTo;
-
-    const a = Math.min(1, Math.max(0, out / WORLD.terrainSettle));
-    const settle = a * a * (3 - 2 * a);
-    const base = (t.py[near] - TRACK.vergeDrop) * (1 - settle) + t.groundLevel * settle;
-
-    const amp = this.terrainAmp;
-    if (amp <= 0 || out <= 0) return base;
-    const f = Math.min(1, out / this.terrainFade);
-    const ease = f * f * (3 - 2 * f);
-
-    // Three octaves: broad hills, then ridges, then a little surface break-up.
-    const n =
-      (noise2(x, z, 620) - 0.5) * 1.0 +
-      (noise2(x + 137, z - 91, 260) - 0.5) * 0.45 +
-      (noise2(x - 54, z + 218, 95) - 0.5) * 0.16;
-    return base + n * amp * ease;
+    return this.terrain.height(x, z);
   }
 
   _buildGround() {
@@ -875,7 +847,7 @@ export class TrackMesh {
     }
   }
 
-  _buildProps() {
+  *_buildProps() {
     const specs = this.track.data.props || [];
     this.propMeshes = [];
 
@@ -961,6 +933,7 @@ export class TrackMesh {
       } else {
         this._scatterMatrices(spec, rand, base).forEach((list, vi) => emit(base[vi], list));
       }
+      yield 'props';
     }
   }
 

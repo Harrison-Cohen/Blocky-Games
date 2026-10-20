@@ -60,6 +60,20 @@ export function flat(hex, opts = {}) {
   return m;
 }
 
+// Flat-shaded Lambert with a colour PER VERTEX. The flight world's terrain and
+// props use it: still a faceted world with no textures, but the colour comes from
+// the geometry, so a chunk of ground can be a different colour on every facet and
+// still be one draw call. Vertex colours are linear, as the rest of the lighting
+// is, so the world converts its palette before it writes them.
+export function facets() {
+  const k = 'facets';
+  let m = cache.get(k);
+  if (m) return m;
+  m = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  cache.set(k, m);
+  return m;
+}
+
 // Unlit, for things that must read at a constant brightness regardless of the
 // light direction: light bar lenses, timing gantry strips, the ghost car.
 export function unlit(hex, opts = {}) {
@@ -113,6 +127,18 @@ export function glossy(hex, opts = {}) {
 // The owner is responsible for disposing it. Vehicle does, when it rebuilds.
 export function ownLamp(hex) {
   return new THREE.MeshBasicMaterial({ color: hex });
+}
+
+// A translucent, unlit material that is NOT shared, for vapour whose opacity
+// changes from frame to frame: the shock rings at Mach 1. Its geometry carries
+// the colour AND the alpha per vertex (a four-component `color` attribute), so
+// an edge can fade out without a texture; the material's own opacity is the
+// whole effect's fade. The owner disposes it.
+export function ownVapour(hex = 0xffffff) {
+  return new THREE.MeshBasicMaterial({
+    color: hex, vertexColors: true, transparent: true, opacity: 0,
+    depthWrite: false, side: THREE.DoubleSide,
+  });
 }
 
 // The sky dome: a colour per vertex, drawn on the inside of a sphere, never

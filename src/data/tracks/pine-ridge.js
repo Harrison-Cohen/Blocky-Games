@@ -33,6 +33,8 @@
 
 export default {
   id: 'pine-ridge',
+  // Where it sits in the flight world (src/world); the car game never reads it.
+  world: { biome: 'forest' },
   name: 'Pine Ridge',
   description: 'Forest hill climb. Real elevation, a gravel middle sector and a banked downhill sweeper.',
   order: 3,

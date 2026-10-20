@@ -176,7 +176,7 @@ class PartSet {
 // uses to judge a lens or a mirror against a curved surface.
 // ---------------------------------------------------------------------------
 
-class Loft {
+export class Loft {
   constructor(stations, n = 4, seg = 40) {
     this.st = stations; // sorted by z, rear first
     this.n = n;

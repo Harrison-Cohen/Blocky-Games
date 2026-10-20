@@ -22,6 +22,8 @@
 
 export default {
   id: 'drag-strip',
+  // Where it sits in the flight world (src/world); the car game never reads it.
+  world: { biome: 'flats' },
   name: 'Mesa Dragway',
   description: 'A quarter-mile drag strip. Race the clock, or a friend in the other lane.',
   order: 6,
