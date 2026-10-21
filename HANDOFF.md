@@ -55,12 +55,18 @@ user approved, with the answers to the spec's open items), then sections 9 and
   and sent notes each time (sections 10e, 10f, 10g: all fixed), then said on
   2026-10-20 that they were ready for milestone 3, which was planned, approved,
   built and verified the same day. **Milestone 3 is built and waiting on the user's
-  test** (section 10i: what was built, what to test, what bit). Do not start milestone
-  4 until they have flown it and sent notes. **Nothing flight-related is committed**
-  (the working tree holds all of it, including `FLIGHT.md`, `FLIGHT_PLAN.md` and
-  `FLIGHT_M3_PROMPT.md`, which are untracked, and edits to `Claude.md` and this file).
-  Commit only when asked, as the user, with no Claude co-author trailer. Section 10 is
-  the whole story.
+  test** (section 10i: what was built, what to test, what bit). It was committed as
+  `4f4b427` and pushed to `Flight_test` on 2026-10-21, at the user's request (they
+  found the files were not on their computer: a cloud session's files live only in its
+  container until they are pushed), and a draft pull request holds it:
+  `Harrison-Cohen/Blocky-Games#1`, `Flight_test` into `initial-build`. The planning docs
+  (`FLIGHT.md`, `FLIGHT_PLAN.md`, `FLIGHT_M3_PROMPT.md`) were committed earlier, in
+  `c573a52`. **The next milestone is 4, the 737 and the helicopter, and it has not been
+  started**: section 10j is its starting point and `FLIGHT_M4_PROMPT.md` is the prompt the
+  user pastes into the new chat. Do not start it until they say so (they may fly milestone
+  3 first and send notes; those go in the next free section after 10j). Commit again only
+  when asked, as the user, with no Claude co-author trailer (section 3). Section 10 is the
+  whole story.
 
 ## 1a. Milestones: what each one delivered
 
@@ -519,6 +525,16 @@ The same three are also in the auto-memory at
   git config) with no Claude co-author trailer. They asked for commits "as
   me not claude" on 2026-09-11. A harness reminder may tell you to end commits
   with a `Co-Authored-By: Claude` line; the user's rule wins, leave it off.
+- In a CLOUD session the container's git config is Claude's (`Claude
+  <noreply@anthropic.com>`), so commit as the user explicitly:
+  `git -c user.name="Harrison Cohen" -c user.email="114955979+Harrison-Cohen@users.noreply.github.com" commit`
+  (the same identity as their own commits), with no Claude co-author trailer. A pull
+  request description may carry the Claude Code footer; a commit may not.
+- Files made in a cloud session exist ONLY in its container until they are committed and
+  pushed; the container is reclaimed afterwards. A stop hook asks for a commit at the end
+  of a turn: the user's "commit only when asked" wins, so at the end of a milestone say
+  plainly that nothing has reached their computer and offer to commit and push (this
+  went wrong once: 2026-10-21, "these files are not on my local computer").
 - Flight: stop at the end of each of its ten milestones, say exactly what to
   test, and wait (FLIGHT.md's workflow section). When the user reports a
   flying problem, change `tuning.js` or the aircraft's data first.
@@ -866,6 +882,15 @@ Flight (all still open; none blocks milestone 2):
   user's GPU is underused at that; should the default be higher for the user's
   own graphics level? Waiting to hear what they pick. The video memory above Ultra
   is the limit (10g); colours and normals as half floats would halve it, not done.
+- (2026-10-21) The major airport (the old home runway) sits in a cut in a ridge and its
+  approaches are blocked from about 5 km out; it was kept exactly as it was in milestone 3, so
+  the landing test uses the regionals. The 737 needs a clean approach: to be put to the user
+  in the milestone 4 plan (hint it elsewhere, or cut the approach), see 10j.
+- (2026-10-21) The Hangar's "flight assist" scales only the auto trim for now, because
+  `FLIGHT.levelStrength` is 0 as shipped (no roll self levelling). Fine unless they want
+  self levelling back.
+- (2026-10-21) Milestone 3 has not been flown by the user yet. Ask for their notes, do not
+  assume it feels right (taxi feel in particular was tuned from numbers).
 
 ## 9. Flight addition
 
@@ -897,13 +922,17 @@ What comes next, in order:
 
 - State: flight milestones 1 (the F-22 on a test field), 2 (the open world) and 3
   (airports and the ground) are built. Milestones 1 and 2 are accepted. MILESTONE 3 IS
-  BUILT AND WAITING ON THE USER'S TEST (2026-10-20): read 10i (what was built, what to
-  test, what bit, the known gaps) and wait for their notes, which go in 10j. DO NOT START
-  MILESTONE 4 (the 737 and VTOL, FLIGHT.md's milestone list) until they have flown it and
-  said so. Branch `Flight_test`. Uncommitted.
-- Read, in order: this section, 10a to 10i (10e to 10g are the latest fixes and 10g
-  supersedes the g limiter described in 10f; 10h is milestone 3's starting point, 10i what
-  was built), `FLIGHT.md` (the Airports, Hangar, Map and radar and Menus and flow sections
+  BUILT, COMMITTED (`4f4b427`) AND PUSHED, AND WAITING ON THE USER'S TEST (2026-10-21): read
+  10i (what was built, what to test, what bit, the known gaps) and wait for their notes,
+  which go in the next free section after 10j. THE NEXT MILESTONE IS 4 (the 737 and the
+  helicopter, FLIGHT.md's milestone list). It has NOT been started: 10j is its starting point
+  and `FLIGHT_M4_PROMPT.md` is the prompt the user pastes into the new chat. Plan it in plan
+  mode first, and do not build anything until they approve the plan. Branch `Flight_test`,
+  draft PR #1 into `initial-build`. Commit again only when asked (section 3 has the identity
+  to use).
+- Read, in order: this section, 10a to 10j (10e to 10g are the latest fixes and 10g
+  supersedes the g limiter described in 10f; 10h was milestone 3's starting point, 10i is what
+  was built, 10j is milestone 4's starting point), `FLIGHT.md` (the Airports, Hangar, Map and radar and Menus and flow sections
   are now implemented; the milestone list), `FLIGHT_PLAN.md`. All nine car checks and
   `npm run flight` pass; `npm run world` passes everything but four checks that fail in this
   container and on the pristine tree alike (three mesh hashes and one chunk-time check: 10i).
@@ -1645,9 +1674,10 @@ Decisions to put to the user in the plan (FLIGHT.md's open-items habit; suggesti
 ### 10i. Milestone 3: airports and the ground, built (2026-10-20, waiting on the user's test)
 
 The user asked for milestone 3 on 2026-10-20. The plan (read-first order, ten decisions with
-answers) was approved in plan mode, then built in one pass: no commits, no packages. They have
-NOT flown it yet; their notes will go in a section 10j. What follows is what exists, what to
-test, and what bit. The whole milestone is in the working tree.
+answers) was approved in plan mode, then built in one pass, with no packages. It was committed as
+`4f4b427` on 2026-10-21 and pushed to `Flight_test` (draft PR `Harrison-Cohen/Blocky-Games#1`).
+They have NOT flown it yet; their notes will go in the next free section after 10j (10j is the
+starting point of milestone 4). What follows is what exists, what to test, and what bit.
 
 **Built**
 
@@ -1837,3 +1867,168 @@ The Hangar (step 6, the last thing built).
   glacier-pass and pine-ridge, and "a chunk takes 2.56 ms against a 2 ms budget" (a wall-clock
   check, best of three). They are not this milestone's; every check this milestone added passes.
 - `Turntable.js` duplicates the Garage's scene (debt noted, as the plan said).
+
+### 10j. Milestone 4: the starting point (2026-10-21, not started)
+
+The next flight milestone is 4, "The 737 and the helicopter" (FLIGHT.md, milestone list): their
+bodies, flight models, flaps, airbrakes, autopilot, hover assist, sling hook, tuned to their
+figures, switching aircraft in the hangar, a refit script. The prompt for the new chat is
+`FLIGHT_M4_PROMPT.md`. Plan first, wait for approval, build, stop and say what to test. The user
+may fly milestone 3 first (10i) and send notes; fix those before building, and write them in the
+next free section after this one.
+
+What the spec asks (FLIGHT.md, "The three aircraft", "The flight model", "Systems", "Hangar",
+"Controls", "Checks"; FLIGHT_PLAN.md section 2 and section 5 item 5):
+- **Boeing 737-800.** Length 39.47 m, span 35.79 m with winglets, wing area 124.6 m2, empty
+  41,413 kg, maximum takeoff 79,016 kg, fuel 26,020 litres, two CFM56-7B26 at about 117 kN each,
+  cruise Mach 0.785, maximum Mach 0.82, ceiling 41,000 ft, takeoff field length 2,316 m, landing
+  field length 1,600 m, 162 seats. The approach speed is NOT in the spec's sources (about 130 to
+  145 knots at landing weight): find a real figure online and say so if you cannot. Heavy, stable,
+  slow to respond; needs flaps (three detents that visibly change lift, drag and stall speed) and a
+  long runway. Spoilers as its airbrake. Payload (passengers and cargo) changes mass. Autopilot is
+  most useful here. A fictional airline-style livery (no real airlines).
+- **The helicopter.** "Magpie 48" (FLIGHT_PLAN section 2, approved there, game numbers not matched
+  to anything real): blocky-smooth utility helicopter, 4,800 kg, 12 m four-blade main rotor,
+  conventional tail rotor, tall dorsal intake, side-by-side cockpit and a six-seat cabin with sliding
+  doors, skid gear, short stub wings with a gun pod and two rocket pods (the weapons are milestone
+  7), a belly hook. Top speed about 75 m/s, climb about 10 m/s, ceiling about 5,000 m, sling hook
+  rated for about 1,500 kg.
+- **The helicopter model** (FLIGHT.md): no blades, one rotor disc. Rotor thrust along the disc
+  normal driven by collective, with ground effect and a translational lift gain; cyclic tilts the
+  disc normal, limited; torque reaction yaws the fuselage and the tail rotor (pedals) counters it;
+  fuselage drag and a small tail stabilising effect. **Hover assist**, switchable at any time: PD
+  controllers hold level attitude, hold vertical speed with the collective centred, hold zero
+  ground velocity with the cyclic centred, hold heading with the pedals centred; assist off is
+  manual; the strength is a knob. **Sling load**: a point mass on a rope (a spring and damper that
+  only pulls); it swings, drags, can be set down, and its mass is felt through the hook.
+- **Systems**: flaps (three detents on the 737, a combat setting on the fighter), airbrakes
+  (the fighter's, the 737's spoilers), autopilot with altitude hold, heading hold and speed hold on
+  all three. All switchable by key and pad.
+- **Hangar**: switch aircraft (only here), the 737's payload (passengers and cargo), the helicopter's
+  hook and weapons, tuning knobs, a livery for each, all stored per aircraft under their own keys.
+- **A refit script** for the new aircraft (`scripts/fit-aircraft.mjs` takes an id today and fits the
+  F-22's supercruise and top speed), and `npm run flight` extended so each aircraft is held to its
+  published figures, plus "the helicopter hovers with assist on within a set drift for 60 seconds".
+
+What already exists to build on (all verified in the tree on 2026-10-21):
+- `src/data/aircraft.js`: `AIRCRAFT` (a list with only the F-22), `getAircraft(id)`,
+  `DEFAULT_AIRCRAFT`; `src/data/unlocks.js` (`isUnlocked('aircraft', id)`, always true). An entry holds
+  mass, shape, curves, surfaces, engines, gear (wheels and hull points), `payload`, `figures` with their
+  sources, `ground: { minRunway, vtol }`, `cockpitEye`, `camTarget`. The F-22 already has `flapAlpha`
+  (scheduled flaps with the gear down, taken up by `FLIGHT.flapUp`), `airbrakeCdA` and `gearCdA`.
+- `FlightPlaces.eligible(ap, mode)` already reads `def.ground`: `vtol` lets a helicopter start on a
+  heliport; `minRunway` greys "Start on the runway". `Airports.start(ap, mode)` gives the poses.
+- The Hangar (`src/ui/Hangar.js`) takes a `defs` list, shows an Aircraft row, switches its preview
+  (`_switch`), keeps a setup per aircraft id, and its Save returns `{ id, setups }`. Options per
+  aircraft are in `HANGAR_OPTIONS` (`src/data/loadouts.js`: loadout items with masses, the three tune
+  knobs, the damage parts), and `hangarOptions(id)`, `normalizeSetup(id, raw)`, `payloadMass(def, loadout)`
+  take the id. Storage is per aircraft (`core/HangarStore.js`: `flight.<part>.<id>`).
+  `AircraftPhysics.setup({ payload, tune })`, `Aircraft.setLivery`.
+- `FlightInput` already collects the actions `flapsUp` and `flapsDown` (Z, X; pad d-pad left and right),
+  `autopilot` (P; pad d-pad down) and `hover` (H; pad Back held then X); nothing reads them. The key map
+  is the one the user approved (FLIGHT_PLAN section 5 item 5): with the autopilot on, Up and Down,
+  Left and Right and W and S move its three targets.
+- Tests and tools: `scripts/check-flight.mjs` and `scripts/lib/flight-harness.mjs` (`takeoffPilot`,
+  `landingPilot`, `taxiPilot`, `roundedRoute`, `standToRunway`, `trimmedFlight`, `levelMach`,
+  `airborne`, `runOn`), `scripts/fit-aircraft.mjs [id]`, `scripts/look.mjs` and `scripts/look-world.mjs`
+  (which take a substring to pick shots).
+
+What is F-22 specific and has to be generalised (this is most of the work):
+- `src/render/AircraftBuilder.js` `buildAircraft(def, livery)` is one hard-coded fighter, and its
+  livery decals (wing tips and bands, fin tips, the tail number on the fins, the roundel on the wings)
+  are placed on its own panels. The 737 and the helicopter need their own builders (lofted panels,
+  `glossy()`, round wheels), and `Aircraft.js` animates the F-22's named parts (stabilators, rudders,
+  flaperons, nozzles, gear). Keep the F-22's default mesh identical (43 meshes; the livery
+  check in `npm run flight` holds the default colours).
+- `FLIGHT` in `tuning.js` is tuned for the F-22: the damping, the aids, the g limiter, the taxi
+  governor (`taxiSpeedMax`, `taxiSpeedPerLever`), the tail guard, the nose wheel limits, the gear
+  warning speeds, the stick ramps. There is no per-aircraft override. A 79 t airliner and a helicopter
+  need their own values.
+- `FlightGame` fixes `this.def` at construction (`AIRCRAFT.find(isUnlocked)`), builds one `Aircraft`,
+  one `ShockWave`, one `FlightPlaces`, and `openHangar`'s `onClose` ignores the returned `id`: switching
+  aircraft has to rebuild those and decide where the new aircraft is put (the same stand?). There is no
+  stored "current aircraft" key yet.
+- `AircraftPhysics` assumes fixed wings, jet engines (`Engine.js`) and wheels (`Gear.js`: a spring and
+  damper per wheel, hull points, a `skid` tail point). A helicopter needs a rotor model, skids (contact
+  without rolling and with sliding friction) and its own control mapping (collective, cyclic, pedals).
+- `FlightCamera` (chase distance, `cockpitEye`), `FlightHud` (no flaps, spoiler or autopilot readouts;
+  no rotor or hover display), `FlightAudio` (a jet and an
+  afterburner; the 737 wants a turbofan hum, the helicopter a rotor chop that follows load) and
+  `ShockWave` (Mach 1; the 737 never reaches it) are tuned to a 19 m fighter.
+- The harness pilots and most of `check-flight` carry F-22 numbers (rotate at 125 kt, `vref` 76 m/s,
+  50 m climb-out, runways of 1,500 to 1,900 m, roll limits).
+- `hangarOptions(id)` and the Hangar card fall back to the F-22; `HANGAR_OPTIONS` has only `f22`.
+
+Things learned in milestone 3 that will bite milestone 4 (do not rediscover them):
+- The 737 against the airports. It needs 2,316 m to take off and 1,600 m to land, so only the major
+  (3,500 m), the air base (3,000 m, built for fighters) and perhaps a long regional (up to 2,000 m)
+  are possible: set `ground.minRunway` for it (about 2,400 m) and the greyed "Start on the runway" and
+  the airport list follow. Its span (35.8 m) and length (39.5 m) are about twice the fighter's: the
+  stands, the bays (`OPEN_WORLD.airports.zone`, 30 x 34 m) and the hangars (the major's are 50 x 40 m,
+  the regionals' 36 x 30 m) were sized for a fighter, the regionals' taxiways are 15 m and the strips'
+  12 m, and a wheelbase of about 15 m (find the figure) makes apron turns wide: the taxi test routes
+  use a 9 to 10 m turn radius (`roundedRoute`, `standToRunway`), the nose wheel limits are in `FLIGHT`.
+- The major's approaches are blocked from about 5 km out (it sits in a cut in a ridge: 10i). The
+  landing test excludes it. The 737 makes this matter. Options: give it a placement hint elsewhere
+  (that moves the home area and the six track areas' `AREA_GOLDEN`, which the world check records:
+  re-record deliberately), or cut the approach into the ridge. Put it to the user.
+- Placement is seeded and track areas keep clear of airports: editing the airport list, the spacing
+  or `seedSalt` can move track areas (10i).
+- There is no wind. FLIGHT_PLAN section 5 item 8 promised "a stub only (a settable constant wind)" in
+  this milestone so the 737's crosswind work can use it; weathercocking was not modelled in 3. It must
+  be a pure function of position and time, or the determinism checks break.
+- `FLIGHT.levelStrength` is 0 (no roll self levelling), so the Hangar's flight assist scales only the
+  auto trim; a helicopter's assist is a separate thing (hover assist).
+- Idle thrust beats rolling resistance and the tyre model has no static friction, which is why the taxi
+  governor and the parking hold exist (10i). A 737 and its brakes will need their own numbers.
+- A software-GL Chrome draws a frame in seconds: drive timers by hand (the bay dwell, the map raster
+  `_built`) in the look scripts, and give `look-world` a substring so a run takes minutes, not an hour.
+- `npm run world` ends with four failures in this container that also fail on the pristine tree (three
+  mesh hashes and one chunk-time check, 10i): not yours. Wall-clock checks fail on a swapping machine.
+- The user dictates: expect wrong words ("ailerons" for the stabilators, "inner distance" for the near
+  plane). When they report a feel problem it is often a feedback loop: trace the time series first.
+
+Decisions to put to the user in the plan (FLIGHT.md's open-items habit; recommendations in brackets):
+1. One stop or two. [One milestone, one stop, but build in order: the 737 first, checked and flyable,
+   then the helicopter. If the plan looks larger than a milestone, propose 4a (the 737, flaps,
+   spoilers, autopilot, switching) and 4b (the helicopter, hover assist, the sling hook) with a stop
+   after each, and let them choose.]
+2. Per-aircraft flight tuning. [Keep `FLIGHT` as the shared defaults and add a per-aircraft override
+   block in `tuning.js` (for example `FLIGHT_OVERRIDES.b737`), merged over `FLIGHT` when the physics is
+   built, so the F-22's behaviour is bit-identical (the "defaults change nothing" check) and every
+   override has a comment and a range.]
+3. How the builder is split and how liveries fit. [`src/render/aircraft/{f22,b737,magpie}.js` behind
+   the same `buildAircraft(def, livery)`; the F-22's output unchanged; livery options and decals per
+   aircraft in `loadouts.js` (the 737: fictional airline-style stripes and a tail number; no real
+   airlines).]
+4. The helicopter's name, design and controls. [Keep "Magpie 48" unless they object (it is in
+   FLIGHT_PLAN section 2, approved). Collective on W and S (the throttle lever's role), cyclic on the
+   arrows, pedals on A and D, H for hover assist; pad: left stick cyclic, right stick X pedals, right
+   stick Y collective. Propose the full mapping, including the hook key, for them to approve.]
+5. The 737's figures. [Use FLIGHT.md's; source the approach speed and the flap detent settings
+   (up, an approach setting, a landing setting) online and say what you found; the wheelbase and
+   the nose wheel angle too. Say when a number is an estimate.]
+6. The rotor model and hover assist structure, and the hover drift limit the check holds. [One rotor
+   disc, assist as PD controllers on attitude, vertical speed, ground velocity and heading, each with
+   a gain in `tuning.js`; a drift limit of about 2 m over 60 s, proposed in the plan.]
+7. The sling hook and how to test it without missions. [A crate on a heliport apron, a hook key, a
+   spring and damper rope that only pulls, the load rests on `world.sample`, released on the ground;
+   a headless check that it swings and settles.]
+8. The autopilot. [P toggles; altitude, heading and speed hold; with it on the stick and throttle keys
+   move the three targets (as approved); a small HUD readout; on the helicopter the holds are
+   altitude, heading and ground speed.]
+9. Wind. [A settable constant wind vector in `OPEN_WORLD` (default zero, so nothing changes), a
+   weathercocking term on the ground, a crosswind takeoff and landing check for the 737.]
+10. The major's approach and the 737's airports (see above). [Clear the major's approach (hint or
+    cut, they choose), give the 737 `ground.minRunway`, scale the bays and stand spacing by the
+    aircraft, and add a taxi test with a wide turn radius.]
+11. How switching aircraft works at runtime. [The Hangar already returns `{ id, setups }`; rebuild the
+    `Aircraft`, the physics, `FlightPlaces`, the `ShockWave` and the HUD; store the current aircraft
+    (`flight.aircraft`); put the new one on the same apron stand with its own fuel; "change aircraft"
+    stays reachable only from a bay, as the pause card says.]
+12. HUD, camera and audio per aircraft. [Chase distance and the cockpit eye from the aircraft data; flaps
+    and spoiler rows, an autopilot row, a helicopter row (rotor load, hover assist on or off); a
+    turbofan hum and a rotor chop in `FlightAudio`, built when each aircraft lands.]
+13. The refit script. [`scripts/fit-aircraft.mjs <id>` generalised: for the 737, cruise Mach 0.785 and
+    maximum Mach 0.82 at altitude, takeoff and landing field lengths; for the helicopter, the game
+    numbers (top speed, climb, ceiling).]
