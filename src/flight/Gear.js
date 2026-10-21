@@ -37,6 +37,9 @@ export class Gear {
     }));
     this.hull = hull.map((h) => ({ name: h.name, x: h.pos[0], y: h.pos[1], z: h.pos[2], skid: !!h.skid }));
     const n = this.wheels.length;
+    // The nose wheel's distance ahead of the mains: what a steering lock turns on.
+    const steered = this.wheels.find((w) => w.steer), mains = this.wheels.filter((w) => !w.steer);
+    this.wheelbase = steered && mains.length ? steered.z - mains.reduce((s, w) => s + w.z, 0) / mains.length : 5;
     this.compression = new Float64Array(n);  // m, for the renderer
     this.load = new Float64Array(n);         // N
     this.rpm = new Float64Array(n);          // wheel spin, rad/s
@@ -80,9 +83,21 @@ export class Gear {
     this.skidImpact = 0;
 
     // Nose wheel steering fades with speed so it cannot throw the nose at 100 kt.
+    // The assist also turns it at a rate, not at once, and limits the lock to the
+    // side force the tyres can give (atan of the lateral acceleration times the
+    // wheelbase over speed squared).
     const speed = Math.sqrt(body.vx * body.vx + body.vz * body.vz);
     const fade = 1 / (1 + (speed / FLIGHT.noseSteerSpeed) * (speed / FLIGHT.noseSteerSpeed));
-    this.steerAngle = -steer * FLIGHT.noseSteerMax * fade;
+    let lock = FLIGHT.noseSteerMax * fade;
+    if (FLIGHT.groundAssist) {
+      const lat = Math.atan((FLIGHT.noseSteerLatG * 9.81 * this.wheelbase) / Math.max(speed * speed, 1e-3));
+      if (lat < lock) lock = lat;
+      const want = -steer * lock, rate = FLIGHT.noseSteerRate * dt;
+      const d = want - this.steerAngle;
+      this.steerAngle += d > rate ? rate : d < -rate ? -rate : d;
+    } else {
+      this.steerAngle = -steer * lock;
+    }
     const sinS = Math.sin(this.steerAngle), cosS = Math.cos(this.steerAngle);
 
     if (down >= 0.99) {

@@ -60,6 +60,7 @@ export class FlightInput {
     this._mouse = { x: 0, y: 0 };
     this._lookMouse = false;
     this._resetHeld = 0;
+    this._brakeKey = 0;
     this._backWas = false;
     this._backUsed = false;
     this._prev = [];
@@ -220,6 +221,7 @@ export class FlightInput {
       this.keys.clear();
       s.pitch = 0; s.roll = 0; s.yaw = 0; s.analog = false;
       s.throttleRate = 0; s.ab = false; s.brake = 0; s.airbrake = false; s.cannon = false;
+      this._brakeKey = 0;
       this._resetHeld = 0; this.resetProgress = 0;
       // Keep the pad's button states current so what was held to open or close
       // a menu does not read as a fresh press when flying resumes.
@@ -238,7 +240,11 @@ export class FlightInput {
     let yaw = kb('KeyD', 'KeyA');
     let throttleRate = kb('KeyW', 'KeyS');
     let ab = K.has('ShiftLeft') || K.has('ShiftRight');
-    let brake = K.has('KeyB') ? 1 : 0;
+    // The key's brake ramps (FLIGHT_INPUT.brakeAttack): a switch is grabby at taxi speed.
+    const keyBrake = K.has('KeyB') ? 1 : 0;
+    const brakeStep = (keyBrake > this._brakeKey ? FI.brakeAttack : FI.brakeRelease) * dt;
+    this._brakeKey += Math.max(-brakeStep, Math.min(brakeStep, keyBrake - this._brakeKey));
+    let brake = this._brakeKey;
     let airbrake = K.has('KeyV');
     let cannon = K.has('Space') || (this.mouseFlight && this.state.cannon);
     let analog = false;

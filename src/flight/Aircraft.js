@@ -11,15 +11,30 @@ import { buildAircraft } from '../render/AircraftBuilder.js';
 import { FLIGHT } from '../data/tuning.js';
 
 export class Aircraft {
-  constructor(def) {
+  // livery: the Hangar's paint, pattern, number and insignia (data/loadouts.js);
+  // nothing, the aircraft as it has always looked.
+  constructor(def, livery = null) {
     this.def = def;
     this.physics = new AircraftPhysics(def);
     this.render = createRenderState();
-    const built = buildAircraft(def);
+    const built = buildAircraft(def, livery);
     this.root = built.root;
+    this.built = built;
     this.parts = built.parts;
     this._dispose = built.dispose;
     this._flame = 0;
+  }
+
+  // Repaint: build the body again and put it in the same root, so everything that
+  // holds the root (the shock wave, the camera, the scene) keeps holding it.
+  setLivery(livery) {
+    const next = buildAircraft(this.def, livery);
+    this.root.remove(this.built.body);
+    this._dispose();
+    this.built = next;
+    this.parts = next.parts;
+    this._dispose = next.dispose;
+    this.root.add(next.body);
   }
 
   // Place the mesh from the physics, `alpha` of the way between its last two

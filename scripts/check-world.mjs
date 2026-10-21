@@ -163,23 +163,25 @@ console.log('\nThe ground contract');
   } else console.log('  skip  allocation (run with node --expose-gc, which npm run world does)');
 }
 
-console.log('\nThe home runway');
+console.log('\nThe major airport (the home runway of milestone 2)');
 {
-  const h = OPEN_WORLD.home;
+  const m = world.airports.major, L = m.layout, w = { x: 0, z: 0 };
   let worst = 0, onRunway = 0, n = 0;
-  for (let along = 0; along <= h.length; along += 25) {
-    for (let across = -h.width / 2; across <= h.width / 2; across += 6) {
-      const x = h.x + across, z = h.z + along;
-      const s = world.sample(x, z, 100);
-      worst = Math.max(worst, Math.abs(s.height - h.height));
+  for (let along = 0; along <= L.length; along += 25) {
+    for (let across = -L.width / 2; across <= L.width / 2; across += 6) {
+      m.toWorld(along, across, w);
+      const s = world.sample(w.x, w.z, 100);
+      worst = Math.max(worst, Math.abs(s.height - m.base));
       n++; if (s.surface === 'runway') onRunway++;
     }
   }
   let beyond = 0;
-  for (let z = h.z - h.flatMargin; z <= h.z + h.length + h.flatMargin; z += 50) beyond = Math.max(beyond, Math.abs(world.height(h.x, z) - h.height));
+  const margin = -L.platform.u0;
+  for (let u = -margin; u <= L.length + margin; u += 50) { m.toWorld(u, 0, w); beyond = Math.max(beyond, Math.abs(world.height(w.x, w.z) - m.base)); }
   const sp = world.spawn();
-  check(worst < 0.01 && onRunway === n && h.length >= 3200, `${h.length} m x ${h.width} m, level to ${(worst * 100).toFixed(1)} cm, all of it runway, on land at ${h.height} m`);
-  check(beyond < 0.01 && world.sample(sp.x, sp.z, 100).surface === 'runway', `level for ${OPEN_WORLD.home.flatMargin} m past each end; the spawn is on the runway`);
+  check(worst < 0.01 && onRunway === n && L.length >= 3200 && m.base === 22 && m.x === 0 && m.z === 0 && m.heading === 0,
+    `${L.length} m x ${L.width} m, level to ${(worst * 100).toFixed(1)} cm, all of it runway, on land at ${m.base} m, where the home runway always was`);
+  check(beyond < 0.01 && world.sample(sp.x, sp.z, 100).surface === 'runway', `level for ${margin} m past each end; the spawn is on the runway`);
 }
 
 // --- chunks ------------------------------------------------------------------------------------------
@@ -520,12 +522,12 @@ console.log('\nScenery');
   }
   check(onTrack === 0, `${tot} props round the six tracks, none on a track or within ${OPEN_WORLD.propClear} m of one`);
   // Nothing stands where it should not: every prop the world places, over the
-  // whole of every landmark (the home runway and the six tracks), at the finest
-  // level, none on the runway or its verge, none in a track's tube or hard against
-  // it, none in the sea, and every prop a track brings itself stands on the ground
-  // or on the track.
+  // whole of every landmark (every airport and the six tracks), at the finest
+  // level, none on an airport's flat ground or its margin, none in a track's tube or
+  // hard against it, none in the sea, and every prop a track brings itself stands
+  // on the ground or on the track.
   {
-    const hm = OPEN_WORLD.home, hf = world.hf, f = { along: 0, across: 0 };
+    const hf = world.hf;
     const sweep = (cx, cz, radius, fn) => {
       const seen = new Set();
       for (let z = cz - radius; z <= cz + radius; z += 256) for (let x = cx - radius; x <= cx + radius; x += 256) {
@@ -539,14 +541,21 @@ console.log('\nScenery');
       }
       return seen.size;
     };
-    let n = 0, onStrip = 0, inVerge = 0;
-    const chunks = sweep(hm.x, hm.z + hm.length / 2, 2600, (k, x, z) => {
-      n++;
-      hf.homeFrame(x, z, f);
-      if (Math.abs(f.across) <= hm.width / 2 + 15 && f.along >= -30 && f.along <= hm.length + 30) onStrip++;
-      if (Math.abs(f.across) <= hm.width / 2 + hm.clearSide - 1 && f.along >= -hm.clearEnd + 1 && f.along <= hm.length + hm.clearEnd - 1) inVerge++;
-    });
-    check(n > 1000 && onStrip === 0 && inVerge === 0, `the home runway: ${n} props round it in ${chunks} chunks, none on the strip, none within ${hm.clearSide} m of its edge or ${hm.clearEnd} m past its ends`);
+    // The airports, each judged in its own frame and not by the function that keeps
+    // scenery off it.
+    const margin = OPEN_WORLD.airports.propMargin, loc = { u: 0, v: 0 };
+    let nAll = 0, onFlat = 0, wetAll = 0, chunksAll = 0;
+    for (const ap of world.airports.list) {
+      chunksAll += sweep(ap.px, ap.pz, ap.radius + 300, (k, x, z) => {
+        nAll++;
+        ap.toLocal(x, z, loc);
+        const o = Math.max(Math.abs(loc.u - ap.cu) - ap.hu, Math.abs(loc.v - ap.cv) - ap.hv);
+        if (o <= margin - 1) onFlat++;
+        if (hf.height(x, z) < 0.5) wetAll++;
+      });
+    }
+    check(nAll > 1000 && onFlat === 0 && wetAll === 0,
+      `${world.airports.list.length} airports: ${nAll} props round them in ${chunksAll} chunks, none on any airport's flat ground or within ${margin} m of it, none in the sea`);
 
     for (const a of world.areas.list) {
       let tot = 0, inTube = 0, close = 0, wet = 0, onHome = 0;
@@ -556,7 +565,7 @@ console.log('\nScenery');
         const o = a.ground.outside(l.x, l.z);
         if (o <= 0) inTube++; else if (o < OPEN_WORLD.propClear - 1) close++;
         if (hf.height(x, z) < 0.5) wet++;
-        if (hf.inHomeClear(x, z)) onHome++;
+        if (world.airports.inClear(x, z)) onHome++;
       });
       // The track's own scenery, against the ground the aircraft would meet.
       const mesh = new TrackMesh(a.track, { ground: false });
@@ -583,7 +592,7 @@ console.log('\nScenery');
         }
       }
       check(tot > 300 && inTube === 0 && close === 0 && wet === 0 && onHome === 0 && off === 0,
-        `${a.id.padEnd(20)} ${tot} world props and ${own} of its own: none in the tube, hard against it, in the sea or on the runway; ${off} of its own off the ground`);
+        `${a.id.padEnd(20)} ${tot} world props and ${own} of its own: none in the tube, hard against it, in the sea or on an airport; ${off} of its own off the ground`);
     }
   }
   // Thinned by level.
@@ -601,11 +610,11 @@ console.log('\nTrack areas');
   for (const a of list) {
     if (a.base < 3 || world.hf.base(a.x, a.z) < 3) landOk = false;
     if (Math.abs(a.x) + a.reach > OPEN_WORLD.size / 2 || Math.abs(a.z) + a.reach > OPEN_WORLD.size / 2) boundsOk = false;
-    const d = Math.hypot(a.x - OPEN_WORLD.home.x, a.z - OPEN_WORLD.home.z);
+    const d = Math.hypot(a.x - world.airports.center.x, a.z - world.airports.center.z);
     if (d < OPEN_WORLD.areaFromHome[0] || d > OPEN_WORLD.areaFromHome[1]) fromHome = false;
     for (const o of list) if (o !== a && Math.hypot(a.x - o.x, a.z - o.z) < a.reach + o.reach + OPEN_WORLD.areaMinSpacing - 1) spaced = false;
   }
-  check(landOk && boundsOk && spaced && fromHome, 'every area is on land, inside the map, clear of the others and of the home field');
+  check(landOk && boundsOk && spaced && fromHome, 'every area is on land, inside the map, clear of the others and of the major airport');
   for (const a of list) {
     console.log(`        ${a.id.padEnd(20)} ${a.biome.padEnd(7)} ${(Math.hypot(a.x, a.z) / 1000).toFixed(1).padStart(5)} km from home, base ${a.base.toFixed(0).padStart(5)} m, fit ${a.fit.toFixed(2)}`);
   }
@@ -664,6 +673,408 @@ console.log('\nTrack areas');
     }
   }
   check(onOk, `${road} points on the roads of the six tracks: the world's ground is Track.sample, raised by the area's base`);
+}
+
+// --- airports --------------------------------------------------------------------------------------------------------
+console.log('\nAirports');
+const AIRPORT_GOLDEN = '6dd44d5b';
+const AREA_GOLDEN = {
+  'copper-flats': [-25372.32009731233, 8008.837931603193, 5.904087799949606, 100.55471526357564],
+  'drag-strip': [35029.18613143265, 10180.217986553907, 3.0064581619758, 48.9337968600681],
+  'glacier-pass': [18212.723046541214, -34987.34137415886, 1.2404276815918982, 1290.2952758335134],
+  'harbor-nine': [5067.45029501617, 16977.04718001187, 0.3147213231663716, 32.134090002954764],
+  'pine-ridge': [-7024.219484254718, -12598.286222666502, 0.2925886716983139, 248.22704853032104],
+  'skyline-interchange': [23827.73515060544, 670.2287156134844, 1.248480015723936, 25.60347555353553],
+};
+const fnv = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 16777619); return (h >>> 0).toString(16).padStart(8, '0'); };
+const { AIRPORTS, TIERS } = await import(SRC + 'data/airports.js');
+{
+  const AP = world.airports, list = AP.list, K = OPEN_WORLD.airports;
+  const kind = (t) => list.filter((a) => a.tier === t);
+  check(kind('major').length === 1 && kind('military').length >= 1 && kind('regional').length >= 3 && kind('heliport').length >= 1,
+    `${list.length} airports: ${['major', 'military', 'regional', 'heliport', 'strip'].map((t) => `${kind(t).length} ${t}`).join(', ')}`);
+  check(new Set(list.map((a) => a.id)).size === list.length && list.every((a) => a.placed), 'every airport is placed, with an id of its own');
+  const minLen = { major: 3200, military: 2400, regional: 1400, strip: 1000, heliport: 30 };
+  check(list.every((a) => a.length >= minLen[a.tier]), `every runway is long enough for its kind (the major's is ${AP.major.length} m, at least 3,200)`);
+
+  // The six tracks have not moved, and every track has its airstrip.
+  const tracksAt = world.areas.list.every((a) => { const g = AREA_GOLDEN[a.id]; return g && a.x === g[0] && a.z === g[1] && a.heading === g[2] && a.base === g[3]; });
+  check(tracksAt, 'the six tracks are exactly where they were before there were airports');
+  const strips = kind('strip');
+  const stripsOk = world.areas.list.every((a) => AP.byId.has(`strip-${a.id}`)) && strips.length === world.areas.list.length;
+  check(stripsOk, `every track has its airstrip (${strips.length} for ${world.areas.list.length} tracks)`);
+  // Each strip runs parallel to the long side of its track, beside it, with its flat
+  // ground clear of the track's graded apron by the gap.
+  let parallel = true, gapOk = true, near = 0;
+  const loc = { x: 0, z: 0 }, w = { x: 0, z: 0 };
+  for (const st of strips) {
+    const a = world.areas.byId.get(st.track), mm = a.track.minimap;
+    const alongX = mm.maxX - mm.minX >= mm.maxZ - mm.minZ;
+    const p0 = a.toWorld(a.cx, a.cz, { x: 0, z: 0 }), p1 = a.toWorld(a.cx + (alongX ? 1 : 0), a.cz + (alongX ? 0 : 1), { x: 0, z: 0 });
+    const ang = Math.atan2(-(p1.x - p0.x), p1.z - p0.z);
+    const diff = Math.abs(((st.heading - ang + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+    if (diff > 1e-6) parallel = false;
+    const pl = st.layout.platform;
+    let worstOut = 1e9;
+    for (let q = 0; q <= 20; q++) {
+      for (const [u, v] of [[pl.u0 + (pl.u1 - pl.u0) * q / 20, pl.v0], [pl.u0 + (pl.u1 - pl.u0) * q / 20, pl.v1], [pl.u0, pl.v0 + (pl.v1 - pl.v0) * q / 20], [pl.u1, pl.v0 + (pl.v1 - pl.v0) * q / 20]]) {
+        st.toWorld(u, v, w); a.toLocal(w.x, w.z, loc);
+        worstOut = Math.min(worstOut, a.ground.outside(loc.x, loc.z));
+      }
+    }
+    if (worstOut < K.stripGap - 1) gapOk = false;
+    near = Math.max(near, Math.hypot(st.px - a.x, st.pz - a.z) - a.radius);
+  }
+  check(parallel && gapOk, `the strips run along their tracks, their flat ground at least ${K.stripGap} m from the track's apron (the farthest centre is ${near.toFixed(0)} m beyond its track's radius)`);
+
+  // On land and apart. Every sample of the platform and of the ring its blend
+  // reaches is land; flattened zones do not touch; an area keeps its room.
+  let landOk = true, lowest = 1e9, apart = true, areaApart = true, closest = 1e9, closestArea = 1e9;
+  for (const a of list) {
+    const pl = a.layout.platform, b = pl.blend;
+    for (let j = 0; j <= 8; j++) for (let i = 0; i <= 16; i++) {
+      for (const [u, v] of [[pl.u0 + (pl.u1 - pl.u0) * i / 16, pl.v0 + (pl.v1 - pl.v0) * j / 8], [pl.u0 - b + (pl.u1 - pl.u0 + 2 * b) * i / 16, j % 2 ? pl.v0 - b : pl.v1 + b]]) {
+        a.toWorld(u, v, w);
+        const h = world.hf.height(w.x, w.z);
+        lowest = Math.min(lowest, h);
+        if (h < K.ringLand - 0.5) landOk = false;
+        if (Math.abs(w.x) > OPEN_WORLD.size / 2 - 3000 || Math.abs(w.z) > OPEN_WORLD.size / 2 - 3000) landOk = false;
+      }
+    }
+    for (const o of list) {
+      if (o === a || o.id < a.id) continue;
+      const gap = Math.hypot(a.px - o.px, a.pz - o.pz) - a.reach - o.reach;
+      closest = Math.min(closest, gap);
+      const need = a.track || o.track ? 0 : K.spacing;
+      if (gap < need - 1) apart = false;
+    }
+    for (const ar of world.areas.list) {
+      if (a.track === ar.id) continue;
+      const gap = Math.hypot(a.px - ar.x, a.pz - ar.z) - a.reach - ar.reach;
+      closestArea = Math.min(closestArea, gap);
+      if (gap < (a.track ? 0 : K.areaClear) - 1) areaApart = false;
+    }
+  }
+  check(landOk, `every airport stands on land, with land all round the ring its ground blends over (the lowest is ${lowest.toFixed(1)} m), inside the map`);
+  check(apart && areaApart, `flattened zones are apart: airports ${closest.toFixed(0)} m at the least (${K.spacing} m between the placed ones), and ${closestArea.toFixed(0)} m from the nearest track area`);
+
+  // Deterministic, and a golden of where everything is (a change to the data or to the
+  // placement changes it on purpose; print and paste the new one).
+  const again = new World(trackData);
+  let identical = again.airports.list.length === list.length;
+  for (const a of list) { const b = again.airports.byId.get(a.id); if (!b || a.x !== b.x || a.z !== b.z || a.heading !== b.heading || a.base !== b.base) identical = false; }
+  const key = list.map((a) => `${a.id}:${a.x.toFixed(1)},${a.z.toFixed(1)},${a.heading.toFixed(4)},${a.base.toFixed(2)}`).join('|');
+  const hash = fnv(key);
+  check(identical, 'the same airports in a second world');
+  check(hash === AIRPORT_GOLDEN, `the layout of all ${list.length} airports is the golden one (${hash})`);
+  for (const a of list) {
+    console.log(`        ${a.id.padEnd(26)} ${a.tier.padEnd(9)} ${(Math.hypot(a.px, a.pz) / 1000).toFixed(1).padStart(5)} km from the major, runway ${a.layout.designators.map((d) => String(d).padStart(2, '0')).join('/')} ${String(a.length).padStart(4)} m at ${a.base.toFixed(0).padStart(4)} m, fit ${a.fit.toFixed(2)}`);
+  }
+
+  // A seventh track gets its strip and moves nothing: no airport, no area, no strip.
+  const extra = { ...trackData[0], id: 'spike-test-track', name: 'Spike test', world: undefined };
+  const seven = new World([...trackData, extra]);
+  let unmoved = true;
+  for (const a of list) { const b = seven.airports.byId.get(a.id); if (!b || a.x !== b.x || a.z !== b.z || a.heading !== b.heading || a.base !== b.base) unmoved = false; }
+  for (const a of world.areas.list) { const b = seven.areas.byId.get(a.id); if (a.x !== b.x || a.z !== b.z) unmoved = false; }
+  const es = seven.airports.byId.get('strip-spike-test-track');
+  check(unmoved && es && es.placed && seven.airports.list.length === list.length + 1,
+    `a seventh track file brings its strip (${es ? `${(es.px / 1000).toFixed(1)}, ${(es.pz / 1000).toFixed(1)} km` : 'nowhere'}) and every airport, area and strip stays where it was`);
+  // A hint in the data is honoured, an airport added to the data is placed.
+  const hinted = new World(trackData, OPEN_WORLD, [...AIRPORTS, { id: 'hinted-test', name: 'Hinted', tier: 'regional', placement: { x: 20000, z: 30000, heading: 0.5 } }, { id: 'added-test', name: 'Added', tier: 'regional' }]);
+  const h1 = hinted.airports.byId.get('hinted-test'), h2 = hinted.airports.byId.get('added-test');
+  check(h1.x === 20000 && h1.z === 30000 && Math.abs(h1.heading - 0.5) < 1e-12 && h2 && h2.placed, 'a placement hint in the airport data is honoured, and a new line there is placed');
+}
+
+console.log('\nThe ground at airports');
+{
+  const AP = world.airports, list = AP.list, K = OPEN_WORLD.airports;
+  const w = { x: 0, z: 0 };
+  // Flat, long enough, a runway's own surface, and the rest of the pavement tarmac.
+  let flatWorst = 0, normalBad = 0, surfaceBad = 0, platformWorst = 0, gradWorst = 0, points = 0;
+  for (const a of list) {
+    const L = a.layout;
+    for (const r of L.pave) {
+      const want = r.kind === 'runway' ? L.surface : 'tarmac';
+      for (const [fu, fv] of [[0.5, 0.5], [0.02, 0.02], [0.98, 0.98], [0.02, 0.98], [0.98, 0.02], [0.25, 0.75]]) {
+        a.toWorld(r.u0 + (r.u1 - r.u0) * fu, r.v0 + (r.v1 - r.v0) * fv, w);
+        const s = world.sample(w.x, w.z, a.base + 30);
+        flatWorst = Math.max(flatWorst, Math.abs(s.height - a.base));
+        if (s.normal.y < 0.9999) normalBad++;
+        if (s.surface !== want) surfaceBad++;
+        points++;
+      }
+    }
+    // The whole platform is level, and the runway's gradient (a metre in a hundred is
+    // ICAO's own limit for a long runway) is nil.
+    const pl = L.platform;
+    for (let j = 0; j <= 10; j++) for (let i = 0; i <= 40; i++) {
+      a.toWorld(pl.u0 + (pl.u1 - pl.u0) * i / 40, pl.v0 + (pl.v1 - pl.v0) * j / 10, w);
+      platformWorst = Math.max(platformWorst, Math.abs(world.height(w.x, w.z) - a.base));
+    }
+    let prev = null;
+    for (let u = 0; u <= L.length; u += 25) {
+      a.toWorld(u, 0, w);
+      const h = world.height(w.x, w.z);
+      if (prev !== null) gradWorst = Math.max(gradWorst, Math.abs(h - prev) / 25);
+      prev = h;
+    }
+  }
+  check(flatWorst < 0.01 && normalBad === 0 && surfaceBad === 0, `${points} points on pavement: level to ${(flatWorst * 100).toFixed(2)} cm, normal straight up, the surface the layout says (${surfaceBad} wrong)`);
+  check(platformWorst < 0.01 && gradWorst < 0.01, `every platform is level to ${(platformWorst * 100).toFixed(2)} cm and no runway has a gradient (${(gradWorst * 100).toFixed(3)}%, the limit is 1%)`);
+  // Off the pavement it is ground again.
+  let offBad = 0;
+  for (const a of list) {
+    const L = a.layout;
+    a.toWorld(L.length * 0.5, -(L.width / 2 + 25), w);
+    const s = world.sample(w.x, w.z, a.base + 30);
+    if (s.surface === 'runway' || s.surface === 'tarmac') offBad++;
+  }
+  check(offBad === 0, 'beside a runway, off the pavement, the ground is not pavement');
+
+  // Clearance: the land under each end's extended centre line stays under the
+  // approach surface, and nothing beside the strip rises faster than ICAO's 14.3%
+  // transitional slope. Judged on the land as flown (the heights the aircraft meets).
+  const rows = [];
+  let bad = 0, badTrans = 0;
+  for (const a of list) {
+    const L = a.layout;
+    let viol = 0, worstTrans = 0;
+    for (const end of [0, 1]) {
+      const endU = end ? L.length + L.blast : -L.blast, dir = end ? 1 : -1;
+      for (let d = 0; d <= K.approachLength; d += K.approachStep) {
+        a.toWorld(endU + dir * d, 0, w);
+        if (world.height(w.x, w.z) > a.base + K.approachSlope * d + K.approachMargin + (d < L.platform.blend ? 0 : 0)) viol++;
+      }
+    }
+    for (let u = 0; u <= L.length; u += 200) for (const side of [-1, 1]) for (let off = L.width / 2 + 75; off <= 1500; off += 150) {
+      a.toWorld(u, side * off, w);
+      const rise = world.height(w.x, w.z) - a.base - 0.143 * (off - L.width / 2 - 75) - K.approachMargin;
+      worstTrans = Math.max(worstTrans, rise);
+    }
+    rows.push(`        ${a.id.padEnd(26)} approach steps blocked ${viol}, worst rise over the 14.3% side slope ${Math.max(0, worstTrans).toFixed(0)} m`);
+    if (!a.track && a.data.placement === undefined && viol > 0) bad++;
+    if (!a.track && a.data.placement === undefined && worstTrans > 0) badTrans++;
+  }
+  check(bad === 0 && badTrans === 0, 'the placed airports have a clear approach and nothing beside them rises past the transitional slope (the hinted major and the strips beside the tracks take the land they are given: reported below)');
+  console.log(rows.join('\n'));
+
+  // The start poses.
+  let poseBad = [];
+  const structures = (a) => a.layout.structures;
+  for (const a of list) {
+    for (const mode of ['apron', 'runway', 'air', 'hangar']) {
+      const p = AP.start(a, mode, {});
+      const loc = a.toLocal(p.x, p.z, { u: 0, v: 0 });
+      const s = world.sample(p.x, p.z, p.y + 5);
+      const L = a.layout;
+      let ok = Math.abs(s.height - a.base) < 0.01 || mode === 'air';
+      if (mode === 'runway') ok = ok && s.surface === L.surface && Math.abs(loc.v) < 1e-6 && Math.abs(Math.cos(p.heading - a.heading) - 1) < 1e-9;
+      if (mode === 'air') ok = ok && Math.abs(loc.v) < 1e-6 && loc.u < 0 && p.y > a.base + 500;
+      if (mode === 'apron') ok = ok && s.surface === 'tarmac';
+      if (mode === 'hangar') ok = ok && s.surface === 'tarmac' && AP.zoneAt(p.x, p.z) === null && L.zones.length > 0 && Math.hypot(loc.u - (L.zones[0].u0 + L.zones[0].u1) / 2, loc.v - L.zones[0].v0) < 40;
+      // Never inside a building, and room for the airframe (a 19 m fighter: 12 m).
+      if (mode === 'apron' || mode === 'hangar') {
+        for (const st of structures(a)) if (Math.abs(loc.u - st.u) < st.w / 2 + 12 && Math.abs(loc.v - st.v) < st.d / 2 + 12) ok = false;
+      }
+      if (!ok) poseBad.push(`${a.id}/${mode}`);
+    }
+  }
+  check(poseBad.length === 0, `every airport's four starts are right: the stand on the apron, the threshold on the runway, the centre line high up, the bay's mouth${poseBad.length ? '  FAIL: ' + poseBad.join(', ') : ''}`);
+
+  // The hangar zones are on the apron, and found.
+  let zoneBad = 0, zones = 0;
+  for (const a of list) {
+    if (a.layout.zones.length === 0) zoneBad++;
+    for (const z of a.layout.zones) {
+      zones++;
+      a.toWorld((z.u0 + z.u1) / 2, (z.v0 + z.v1) / 2, w);
+      if (AP.zoneAt(w.x, w.z) !== z || z.airport !== a || world.sample(w.x, w.z, a.base + 5).surface !== 'tarmac') zoneBad++;
+    }
+  }
+  check(zoneBad === 0 && zones >= list.length, `every airport has a hangar bay on its apron (${zones} bays in all) and the world finds each one`);
+
+  // What height() costs with the airports in: best of three against the same
+  // heightfield with none.
+  const bench = () => { let best = 1e9; for (let r = 0; r < 3; r++) { const t = performance.now(); let sum = 0; for (let i = 0; i < 200000; i++) sum += world.hf.height((i % 1000) * 97 - 48000, Math.floor(i / 1000) * 211 - 40000); best = Math.min(best, performance.now() - t); } return best; };
+  const withAp = bench();
+  const saved = world.hf.airports; world.hf.airports = null;
+  const without = bench();
+  world.hf.airports = saved;
+  check(withAp < without * 1.2 + 5, `height() with ${list.length} airports costs ${(withAp * 5).toFixed(0)} ns a call, ${((withAp / without - 1) * 100).toFixed(0)}% over the same with none`);
+
+  // The flattening does not tear or bury, at every Detail step. The surface the
+  // mesh draws, triangle by triangle, is never above any pavement; the chunks at an
+  // airport cover themselves exactly once. Levels 0 to 2 are asserted, and 3 from
+  // the Medium step on (a coarse facet is drawn from 7 to 10 km away, where a runway
+  // is a thread and the pavement's polygon offset, which grows with distance, carries
+  // it); the rest is reported.
+  const tree = new ChunkTree(OPEN_WORLD);
+  const cache = new Map();
+  const chunkIn = (level, cells, x, z) => {
+    const ix = Math.floor((x + tree.half) / tree.size(level)), iz = Math.floor((z + tree.half) / tree.size(level));
+    const key = `${level}/${cells}/${ix}/${iz}`;
+    let c = cache.get(key);
+    if (!c) { c = { level, ix, iz, size: tree.size(level), x0: tree.origin(level, ix), z0: tree.origin(level, iz), cells }; c.terrain = buildTerrain(world, c); cache.set(key, c); }
+    return c;
+  };
+  const meshAt = (level, cells, x, z) => {          // the drawn surface, with the diagonal the mesh was cut on
+    const c = chunkIn(level, cells, x, z), N = cells, V = N + 1, cell = c.size / N, Hs = c.terrain.heights;
+    const fx = (x - c.x0) / cell, fz = (z - c.z0) / cell;
+    const i = Math.min(N - 1, Math.floor(fx)), j = Math.min(N - 1, Math.floor(fz)), u = fx - i, v = fz - j;
+    const wi = Math.round(c.x0 / cell) + i, wj = Math.round(c.z0 / cell) + j;
+    const h00 = Hs[j * V + i], h10 = Hs[j * V + i + 1], h01 = Hs[(j + 1) * V + i], h11 = Hs[(j + 1) * V + i + 1];
+    if (((wi + wj) & 1) === 0) return u + v <= 1 ? h00 + (h10 - h00) * u + (h01 - h00) * v : h11 + (h01 - h11) * (1 - u) + (h10 - h11) * (1 - v);
+    return u >= v ? h00 + (h10 - h00) * u + (h11 - h10) * v : h00 + (h11 - h01) * u + (h01 - h00) * v;
+  };
+  const sampleBand = [];
+  for (const a of list) {
+    for (const r of a.layout.pave) {
+      const nu = Math.max(2, Math.ceil((r.u1 - r.u0) / 80)), nv = Math.max(2, Math.ceil((r.v1 - r.v0) / 40));
+      for (let i = 0; i <= nu; i++) for (let j = 0; j <= nv; j++) {
+        a.toWorld(r.u0 + (r.u1 - r.u0) * i / nu, r.v0 + (r.v1 - r.v0) * j / nv, w);
+        sampleBand.push([w.x, w.z, a.base]);
+      }
+    }
+  }
+  const report = [];
+  let buried = 0, buriedAt = '', footBad = 0, checkedChunks = 0, maxBury = 0;
+  const steps = OPEN_WORLD.detailSteps;
+  for (const st of steps) {
+    const row = [];
+    for (let level = 0; level <= 4; level++) {
+      let over = 0, worst = 0;
+      for (const [x, z, y] of sampleBand) {
+        const d = meshAt(level, st.cells, x, z) - y;
+        if (d > 0.05) { over++; if (d > worst) worst = d; }
+      }
+      row.push(`${level}:${over}`);
+      // Asserted where the runway is more than a few pixels wide: levels 0 to 2, and
+      // 3 as well from the Medium step on (the Low step's 170 m facets at level 3
+      // are drawn from 7 km, where a runway is a thread, and are reported).
+      if (level <= 2 || (level === 3 && st.cells >= 32)) { buried += over; maxBury = Math.max(maxBury, worst); if (over && !buriedAt) buriedAt = `${st.name} level ${level}`; }
+    }
+    report.push(`${st.name} (${st.cells} cells): ${row.join(' ')}`);
+  }
+  // Every chunk built at an airport covers itself exactly once (no tear), faces up.
+  for (const c of cache.values()) {
+    const pos = c.terrain.pos;
+    let foot = 0;
+    for (let v = 0; v < pos.length; v += 9) foot += ((pos[v + 5] - pos[v + 2]) * (pos[v + 6] - pos[v]) - (pos[v + 3] - pos[v]) * (pos[v + 8] - pos[v + 2])) / 2;
+    checkedChunks++;
+    if (Math.abs(foot - c.size * c.size) > c.size * c.size * 1e-5) footBad++;
+  }
+  check(buried === 0, `${sampleBand.length} points on the pavement of all ${list.length} airports, at every Detail step, levels 0 to 2 (and 3 from Medium): the drawn ground is never above the pavement${buried ? ` (${buried} buried, worst ${maxBury.toFixed(2)} m, first at ${buriedAt})` : ''}`);
+  check(footBad === 0, `${checkedChunks} chunks over the airports, at every step and level: each covers itself exactly once`);
+  console.log('        pavement points the drawn ground buries, by Detail step and level (level 3 at Low and level 4 are reported, not asserted):\n          ' + report.join('\n          '));
+}
+
+console.log('\nAirport meshes');
+{
+  const { AirportMesh } = await import(SRC + 'render/AirportMesh.js');
+  const THREE = await import('three');
+  const AP = world.airports, w = { x: 0, z: 0 };
+  let built = 0, tris = 0, worstMs = 0, onPave = 0, offPave = 0, markOff = 0, heightOff = 0, lampOut = 0, standOn = 0, differs = 0, nanCount = 0;
+  const v = new THREE.Vector3();
+  for (const a of AP.list) {
+    const t0 = performance.now();
+    const m = new AirportMesh(a);
+    const group = m.build();
+    worstMs = Math.max(worstMs, performance.now() - t0);
+    // Placed as WorldOrigin places it: at the airport's origin on its base height.
+    group.position.set(a.x, a.base, a.z);
+    group.updateMatrix();
+    group.updateMatrixWorld(true);
+    built++;
+    const L = a.layout, kids = group.children;
+    const meshes = kids.filter((c) => c.isMesh), points = kids.filter((c) => c.isPoints);
+    const [pave, marks, structs, lamps] = meshes;
+    const centroids = (mesh, fn) => {
+      const pos = mesh.geometry.attributes.position.array;
+      for (let i = 0; i < pos.length; i += 9) {
+        v.set((pos[i] + pos[i + 3] + pos[i + 6]) / 3, (pos[i + 1] + pos[i + 4] + pos[i + 7]) / 3, (pos[i + 2] + pos[i + 5] + pos[i + 8]) / 3).applyMatrix4(mesh.matrixWorld);
+        if (!Number.isFinite(v.x + v.y + v.z)) nanCount++;
+        fn(v.x, v.y, v.z);
+      }
+    };
+    if (pave) centroids(pave, (x, y, z) => {
+      tris++;
+      const s = world.sample(x, z, y + 5).surface;
+      if (s === 'runway' || s === 'tarmac') onPave++; else offPave++;
+      if (Math.abs(y - a.base - 0.04) > 0.01) heightOff++;
+    });
+    // The paint is on the pavement, a little above it.
+    if (marks) centroids(marks, (x, y, z) => {
+      const s = world.sample(x, z, y + 5).surface;
+      if (!(s === 'runway' || s === 'tarmac') || Math.abs(y - a.base - 0.07) > 0.01) markOff++;
+    });
+    // The lamps are on the platform.
+    if (lamps) centroids(lamps, (x, y, z) => { if (!AP.at(x, z)) lampOut++; });
+    // A building does not stand on pavement (the sock and the poles are on it by design).
+    if (structs) for (const s of L.structures) {
+      if (s.kind === 'sock') continue;
+      for (const p of L.pave) if (s.u + s.w / 2 > p.u0 && s.u - s.w / 2 < p.u1 && s.v + s.d / 2 > p.v0 && s.v - s.d / 2 < p.v1) standOn++;
+    }
+    // The same build twice is the same bytes.
+    const again = new AirportMesh(a).build();
+    for (let k = 0; k < meshes.length; k++) {
+      const p1 = meshes[k].geometry.attributes.position.array, p2 = again.children.filter((c) => c.isMesh)[k].geometry.attributes.position.array;
+      if (p1.length !== p2.length || p1.some((x, j) => x !== p2[j])) differs++;
+    }
+    if (points.length !== 1 || !points[0].geometry.attributes.position.count) differs++;
+    m.dispose();
+  }
+  check(built === AP.list.length && nanCount === 0, `${built} airports built as meshes (${tris} pavement triangles), every number finite, the slowest in ${worstMs.toFixed(0)} ms`);
+  check(offPave === 0 && heightOff === 0, `placed as WorldOrigin places them, every pavement triangle lies on a point the ground contract calls pavement (${offPave} off it, ${heightOff} at the wrong height): the heading's sign is right`);
+  check(markOff === 0 && lampOut === 0 && standOn === 0, `the paint is on the pavement (${markOff} off it), every lamp on its platform (${lampOut} off), no building on pavement (${standOn})`);
+  check(differs === 0, 'building an airport twice gives the same geometry');
+}
+
+console.log('\nThe map');
+{
+  const M = await import(SRC + 'world/MapData.js');
+  const { distanceIn } = await import(SRC + 'flight/Units.js');
+  const marks = M.mapMarkers(world);
+  const airports = marks.filter((m) => m.kind === 'airport'), tracks = marks.filter((m) => m.kind === 'track');
+  check(airports.length === world.airports.list.length && tracks.length === world.areas.list.length && new Set(marks.map((m) => `${m.kind}/${m.id}`)).size === marks.length,
+    `a marker for every airport (${airports.length}) and every race track (${tracks.length}), read from the registries`);
+  const seven = new World([...trackData, { ...trackData[0], id: 'spike-test-track', name: 'Spike test', world: undefined }]);
+  const m7 = M.mapMarkers(seven);
+  check(m7.length === marks.length + 2 && m7.some((m) => m.kind === 'track' && m.id === 'spike-test-track') && m7.some((m) => m.kind === 'airport' && m.id === 'strip-spike-test-track'),
+    'a seventh track file is on the map by itself, with its airstrip, and nothing else changes');
+  // The picture: made a few rows at a time or at once it is the same, deterministic, sea and land where the heights say.
+  const r1 = M.createRaster(96), r2 = M.createRaster(96);
+  M.renderRaster(world, r1);
+  let rows = 0;
+  while (!M.renderRaster(world, r2, 0.01)) rows++;
+  let same = r1.rgba.length === r2.rgba.length;
+  for (let k = 0; same && k < r1.rgba.length; k++) if (r1.rgba[k] !== r2.rgba[k]) same = false;
+  let seaOk = 0, seaN = 0, landOk = 0, landN = 0;
+  const px = { x: 0, y: 0 }, wp = { x: 0, z: 0 };
+  for (let j = 2; j < r1.n; j += 7) for (let i = 2; i < r1.n; i += 7) {
+    M.toWorldXZ(r1, i + 0.5, j + 0.5, wp);
+    const h = world.height(wp.x, wp.z), o = (j * r1.n + i) * 4;
+    const blue = r1.rgba[o + 2] > r1.rgba[o] + 30 && r1.rgba[o + 2] > r1.rgba[o + 1];
+    if (h <= -2) { seaN++; if (blue) seaOk++; } else if (h > 20) { landN++; if (!blue) landOk++; }
+  }
+  check(same && rows > 1, `the picture is the same made at once or ${rows} slices at a time`);
+  check(seaN > 20 && landN > 20 && seaOk / seaN > 0.97 && landOk / landN > 0.97, `${seaOk} of ${seaN} sample cells over the sea are blue and ${landOk} of ${landN} over the land are not`);
+  let back = 0;
+  for (let k = 0; k < 50; k++) {
+    const x = (rnd() - 0.5) * 100000, z = (rnd() - 0.5) * 100000;
+    M.toPixel(r1, x, z, px); M.toWorldXZ(r1, px.x, px.y, wp);
+    back = Math.max(back, Math.abs(wp.x - x), Math.abs(wp.z - z));
+  }
+  // East to the right: a point east of the middle (-x) is right of it.
+  M.toPixel(r1, -10000, 0, px);
+  check(back < 1e-6 && px.x > r1.n / 2, `world to map pixel and back is exact; east is to the right (east of the middle is at pixel ${f1(px.x)} of ${r1.n})`);
+  const t0 = performance.now();
+  const full = M.createRaster(OPEN_WORLD.chunkCells * 10);
+  M.renderRaster(world, full);
+  const ms = performance.now() - t0;
+  check(ms < 4000, `the whole picture at ${full.n} by ${full.n} is made in ${ms.toFixed(0)} ms (a few ms a frame in the game)`);
+  const nm = distanceIn(1852, 'aviation'), mi = distanceIn(1609.344, 'mph'), km = distanceIn(1000, 'metric');
+  check(Math.abs(nm.value - 1) < 1e-9 && nm.unit === 'nm' && Math.abs(mi.value - 1) < 1e-9 && km.value === 1 && km.unit === 'km', 'distances read in nautical miles, miles or kilometres');
 }
 
 // --- the floating origin -------------------------------------------------------------------------------------
@@ -831,8 +1242,8 @@ console.log('\nFlying over the world');
     t.step(DT, ti, world);
     if (liftoff > 0) minAgl = Math.min(minAgl, t.y - world.height(t.x, t.z));
   }
-  check(liftoff > 0 && liftSpeed > 110 && liftSpeed < 200 && rollDist < OPEN_WORLD.home.length - 600 && !tailStrike && !t.crashed,
-    `takes off from the home runway in afterburner: lifts off at ${f1(liftSpeed)} kt after ${rollDist.toFixed(0)} m of ${OPEN_WORLD.home.length}, no tail strike`);
+  check(liftoff > 0 && liftSpeed > 110 && liftSpeed < 200 && rollDist < world.airports.major.length - 600 && !tailStrike && !t.crashed,
+    `takes off from the major airport's runway in afterburner: lifts off at ${f1(liftSpeed)} kt after ${rollDist.toFixed(0)} m of ${world.airports.major.length}, no tail strike`);
   check(t.y - sp.y > 500 && minAgl > 3, `and climbs away over the land (${(t.y - sp.y).toFixed(0)} m up after 40 s, never below ${minAgl.toFixed(0)} m of ground)`);
   // It rests on the runway.
   const r = new H.AircraftPhysics(F22);
@@ -887,6 +1298,7 @@ console.log('\nThe world as objects');
   const info = wm.info();
   check(!threw, `45 s of flight through WorldMesh.update ran without a fault (${rebased} rebases, ${info.chunksDrawn} chunks drawn, ${info.areasBuilt} track meshes built)`);
   check(visibleOk, 'every chunk the tree wants is a visible mesh');
+  check(info.airportsBuilt >= 1 && wm.airportViews.size >= 1, `the airports near the route are built as it goes (${info.airportsBuilt} of ${world.airports.list.length}), and the ones it left are dropped`);
   console.log(`        worst frame of world work ${worstMs.toFixed(1)} ms (a car mesh or a track step is a few ms); up to ${maxCalls} visible meshes`);
   wm.dispose();
 }

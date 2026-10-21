@@ -6,9 +6,9 @@
 //   npm run dev                          (in another terminal)
 //   node scripts/look.mjs [out-dir] [url]
 //
-// Writes title.png, fly-menu.png, runway.png, air-chase.png, air-cockpit.png,
-// air-orbit.png, close-up.png, pause.png, back-on-title.png into out-dir
-// (default /tmp/look).
+// Writes title.png, fly-menu.png, apron.png, runway.png, air-chase.png,
+// air-cockpit.png, air-orbit.png, close-up.png, map.png, hangar.png, pause.png,
+// back-on-title.png into out-dir (default /tmp/look).
 
 import { mkdirSync } from 'node:fs';
 import { launch } from './lib/browser.mjs';
@@ -26,6 +26,9 @@ try {
   await b.eval('game.onFly()');
   await b.sleep(1800);
   await shot('fly-menu');
+  await b.eval('flight.start("apron")');
+  await b.sleep(1200);
+  await shot('apron');
   await b.eval('flight.start("runway")');
   await b.sleep(900);
   await shot('runway');
@@ -41,6 +44,16 @@ try {
   await b.eval('flight.camera.mode = 0; flight._savedCamMode = 0; flight.camera.cfg = { ...flight.camera.cfg, distance: 21, height: 4.2, speedPullback: 0 };');
   await b.sleep(900);
   await shot('close-up');
+  await b.eval('flight.openMap("pause")');
+  // The map is drawn a few milliseconds a frame; wait until it is whole.
+  for (let i = 0; i < 180 && !(await b.eval('flight.screens.map._built')); i++) await b.sleep(500);
+  await b.sleep(500);
+  await shot('map');
+  await b.eval('flight.screens.hideAll()');
+  await b.eval('flight.openHangar("pause")');
+  await b.sleep(1500);
+  await shot('hangar');
+  await b.eval('flight.hangar.close(false); flight.screens.hideAll();');
   await b.eval('flight.camera.mode = 0; flight.openPause()');
   await b.sleep(600);
   await shot('pause');

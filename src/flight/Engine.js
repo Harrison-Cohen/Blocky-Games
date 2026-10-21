@@ -38,6 +38,9 @@ export class Engine {
     this.abDown = def.abDown;
     this.sfcDry = def.sfcDry;
     this.sfcAb = def.sfcAb;
+    // The Hangar's tuning: a scale on thrust and fuel flow, 1 as fitted. Set from
+    // outside and kept across a reset.
+    this.power = 1;
 
     this.reset();
   }
@@ -69,9 +72,9 @@ export class Engine {
     const spoolFrac = this.idle + (1 - this.idle) * this.n;
     const dryPart = this.dry * spoolFrac * Math.pow(sigma, this.kDry) * this.machDry.at(mach);
     const abPart = (this.ab - this.dry) * this.abLevel * Math.pow(sigma, this.kAb) * this.machAb.at(mach);
-    const t = (dryPart + abPart) * this.health;
+    const t = (dryPart + abPart) * this.health * this.power;
     this.thrust = lit || this.n > 0.02 ? t : 0;
-    this.fuelFlow = lit ? this.sfcDry * dryPart + this.sfcAb * abPart : 0;
+    this.fuelFlow = lit ? (this.sfcDry * dryPart + this.sfcAb * abPart) * this.power : 0;
     return this.thrust;
   }
 }

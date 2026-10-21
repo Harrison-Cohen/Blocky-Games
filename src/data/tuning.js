@@ -1562,8 +1562,10 @@ export const FLIGHT = {
   // the wheels and the aircraft slower than parkSpeed (m/s) it stands still, as
   // it would on its brakes: idle thrust is more than the tyres' rolling
   // resistance, and left alone the aircraft crept off down the runway and
-  // reached 20 m/s. Range: throttle 0.02-0.25, speed 0.1-2.
-  parkThrottle: 0.1,
+  // reached 20 m/s. (The taxi governor below makes the lever a speed from here
+  // up: 0.05 asks for 2 m/s, so the dead band of the lever is small.) Range:
+  // throttle 0.02-0.25, speed 0.1-2.
+  parkThrottle: 0.04,
   parkSpeed: 0.5,
 
   // Control authority of the stick, the damping and the rudder is full below
@@ -1640,9 +1642,53 @@ export const FLIGHT = {
   airbrakeTime: 1.2,
 
   // Nose wheel steering: the most lock (rad) and the speed (m/s) at which it
-  // has faded to a quarter. Range: max 0.3-1.0, speed 10-60.
+  // has faded to half. Range: max 0.3-1.0, speed 10-60.
   noseSteerMax: 0.6,
   noseSteerSpeed: 25,
+
+  // The ground assists (milestone 3), all of them off with the master switch
+  // groundAssist. The nose wheel turns at most noseSteerRate rad/s (a tapped key
+  // used to snap it to full lock), and its lock is limited so the side force it
+  // asks of the tyres stays under noseSteerLatG (in g): the wheelbase makes the
+  // turn, v squared times tan(lock) over the wheelbase, and a full lock at 25 m/s
+  // asked for two or three g and scraped a wingtip. Range: rate 0.4-3, latG 0.1-0.6.
+  groundAssist: true,
+  noseSteerRate: 1.3,
+  noseSteerLatG: 0.4,
+
+  // The taxi governor. A fighter's idle thrust is more than its tyres' rolling
+  // resistance, so there is no speed to hold with the lever alone: a real pilot
+  // rides the brakes. On its wheels, with the lever at or under taxiLeverMax and
+  // slower than taxiSpeedMax (m/s), the lever asks for a speed (taxiSpeedPerLever
+  // times the lever: 0.1 holds 4 m/s, 0.25 holds 10) and the wheel brakes hold the
+  // aircraft to it, a taxiBrakeGain of brake per m/s over, at most taxiBrakeMax.
+  // Lever 0 stops it. It never touches the steering, and off the band (above the
+  // lever or the speed, or in afterburner) it does nothing, so a takeoff roll and
+  // a landing roll are the pilot's. The brake has to be able to hold the thrust the
+  // lever gives (66 kN at 0.25, 80 at 0.3, against about 5 of rolling resistance:
+  // the engine's lever is steep). Range: lever 0.15-0.5, per lever 20-80, speed
+  // 10-40, gain 0.1-1.5, max 0.4-1.
+  taxiLeverMax: 0.3,
+  taxiSpeedPerLever: 40,
+  taxiSpeedMax: 22,
+  taxiBrakeGain: 0.6,
+  taxiBrakeMax: 0.8,
+
+  // Standing on the brakes: with the wheel brake past parkBrake the aircraft does
+  // not move while the lever is under parkBrakeThrottle and it is slower than
+  // parkSpeed, as a real one holds a run-up on its brakes. Range: brake 0.05-0.5,
+  // throttle 0.3-1.
+  parkBrake: 0.15,
+  parkBrakeThrottle: 0.85,
+
+  // The gear lever cannot raise the wheels while they carry the aircraft (the
+  // weight on wheels, above gearLockWow of it), and short final with the gear up
+  // is a warning: below gearWarnAgl metres of ground, slower than gearWarnCas
+  // (m/s calibrated). Range: wow 0.05-0.5, agl 80-500, cas 60-200.
+  gearLock: true,
+  gearLockWow: 0.2,
+  gearWarnAgl: 220,
+  gearWarnCas: 110,
 
   // The ground. slipSpeed is how fast (m/s) a tyre must slide before its
   // friction is fully used. brakeFriction is the extra rolling drag at full
@@ -1915,6 +1961,12 @@ export const FLIGHT_INPUT = {
   // Range 0.4-3.
   resetHold: 1.0,
 
+  // The wheel brake on the keyboard is not a switch: held, it comes on at
+  // brakeAttack of full a second and goes off at brakeRelease. (A pad's trigger
+  // is analog and is not ramped.) Range: attack 1-10, release 3-20.
+  brakeAttack: 2.5,
+  brakeRelease: 8,
+
   // Triggers and the cannon: how far a trigger must be pulled to fire.
   // Range 0.1-0.8.
   triggerFire: 0.3,
@@ -1995,26 +2047,103 @@ export const OPEN_WORLD = {
   canyonScale: 6500,
   canyonDepth: 150,
 
-  // --- the home field ------------------------------------------------------------
-  // The one runway milestone 2 has (airports arrive in milestone 3 and replace
-  // it): where it starts, the heading it points (0 is north, +z), its length and
-  // width in metres, and the height of its ground. The ground is flat for
-  // `flatHalfWidth` either side and `flatMargin` past each end, then blends into
-  // the land over `blend`. `landRadius` and `landBias` keep it on land: the map
-  // is pushed above the sea for that far around it. Range: length 1500-5000,
-  // width 30-90, height 5-60, start offset (the distance from the threshold the
-  // aircraft is put at) 0-400, flat half width 200-800, margin 200-1000, blend
-  // 400-2500, land radius 6000-25000, bias 0.5-3.
-  // No scenery (trees, rocks, buildings) stands within `clearSide` metres of the
-  // strip's edge or `clearEnd` metres past either end: the world's lattice of
-  // trees used to run straight across the runway. A later airport is cleared the
-  // same way. Range: clearSide 60-400, clearEnd 100-800.
-  home: {
-    x: 0, z: 0, heading: 0,
-    length: 3500, width: 60, height: 22, startOffset: 80,
-    flatHalfWidth: 420, flatMargin: 500, blend: 1100,
-    landRadius: 15000, landBias: 0.5,
-    clearSide: 160, clearEnd: 320,
+  // --- airports ---------------------------------------------------------------------
+  // What each kind of airport IS (its runway, taxiways, apron, hangars, lights) is
+  // data, src/data/airports.js, with the home runway of milestone 2 as the major
+  // airport; these are how they are placed, flattened, cleared and drawn.
+  //   seedSalt     changes where the airports with no hint go, without touching the
+  //                land. Any integer.
+  //   candidates   seeded places tried for each one (the best fit wins), and
+  //   headings     runway headings tried at each place, evenly round the circle on
+  //                whole tens of degrees. Range: candidates 30-400, headings 4-16.
+  //   spacing      the least gap between two airports' flattened zones, metres.
+  //                Range 2000-15000.
+  //   areaClear    the least gap between an airport's flattened zone and a race
+  //                track's area, metres, and stripAllowance the room an area keeps
+  //                for its own airstrip on top of that. Range: clear 1000-8000,
+  //                allowance 1000-5000.
+  //   stripGap     how far (metres) a track's airstrip's flat ground stands from the
+  //                track's graded apron: beyond the track's own ground (areaInner),
+  //                so the two never share a hillside. Range 700-3000.
+  //   stripReliefCost, stripApproachCost  what a metre of relief across a strip's
+  //                platform and a blocked step of its approach are worth, in metres of
+  //                setback from its track: it takes the nearest spot, but prefers a
+  //                level one with a clear approach. Range 0-100, 0-3000.
+  //   minLand      the lowest ground under an airport's platform, metres above the
+  //                sea, and ringLand the lowest in the ring its blend reaches.
+  //                Range: minLand 4-40, ringLand 1-15.
+  //   approach*    the land under each runway's extended centre line, out to
+  //                approachLength metres (checked every approachStep), stays under
+  //                the runway's height plus approachSlope times the distance plus
+  //                approachMargin metres: ICAO's approach surface is 2 to 2.5%.
+  //                Range: slope 0.01-0.04, length 2000-10000, step 100-500, margin
+  //                0-80.
+  //   propMargin   no scenery (trees, rocks) within this many metres of an airport's
+  //                flat ground. Range 0-300.
+  //   startOffset  how far down the runway "start on the runway" puts the aircraft
+  //                (m), airDistance and airHeight where "start airborne" puts it
+  //                (m back from the threshold, m up), hangarMouth how far in front
+  //                of a hangar bay a reset stops (m). Range: 0-400, 800-6000,
+  //                300-4000, 8-40.
+  //   zone         the size of a hangar bay, metres: stop inside it to open the
+  //                Hangar. Range w 24-60, d 26-60 (the fighter is 19 m by 13.6 m).
+  //   buildDistance how near (m) an airport's meshes are built and kept (dropped
+  //                beyond 1.4 times it). Range 8000-60000.
+  //   lampDay, lampNight  how bright the lights are by day and at night, as the
+  //                multiplier on their colour (above 1 the bloom pass picks them
+  //                out). Range 0-1, 1-8.
+  //   sink         how far (as a fraction of a chunk's cell) the ground under the
+  //                pavement is lowered, for the coarse chunks far away, so pavement
+  //                is never buried. 0 is off. Range 0-0.2.
+  //   colors       the pavement, the paint and the buildings (packed 0xRRGGBB, in
+  //                the game's palette: off white, signal orange, timing yellow), and
+  //                the lamps, whose brightness lampDay and lampNight set.
+  airports: {
+    seedSalt: 138,
+    candidates: 120,
+    headings: 8,
+    spacing: 4000,
+    areaClear: 1500,
+    stripAllowance: 1200,
+    stripGap: 1100,
+    stripReliefCost: 25,
+    stripApproachCost: 400,
+    minLand: 8,
+    ringLand: 3,
+    approachSlope: 0.02,
+    approachLength: 6000,
+    approachStep: 250,
+    approachMargin: 25,
+    propMargin: 60,
+    startOffset: 80,
+    airDistance: 2600,
+    airHeight: 1500,
+    hangarMouth: 16,
+    zone: { w: 30, d: 34 },
+    buildDistance: 24000,
+    lampDay: 0.4,
+    lampNight: 3,
+    sink: 0,
+    colors: {
+      runway: 0x3a3e45, taxiway: 0x484c54, apron: 0x8a8e95, pad: 0x666b73,
+      white: 0xedede7, yellow: 0xf5c518,
+      wall: 0xd9dbdd, roof: 0x707a86, door: 0x2a3037, accent: 0xff7a1a, glass: 0x233a52, pole: 0x5b626b,
+      lampWhite: 0xffffff, lampRed: 0xff2a14, lampGreen: 0x14ff50, lampBlue: 0x2a52ff, lampAmber: 0xffa010,
+    },
+  },
+
+  // --- the night preview -------------------------------------------------------------
+  // Until the day and night cycle of milestone 9, "Time of day" on the Fly menu is
+  // a switch between the day and one night, so the airports' lights can be judged
+  // in the dark: the horizon and the top of the sky, the moon's colour and
+  // strength (it is the sun's light, dimmed), the ambient light (sky and ground),
+  // the stars, how much the biome tints the fog (a daylight colour: most of it
+  // goes), and the bloom that makes a lamp glow. Range: intensities 0.1-1.5,
+  // stars 0-3000, tint 0-0.5, bloom 0.2-1.
+  night: {
+    haze: 0x0a1424, skyTop: 0x02050b, moon: 0xaec4ee,
+    sunIntensity: 0.5, hemiIntensity: 0.8, hemiSky: 0x2a3f66, hemiGround: 0x1c2e24,
+    stars: 1400, tint: 0.08, bloom: 0.65,
   },
 
   // --- chunks ---------------------------------------------------------------------
@@ -2193,4 +2322,90 @@ export const OPEN_WORLD = {
   liveHysteresis: 1.5,
   keyEvery: 120,
   meshRadius: 4000,
+};
+
+// ============================================================================
+// THE HANGAR (flight milestone 3)
+// ----------------------------------------------------------------------------
+// Taxi into a hangar bay (the marked rectangle in front of a hangar door) and
+// stop: after `dwell` seconds the Hangar opens. "Stopped" is on the ground,
+// slower than `stopSpeed` (m/s) with the lever at or under `stopLever`. The
+// bay arms again when the aircraft leaves it, so a Hangar closed with Esc does
+// not open again until you have been out and back in, and a reset (which puts
+// you at the mouth of a bay) does not slam a screen over you. `landedAfter` is
+// how long (seconds) you sit stopped on an airport for it to become the one
+// you "last used": the one free flight starts at. Range: dwell 0.5-4, speed
+// 0.1-1, lever 0.04-0.3, landed 1-10.
+// ============================================================================
+export const HANGAR = {
+  dwell: 1.5,
+  stopSpeed: 0.4,
+  stopLever: 0.12,
+  landedAfter: 3,
+  // The Hangar's tuning knobs (the list of them is data/loadouts.js). Each is a
+  // scale on one thing and 1 is the aircraft as fitted, which is what every figure
+  // `npm run flight` holds it to is measured at. Power scales thrust and fuel flow
+  // (range 0.5-1.5). Response scales the stick's authority and the rate damping
+  // together (0.5-1.5); the load limits and the tail guard still act after it.
+  // Assist scales the auto trim and the roll self levelling (FLIGHT.levelStrength,
+  // which is 0, off, as shipped) (0.1-2); not below 0.1, since with no trim at all
+  // the aircraft has to be flown on the stick alone.
+  tune: {
+    power: { min: 0.8, max: 1.2, step: 0.05 },
+    response: { min: 0.7, max: 1.3, step: 0.05 },
+    assist: { min: 0.2, max: 1.5, step: 0.1 },
+  },
+  // The turntable. How fast it turns (rad/s, 0-1), the camera's field of view
+  // (degrees, 20-50), and how much room the aircraft is given in the open space
+  // between the panel and the card (a scale on the framing: 1 fits the longest
+  // diagonal of the whole footprint, 0.8 fits the aircraft's own turning circle
+  // and no more; range 0.7-1.4).
+  turnRate: 0.3,
+  fov: 34,
+  fitRoom: 0.9,
+  // How full the tank is when the aircraft is put down at an airport, a fraction
+  // of the tank (0.1-1). The Hangar's card quotes the mass at it. Fuel is never
+  // refilled in the Hangar.
+  startFuel: 0.6,
+};
+
+// ============================================================================
+// THE MAP AND THE RADAR (flight milestone 3)
+// ----------------------------------------------------------------------------
+// The map is a picture of the world, made once from the same Heightfield and
+// Biomes the terrain is: `resolution` cells a side over the whole 120 km (320 is
+// a cell every 375 m), the ground in its biome's colours, hill-shaded by `shade`
+// (0 flat, 1 strong), the sea darker with depth over `seaDepth` metres. It is
+// drawn a few milliseconds a frame (`buildMs`) the first time the map opens.
+// You can zoom from `minZoom` to `maxZoom` times the whole map, a notch of the
+// wheel being `zoomStep` times, and the names of the places appear from
+// `labelZoom`. Range: resolution 160-640, shade 0-1, seaDepth 100-600, build 2-20.
+// The radar is the corner disc: `size` pixels, showing `range` metres out to the
+// ring, with the compass round it turning with the heading. Range: size 110-220,
+// range 5000-60000.
+// ============================================================================
+export const MAP = {
+  resolution: 320,
+  shade: 0.55,
+  seaDepth: 300,
+  seaShallow: 0x3b8fc0,
+  seaDeep: 0x123560,
+  snow: 0xf2f5f8,
+  buildMs: 8,
+  minZoom: 1,
+  maxZoom: 30,
+  zoomStep: 1.25,
+  labelZoom: 3.5,
+  airport: 0xffffff,
+  track: 0xff7a1a,
+  aircraft: 0xf5c518,
+};
+
+export const RADAR = {
+  size: 150,
+  range: 20000,
+  ring: 0xedede7,
+  airport: 0xedede7,
+  track: 0xff7a1a,
+  hostile: 0xff7a1a,
 };

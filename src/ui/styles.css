@@ -1283,3 +1283,120 @@ html, body {
 
 .controls-card dd.later { opacity: 0.42; }
 .flight-controls { width: min(780px, calc(100vw - 48px)); }
+
+/* --- airports on the flight HUD and menus (milestone 3) ----------------------- */
+.fhud-ground { margin-top: 4px; }
+.fhud-ground[hidden] { display: none; }
+.fhud-place {
+  position: absolute; left: 50%; top: calc(max(14px, env(safe-area-inset-top)) + 46px); transform: translateX(-50%);
+  padding: 4px 12px 5px; font-size: 13px; font-weight: 600; background: rgba(14, 26, 43, 0.82);
+}
+.fhud-place[hidden], .fhud-zone[hidden] { display: none; }
+.fhud-zone {
+  position: absolute; left: 50%; top: 40%; transform: translateX(-50%);
+  width: min(300px, calc(100vw - 32px)); padding: 8px 14px 10px; background: var(--ink); border-bottom: 3px solid var(--yellow);
+}
+.fhud-zone-text { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.fhud-zone .fhud-bar i { background: var(--yellow); }
+.race-row.row-off { opacity: 0.45; }
+.fhud-radar { position: absolute; left: max(16px, env(safe-area-inset-left)); top: max(14px, env(safe-area-inset-top)); width: 150px; }
+.fhud-radar-disc { display: block; }
+.fhud-radar-text { margin-top: 4px; padding: 3px 8px 4px; background: rgba(14, 26, 43, 0.82); font-family: var(--mono); font-size: 11px; min-height: 0; }
+.fhud-radar-text:empty { display: none; }
+.fhud-radar-name { font-family: var(--sans); font-weight: 600; font-size: 12px; }
+.fhud-radar-sub { opacity: 0.8; font-variant-numeric: tabular-nums; }
+
+/* --- the map (ui/MapScreen.js) ---------------------------------------------------
+   A full-screen picture with the list of airports beside it: the same hard edged
+   ink panel and orange rule as the garage. */
+.map-screen {
+  position: absolute; inset: 0; pointer-events: auto;
+  display: grid; grid-template-columns: minmax(320px, 380px) 1fr; gap: 16px;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  background: var(--ink);
+}
+.map-screen[hidden] { display: none; }
+.map-side {
+  background: rgba(14, 26, 43, 0.96); border-top: 3px solid var(--signal);
+  display: flex; flex-direction: column; min-height: 0; padding: 16px 18px 14px;
+  box-shadow: inset 0 0 0 1px rgba(237, 237, 231, 0.08);
+}
+.map-side h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
+.map-sub { margin: 4px 0 10px; font-size: 12px; opacity: 0.6; }
+.map-list { list-style: none; margin: 0 -18px; padding: 0; overflow-y: auto; min-height: 120px; flex: 1 1 auto; scrollbar-width: thin; scrollbar-color: rgba(237, 237, 231, 0.2) transparent; }
+.map-item { padding: 7px 18px 8px; cursor: pointer; border-left: 3px solid transparent; }
+.map-item:hover { background: rgba(237, 237, 231, 0.05); }
+.map-item.focused { background: rgba(255, 122, 26, 0.12); border-left-color: var(--signal); }
+.map-name { display: block; font-size: 14px; font-weight: 600; }
+.map-item.focused .map-name { color: var(--signal); }
+.map-meta { display: block; font-size: 11px; opacity: 0.65; font-variant-numeric: tabular-nums; margin-top: 1px; }
+.map-detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(237, 237, 231, 0.1); font-size: 12px; line-height: 1.45; }
+.map-detail p { margin: 0 0 4px; }
+.map-detail-name { font-size: 15px; font-weight: 700; }
+.map-detail-off { color: var(--yellow); }
+.map-modes { display: flex; gap: 6px; margin-top: 8px; }
+.map-mode, .map-go, .map-close {
+  font: inherit; color: inherit; cursor: pointer; border: 1px solid rgba(237, 237, 231, 0.22); background: transparent; padding: 7px 10px; font-size: 13px; font-weight: 600;
+}
+.map-mode { flex: 1; }
+.map-mode.on { background: var(--offwhite); color: var(--ink); border-color: var(--offwhite); }
+.map-mode.off { opacity: 0.4; }
+.map-go { margin-top: 8px; background: var(--signal); color: var(--ink); border-color: var(--signal); font-size: 14px; padding: 9px 10px; }
+.map-go.off { opacity: 0.4; }
+.map-close { margin-top: 6px; }
+.map-hint { margin: 10px 0 0; font-size: 11px; opacity: 0.55; line-height: 1.4; }
+.map-view { position: relative; min-height: 0; border-top: 3px solid var(--signal); background: #0e1a2b; overflow: hidden; }
+.map-canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.map-status { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 8px 16px; background: var(--ink); font-size: 14px; font-weight: 600; border-bottom: 3px solid var(--yellow); }
+.map-status[hidden] { display: none; }
+@media (max-width: 820px) {
+  .map-screen { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  .map-list { max-height: 24vh; }
+}
+
+/* --- hangar ---------------------------------------------------------------
+   The Garage's own classes, plus the few things an aircraft needs that a car
+   does not: a strip of paint swatches, a health bar for each part, and a
+   tuned value shown in the signal colour. */
+.hangar-swatches {
+  flex-wrap: wrap;
+  gap: 4px;
+  height: auto;
+  min-height: 32px;
+  padding: 6px 8px;
+  cursor: default;
+}
+.hangar-swatches .garage-swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  cursor: pointer;
+}
+.hangar-swatches .garage-swatch.on { outline: 2px solid var(--signal); outline-offset: 1px; }
+.hangar-paint-name {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.55;
+}
+.hangar-repair { gap: 10px; }
+.hangar-bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(237, 237, 231, 0.12);
+}
+.hangar-bar i { display: block; height: 100%; background: var(--green); }
+.hangar-bar i.worn { background: var(--yellow); }
+.hangar-repair .garage-value-text { flex: none; min-width: 52px; text-align: right; font-family: var(--mono); font-size: 12px; }
+.garage-row-repair.stock .garage-label { opacity: 0.75; }
+.garage-row-repair:not(.stock) .garage-label { color: var(--yellow); }
+.hangar-stepper-row.tuned .garage-value-text { color: var(--signal); }
+.garage-stat.tuned dd { color: var(--signal); }
+.garage-card-note {
+  margin: 14px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.55;
+}
+.garage-card-note:empty { display: none; }

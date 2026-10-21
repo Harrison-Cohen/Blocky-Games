@@ -64,14 +64,47 @@ export function flat(hex, opts = {}) {
 // props use it: still a faceted world with no textures, but the colour comes from
 // the geometry, so a chunk of ground can be a different colour on every facet and
 // still be one draw call. Vertex colours are linear, as the rest of the lighting
-// is, so the world converts its palette before it writes them.
-export function facets() {
-  const k = 'facets';
+// is, so the world converts its palette before it writes them. `offset` is the
+// polygon offset of flat() (pavement and markings laid on the ground).
+export function facets(opts = {}) {
+  const k = opts.offset ? `facets|${opts.offset}` : 'facets';
   let m = cache.get(k);
   if (m) return m;
   m = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  applyOffset(m, opts);
   cache.set(k, m);
   return m;
+}
+
+// Airport lights: unlit, a colour per vertex (so a lamp can be green on one face
+// and red on the back of it, as a runway's end lights are, and every lamp of an
+// airport is one draw call). The shared material's own colour multiplies them,
+// which is the one knob: how bright the lights are (above 1 the bloom pass picks
+// them out). Set it with `setLampLevel`; nothing else uses this material.
+export function lamps() {
+  const k = 'lamps';
+  let m = cache.get(k);
+  if (m) return m;
+  m = new THREE.MeshBasicMaterial({ vertexColors: true });
+  cache.set(k, m);
+  return m;
+}
+
+// The same lights as points of a fixed size on the screen: a lamp seen from ten
+// kilometres is far smaller than a pixel as a box, and an airport at night is seen
+// from that far. Drawn with the boxes, and brightened by the same level.
+export function lampPoints() {
+  const k = 'lamp-points';
+  let m = cache.get(k);
+  if (m) return m;
+  m = new THREE.PointsMaterial({ vertexColors: true, size: 2.5, sizeAttenuation: false });
+  cache.set(k, m);
+  return m;
+}
+
+export function setLampLevel(level) {
+  lamps().color.setScalar(level);
+  lampPoints().color.setScalar(level);
 }
 
 // Unlit, for things that must read at a constant brightness regardless of the

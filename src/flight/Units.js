@@ -36,3 +36,11 @@ export function climbIn(v, system) {
   if (system === 'aviation' || system === 'mph') return { value: toFpm(v), unit: 'fpm' };
   return { value: v, unit: 'm/s' };
 }
+
+// { value, unit } for a distance in metres: nautical miles for the aviation
+// system, miles for mph, kilometres for metric.
+export function distanceIn(m, system) {
+  if (system === 'metric') return { value: m / 1000, unit: 'km' };
+  if (system === 'mph') return { value: m / 1609.344, unit: 'mi' };
+  return { value: m / 1852, unit: 'nm' };
+}

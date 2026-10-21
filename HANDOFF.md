@@ -50,16 +50,17 @@ user approved, with the answers to the spec's open items), then sections 9 and
 - All nine headless checks pass on the current tree. The production build is
   clean and the dev server loads with no console errors or warnings.
 - **Flight (2026-10-19 on):** branch `Flight_test`, cut from `initial-build` at
-  `00d6bb0`. Milestones 1 (an F-22 on a test field) and 2 (the open world) of
-  ten are built. The user flew milestone 2 three times and sent notes each time
-  (sections 10e, 10f, 10g: all fixed), then said on 2026-10-20 that they are
-  ready for milestone 3, so milestone 2 is accepted. **Milestone 3 (airports and
-  the ground) has not been started**: section 10h is its starting point and
-  `FLIGHT_M3_PROMPT.md` is the prompt the user pastes into the new chat. **Nothing
-  flight-related is committed** (the working tree holds all of it, including
-  `FLIGHT.md`, `FLIGHT_PLAN.md` and `FLIGHT_M3_PROMPT.md`, which are untracked, and
-  edits to `Claude.md` and this file). Commit only when asked, as the user, with no
-  Claude co-author trailer. Section 10 is the whole story.
+  `00d6bb0`. Milestones 1 (an F-22 on a test field), 2 (the open world) and 3
+  (airports and the ground) of ten are built. The user flew milestone 2 three times
+  and sent notes each time (sections 10e, 10f, 10g: all fixed), then said on
+  2026-10-20 that they were ready for milestone 3, which was planned, approved,
+  built and verified the same day. **Milestone 3 is built and waiting on the user's
+  test** (section 10i: what was built, what to test, what bit). Do not start milestone
+  4 until they have flown it and sent notes. **Nothing flight-related is committed**
+  (the working tree holds all of it, including `FLIGHT.md`, `FLIGHT_PLAN.md` and
+  `FLIGHT_M3_PROMPT.md`, which are untracked, and edits to `Claude.md` and this file).
+  Commit only when asked, as the user, with no Claude co-author trailer. Section 10 is
+  the whole story.
 
 ## 1a. Milestones: what each one delivered
 
@@ -784,18 +785,19 @@ Keyboard:
 | Left Shift | afterburner, held |
 | G | landing gear |
 | V | airbrake, held |
-| B | wheel brake, held |
+| B | wheel brake, held (it comes on a little at a time, `FLIGHT_INPUT.brakeAttack`) |
 | C | camera: chase, cockpit, far orbit |
 | Right mouse, held | free look (middle button in mouse flight) |
 | U | HUD on / off |
 | N | mute |
 | T | mouse flight on / off (pointer lock; Esc gives it back and pauses) |
-| R, held 1 s | reset to the runway |
+| R, held 1 s | back to the hangar (a stopped aircraft at the mouth of a bay of the airport last used) |
 | Esc | pause |
 | Space, F, Q, E | cannon, missile, flares, next target (later) |
+| ` (backquote) | telemetry (collected, nothing reads it yet) |
 | Z / X | flaps up / down (later) |
 | P, H | autopilot, hover assist (later) |
-| M | map (later) |
+| M | the map (milestone 3: pick an airport, Teleport) |
 | L | reserved for lights (milestone 9) |
 
 Mouse flight (T): the mouse moves pitch and roll from the screen centre with a
@@ -816,8 +818,8 @@ Gamepad (standard mapping):
 | D-pad up / down | next target / autopilot (later) |
 | D-pad left / right | flaps up / down (later) |
 | L3 | HUD |
-| Back, tapped | map (later) |
-| Back, held, then A | reset to the runway (held 1 s) |
+| Back, tapped | the map |
+| Back, held, then A | back to the hangar (held 1 s) |
 | Back, held, then B / X | mute / hover assist (hover later) |
 | Start | pause |
 
@@ -893,49 +895,64 @@ What comes next, in order:
 
 ### 10.0 Start here (for a new chat)
 
-- State: flight milestones 1 (the F-22 on a test field) and 2 (the open world) are
-  built and accepted (the user flew milestone 2 three times, 10e to 10g, then said they
-  are ready for milestone 3 on 2026-10-20). MILESTONE 3 (airports and the ground) IS
-  NEXT AND NOT STARTED: read 10h, which is its starting point, and plan it before
-  building. Branch `Flight_test`. Uncommitted.
-- Read, in order: this section, 10a to 10h (10e to 10g are the latest fixes, and 10g
-  supersedes the g limiter described in 10f), `FLIGHT.md` (the Airports, Hangar, Map and
-  radar, Menus and flow sections, and the milestone list), `FLIGHT_PLAN.md`. All nine car
-  checks, `npm run flight` and `npm run world` pass, and `npx vite build` is clean (last
-  run 2026-10-20 after 10g).
+- State: flight milestones 1 (the F-22 on a test field), 2 (the open world) and 3
+  (airports and the ground) are built. Milestones 1 and 2 are accepted. MILESTONE 3 IS
+  BUILT AND WAITING ON THE USER'S TEST (2026-10-20): read 10i (what was built, what to
+  test, what bit, the known gaps) and wait for their notes, which go in 10j. DO NOT START
+  MILESTONE 4 (the 737 and VTOL, FLIGHT.md's milestone list) until they have flown it and
+  said so. Branch `Flight_test`. Uncommitted.
+- Read, in order: this section, 10a to 10i (10e to 10g are the latest fixes and 10g
+  supersedes the g limiter described in 10f; 10h is milestone 3's starting point, 10i what
+  was built), `FLIGHT.md` (the Airports, Hangar, Map and radar and Menus and flow sections
+  are now implemented; the milestone list), `FLIGHT_PLAN.md`. All nine car checks and
+  `npm run flight` pass; `npm run world` passes everything but four checks that fail in this
+  container and on the pristine tree alike (three mesh hashes and one chunk-time check: 10i).
+  `npx vite build` is clean (last run 2026-10-20 after milestone 3; the 800 kB chunk advisory is
+  old).
 - Commands: `npm run dev` (the user already has servers on 5173 and 5174),
   `npm run flight`, `npm run world`, `npm run look` and `npm run look-world` (need a
-  server), `node scripts/soak-world.mjs`, `node scripts/fit-aircraft.mjs` after
-  changing the aerodynamics, engines or mass. A very slow `npm run world` (minutes,
-  not 25 s) means the machine is swapping, not a regression.
-- Where things are: `src/flight/` (physics, headless), `src/world/` (the world,
-  headless: 10d; `Chunks.js` also cuts the sea at the waterline, 10f), `src/data/aircraft.js`,
-  `src/data/biomes.js`, `src/data/tuning.js` blocks `FLIGHT`, `FIELD`,
-  `FLIGHT_CAMERA`, `FLIGHT_HUD`, `FLIGHT_AUDIO`, `SHOCK` (the Mach 1 effect),
-  `FLIGHT_INPUT` and `OPEN_WORLD` (the end of the file, including the detail
-  steps), `src/core/Flight*.js`, `src/render/{Aircraft,AircraftBuilder,Field,World,Flight,ShockWave}*.js`,
-  `src/ui/Flight*.js`, `scripts/check-flight.mjs`, `scripts/check-world.mjs`,
-  `scripts/lib/{flight-harness,browser,track-hash}.mjs`.
+  server; `CHROME` is the browser, `CHROME_ARGS` extra flags such as `--no-sandbox`;
+  `node scripts/look-world.mjs <out> <url> <only>` takes a substring of a shot's name:
+  `airport`, `ground`, `night`, `map`, `radar`, `hangar`, `zfight`), `node scripts/soak-world.mjs`,
+  `node scripts/fit-aircraft.mjs` after changing the aerodynamics, engines or mass. A very slow
+  `npm run world` (minutes, not 25 s) means the machine is swapping, not a regression.
+- Where things are: `src/flight/` (physics, headless), `src/world/` (the world, headless: 10d;
+  `Chunks.js` also cuts the sea at the waterline, 10f; `Airports.js` and `MapData.js`: 10i),
+  `src/data/aircraft.js`, `src/data/airports.js` (the airports as data), `src/data/loadouts.js`
+  (the Hangar's options), `src/data/biomes.js`, `src/data/tuning.js` blocks `FLIGHT`, `FIELD`,
+  `FLIGHT_CAMERA`, `FLIGHT_HUD`, `FLIGHT_AUDIO`, `SHOCK` (the Mach 1 effect), `FLIGHT_INPUT`,
+  `OPEN_WORLD` (the end of the file: the detail steps, `airports`, `night`), `HANGAR`, `MAP`
+  and `RADAR`, `src/core/Flight*.js` (`FlightPlaces.js` the last airport and the bays),
+  `src/core/HangarStore.js`, `src/render/{Aircraft,AircraftBuilder,AirportMesh,Field,World,Flight,ShockWave}*.js`,
+  `src/ui/{Flight*,MapScreen,Radar,Hangar,Turntable}.js`, `scripts/check-flight.mjs`,
+  `scripts/check-world.mjs`, `scripts/lib/{flight-harness,browser,track-hash}.mjs`.
+- Storage keys of flight: `flight.units`, `flight.hud`, `flight.renderDistance`, `flight.detail`,
+  `flight.seenControls`, `flight.invertY`, `flight.night`, `flight.lastAirport`,
+  `flight.teleportMode`, and per aircraft `flight.livery.<id>`, `flight.loadout.<id>`,
+  `flight.tune.<id>`, `flight.damage.<id>` (all under the `racing-game.v1.` prefix).
 - What has been heard or flown by the user, and what has not: they confirmed the
   idle hold works and that the Mach 1 effects "work well". NOT yet judged by them:
   the rebuilt engine sound, the flat nozzles' look, how the pitch stick feels after
   10g (stronger pull, firmer damping, a gentler push), the water after 10f, the
-  Detail slider on their GPU. Ask, do not assume.
+  Detail slider on their GPU, and everything in milestone 3 (10i, "Waiting on the
+  user's test"). Ask, do not assume.
 - Open questions put to the user (also section 8): what they meant by "the F-22
   engines move with the rear ailerons" (read as the tail strike; the nozzle
   deflection on a pull is physically right and unchanged); and a dictated
-  sentence in the last message that did not parse ("you can leave your feet down
+  sentence in an earlier message that did not parse ("you can leave your feet down
   ... leave your everything").
 - How the user works: they fly it and send notes, by dictation (expect odd words:
   "ailerons" for the stabilators, "inner distance" for the near plane). They want
   sim-like, not arcade: no assist that fights a turn. When they report feel, change
   `tuning.js` first and check with the harness (`scripts/lib/flight-harness.mjs`,
-  `trimmedFlight`) before and after. A feel problem is often a feedback loop: look
-  at the time series (see `scratchpad`-style traces in 10g) before turning knobs.
+  `trimmedFlight`, and the taxi, takeoff and landing pilots) before and after. A feel
+  problem is often a feedback loop: look at the time series (see the traces in 10g and
+  10i) before turning knobs.
 - How you check your own work: the numbers with `npm run flight` and `npm run world`;
   the picture with `npm run look`, `npm run look-world` and by reading the PNGs. You
   can see the screen now. For a render fix, shoot before and after from several
-  distances and compare crops.
+  distances and compare crops. A software-GL Chrome draws a frame in seconds: drive
+  timers by hand (see 10i).
 - Their dev server and yours: if `preview_start` says port 5174, the user's own
   server holds 5173. Do not kill theirs. Stop any server or Chrome you start.
 
@@ -1516,7 +1533,7 @@ things. Nothing is committed. Milestone 3 has not been started.
    levels of chunks nearer than 16 m (the tree is fixed at construction), track area detail.
 
 
-### 10h. Milestone 3: the starting point (2026-10-20, not started)
+### 10h. Milestone 3: the starting point (2026-10-20; built, see 10i)
 
 The user is ready for milestone 3, "Airports and the ground" (FLIGHT.md, milestone list):
 tiered airports, runway and taxiway lights, landing gear and wheel brakes, nose wheel steering,
@@ -1624,3 +1641,199 @@ Decisions to put to the user in the plan (FLIGHT.md's open-items habit; suggesti
 6. The hangar: which of loadout and tuning knobs are real now (suggest: store all of them, wire only
    the ones the F-22 model already has, such as power and control response, and say which in the UI).
 7. Whether reset goes to the hangar of the last airport at once (suggest yes, as FLIGHT.md says).
+
+### 10i. Milestone 3: airports and the ground, built (2026-10-20, waiting on the user's test)
+
+The user asked for milestone 3 on 2026-10-20. The plan (read-first order, ten decisions with
+answers) was approved in plan mode, then built in one pass: no commits, no packages. They have
+NOT flown it yet; their notes will go in a section 10j. What follows is what exists, what to
+test, and what bit. The whole milestone is in the working tree.
+
+**Built**
+
+Airports: data, placement, ground.
+- `src/data/airports.js`: the tier recipes (`TIERS`: major 3,500 x 60 m, military 3,000 x 46,
+  regional 1,800 x 30, strip 1,200 x 25, heliport 40 m pad: runway, taxiway, apron, back row of
+  hangars, tower and terminal, stands, lights, platform margins, relief limit), the named list
+  (`AIRPORTS`: Meridian International, which IS the old home runway, hinted at 0, 0, heading 0,
+  height 22, with the same lifted plain; Fort Falcon Air Base; Pinecrest, Saltmarsh, Highmesa,
+  Redwater, Cold Harbor; Skyline and Ridgeview heliports) and `stripFor(track)`: a strip for
+  every track in the registry. 15 airports today (9 named, 6 strips). A new track file adds its
+  airstrip with no other change; `npm run world` adds a synthetic seventh track and checks that
+  nothing else moves.
+- `src/world/Airports.js` (headless): `buildLayout` (the airport's own frame: origin at the
+  runway threshold, `u` along, `v` across, left positive; pavement rectangles, structures,
+  hangar bays, stands, platform), `Airport`, `Airports` (seeded placement scored on relief, land
+  and approach clearance, 8 headings, kept `spacing` apart and clear of track areas; `addStrips`
+  once the areas are placed; `flatten`, `surfaceAt`, `kindAt`, `zoneAt`, `inClear`, `nearest`,
+  `start(ap, mode)` for 'apron', 'runway', 'air' and 'hangar').
+- Order in `World`: heightfield, airports (seed only), track areas (which now keep clear of
+  airports), strips (derived from the placed areas), then `hf.airports`. `height = airports.flatten(
+  areas.blend(base))`. A platform is an exactly flat rectangle at the airport's base height with a
+  smoothstep blend out (the same Chebyshev-distance maths as the old home `_flatten`, so the major's
+  ground did not change a metre). `OPEN_WORLD.home` is gone; its numbers are the major's recipe.
+  `OPEN_WORLD.airports` in tuning.js holds the knobs (seedSalt 138 was chosen by scanning so the
+  six existing track areas did not move; changing it, or the spacing, moves them).
+- `World.spawn(airport = major)`, `World.sample` (runway, tarmac) through `airports.surfaceAt`,
+  `Props.js` keeps scenery off every platform (`airports.inClear`).
+
+Drawing.
+- `src/render/AirportMesh.js`: four meshes and lamp points per airport, built a piece at a time
+  as a Streamer job (priority 80, within `buildDistance` 24 km): pavement at polygon offset 4,
+  markings at 6 (edges, dashed centre line, threshold bars, seven-segment runway numbers, hold
+  lines, stand lines, bays with chevrons, helipad ring and H, blast pads), structures (flat
+  shaded: hangars, tower, terminal, windsock, floodlights), lamps (white edge, green threshold,
+  red end, blue taxiway edge, centre lights, PAPI, beacon; `Materials.js` `lamps()` and
+  `lampPoints()`, so a far light is still a fixed-size dot). `facets()` gained an `offset`.
+- "Time of day" (Day or Night preview) on the Fly menu and the pause card: `OPEN_WORLD.night`,
+  `WorldMesh.setNight`, `worldEnvironment(cfg, rd, night)`. It only exists to judge the lamps;
+  milestone 9's real cycle replaces it. Stored as `flight.night`.
+
+Ground handling (FLIGHT block in tuning.js, each with a comment and a range, one master switch
+`groundAssist`). Measured with the harness before and after (the traces were scratch, the
+numbers are here):
+- Taxi governor: on the wheels, lever under `taxiLeverMax` 0.3 and under 22 m/s, the lever
+  asks for a speed (`taxiSpeedPerLever` 40 m/s per unit) and the brakes hold it. Lever 0.10 held 4.7 m/s
+  (before: 20 m/s after 20 s and still climbing), 0.20 held 9.1 m/s. Lever 0 from 10 m/s
+  stops in 32 m (before: it did not stop at all, 1,001 m rolled). Off above the band,
+  so the takeoff roll is as it was (the takeoff checks still pass).
+- Nose wheel: fed from the ramped pedal, rate limited (`noseSteerRate` 1.3 rad/s) and capped by
+  lateral g (`noseSteerLatG` 0.4 g). Full pedal at 5 m/s: radius 11 m (was 21 m, with 5 degrees of
+  bank); at 8 m/s: 2.6 degrees of bank, at 12 m/s: 2.8 (was 22), at 25 m/s: 4.5 (was 25.6).
+  At 40 m/s it still banks 23 degrees: that is aero (the rudder), unchanged.
+- Brake: the key ramps (`FLIGHT_INPUT.brakeAttack` 2.5 per second, `brakeRelease` 8); a stopped
+  aircraft with the brake held (or the lever low) stays put (parking hold on brake, up to lever
+  0.85): before it crept 5 to 186 m against levers 0.2 to 0.7. Stop distances at speed unchanged
+  (14 m from 10 m/s, 122 m from 30, 522 m from 60).
+- Gear: the lever cannot raise it while the wheels carry the aircraft (it used to drop the jet
+  on its belly), a note says why; a gear warning (HUD text and a tone) on short final with the
+  gear up (`gearWarnAgl` 220 m, `gearWarnCas` 110 m/s).
+
+Flow.
+- `src/core/FlightPlaces.js`: the airport last used (`flight.lastAirport`; set by a start, a
+  teleport, or sitting stopped on an airport for `HANGAR.landedAfter` 3 s, which is what a landing
+  is), the teleport mode (`flight.teleportMode`), which starts an airport can take
+  (`aircraft.ground.minRunway` 1,000 m, `vtol` false: a heliport is airborne only for the F-22),
+  and the bay watcher (stopped in a bay for `HANGAR.dwell` 1.5 s fires it once; it re-arms only
+  when the aircraft leaves; a reset puts you at the mouth, outside the bay, so it does not slam
+  the Hangar over you).
+- Fly menu: Start on the apron (the default, at the last airport), Start on the runway (greyed
+  with the reason at a heliport), Start airborne near the airport, an Airport stepper, Open the
+  hangar, Open the map, Controls, Units, View distance, Detail, Time of day, Volume, Back to the
+  title. Pause: Resume, a Restart row that names the mode, Open the hangar (only while in a bay),
+  Open the map, the settings. R held (or Back held then A) and a crash put you at the hangar:
+  stopped at the mouth of a bay, engines idling. "Start on the runway" works as it did.
+- HUD: the ground row (brake, nose wheel angle, Parked), where you are ("Redwater Airport,
+  apron"), the bay's dwell bar, the gear warning, and the radar.
+
+Map and radar.
+- `src/world/MapData.js` (headless): a 320 x 320 raster of the whole world from `Heightfield` and
+  `Biomes` (biome colours, hillshade, sea depth), built in slices, and the markers read from the
+  registries (airports from the world, tracks from the areas). `src/ui/MapScreen.js`: M, the Fly
+  menu or the pause card; wheel zoom, drag pan, click to pick, a list by distance, the three start
+  buttons, Teleport; pad: d-pad, A, B. `src/ui/Radar.js`: a heading-up disc in the top-left corner
+  with the compass, range rings, blips, and the nearest airport. It takes a contact list, so the
+  aircraft and targets of milestones 6 and 7 plug in.
+
+The Hangar (step 6, the last thing built).
+- `src/ui/Hangar.js` and `src/ui/Turntable.js` (the Garage's classes and look; the turntable is a
+  copy that scales its fog, floor, disc and camera to the aircraft, because the Garage's 16 to 46 m
+  fog would swallow a fighter; `Garage.js` was not touched). Rows: Aircraft (one so far), Repair
+  (a health bar per part: wings, tail, engines, gear, fuselage; they read Sound until damage
+  arrives in milestone 5; Enter on a part, or Repair everything), Paint (body and accent swatches),
+  Livery (pattern, tail number, insignia), Loadout (medium range and short range missiles, cannon
+  rounds, flares), Tuning (engine power, control response, flight assist, and "back to stock"),
+  Save and Discard pinned. The card shows mass, thrust, thrust to weight, wing loading and load
+  limit for what is set, the moved ones in orange.
+- `src/data/loadouts.js` (the options and the normalisers), `src/core/HangarStore.js` (four
+  records per aircraft under four keys, `flight.livery.f22`, `flight.loadout.f22`, `flight.tune.f22`,
+  `flight.damage.f22`; every record is normalised on the way in, so a corrupt one costs only
+  itself). Ranges for the tune knobs are in tuning.js, `HANGAR.tune` (power 0.8 to 1.2, response
+  0.7 to 1.3, assist 0.2 to 1.5; 1 is the aircraft as fitted).
+- What reaches the physics: `AircraftPhysics.setup({ payload, tune })`: the payload mass (the
+  default loadout weighs exactly `def.payload`, so every fitted figure is unchanged; the missile and
+  round masses are in loadouts.js with their sources), engine power (`Engine.power`, scales thrust
+  and fuel flow), control response (scales the stick and the damping together, before the aids and
+  the load limits) and flight assist (scales the auto trim and the roll self levelling; NOTE
+  `FLIGHT.levelStrength` is 0 as shipped, so for now it is the auto trim only). Livery is paint:
+  `buildAircraft(def, livery)` colours the body, lays accent decals (tips, bands, spine, or the
+  whole left side) on the fixed surfaces only, builds the tail number from bars on both fins (it
+  reads the right way round from outside each side) and an invented insignia on the wings; the
+  default is exactly the old grey. `Aircraft.setLivery` rebuilds the body inside the same root.
+- Nothing reaches an AI aircraft (there is none yet). Fuel and the afterburner tank are not touched.
+
+**Final run (2026-10-20, after the last edit)**
+- All nine car checks pass (`check`, `lap`, `parts`, `ai`, `fx`, `specs`, `drag`, `timing`, `race`).
+- `npm run flight`: 146 ok, 0 fail. `npm run world`: 108 ok and the four known failures (below).
+- `npx vite build` is clean (the main chunk's 800 kB advisory is old: 902 kB on the pristine tree,
+  904 kB now; the flight code stays in its own lazy chunk, 108 kB before, 178 kB now).
+- `npm run look` and `npm run look-world` (airports, ground starts, the bay, night, radar, Hangar):
+  every PNG was read and the page console was clean (no errors, no warnings).
+- Z-fighting, the approach to a runway rendered twice with the camera a metre apart, the fraction of
+  sampled pavement pixels that changed a lot (the ground beside it, as the control, was 0% every time):
+  Meridian 2.27% from low (700 m back, 35 m up), 0.58% from 3 km, 0% from 10 km; Pinecrest 0.75%,
+  0.07%, 0%. The low figure is pixels on the edges of narrow pavement moving by a metre, not
+  flicker inside a surface; `look-world` fails if the pavement is 3 points worse than the ground.
+
+**Tests added**
+- `npm run world`: airports (every runway at least its tier's length, the major at least 3,200 m;
+  slope under 1% and level to 1 cm; clearance; on land; apart; placement hints honoured; two worlds
+  identical; the six track areas exactly where they were; every track has its strip; a seventh
+  track moves nothing; the layout hash), the ground (no tearing or burial at every Detail step,
+  asserted at levels 0 to 2 and from Medium at 3, reported at 4), scenery off every platform,
+  `sample()` agreeing with the layout, the airport meshes (a mesh built headless and placed by its
+  group's matrix lies on pavement), start poses, the map raster and markers.
+- `npm run flight`: Ground handling (14 checks: the governor, the nose wheel, the brake, the hold,
+  the gear lock, the takeoff roll), Airports in the world (a takeoff in afterburner from four
+  airports at other headings, a landing at three regionals from a 3 degree approach, a taxi from the
+  stand to the runway on pavement the whole way, a stop in a bay), Places (the starts, the bay's
+  dwell, the landing sets the last airport), The Hangar (defaults change nothing to the bit,
+  normalisation, four keys, the tune moves the right things the right way, 100 liveries build and
+  keep every moving part, paint never reaches the physics).
+- `scripts/look.mjs` and `scripts/look-world.mjs` gained shots (apron, map, Hangar, one of each
+  tier, the ground starts, the bay, the night, the radar) and a z-fight measurement (below).
+  `scripts/lib/browser.mjs` reads `CHROME_ARGS` (a container wants `--no-sandbox`).
+
+**Waiting on the user's test** (ask, do not assume)
+- Whether taxiing feels right: lever 0.1 a walk, 0.25 a jog, stopping, parking, turning on the
+  apron at 3 to 8 m/s, the key brake coming on gradually. It was tuned from numbers; I cannot feel the sticks.
+- The look and the sense of scale of the airports from the air and from the apron; the lights at
+  night (Time of day); the Hangar (paint, tail number, insignia, the bars, the card), the bay
+  opening it, Esc coming back; the map and the radar; the three starts at a regional, a strip, a
+  heliport (airborne only) and the military base.
+
+**What bit (do not rediscover)**
+- Idle thrust (11.5 kN) beats rolling resistance (5 kN), and the tyre model has no static friction,
+  so a brake could not hold the aircraft against thrust above about lever 0.3. The fix is the
+  governor (holds a speed) and the parking hold (now also on brake); do not try to fix it in `Gear.js`'s friction.
+- The airport's reach for the heightfield must use the circumradius with the Chebyshev corners
+  (`hypot(hu + blend, hv + blend)`), or the blend is cut at the corners.
+- Placement is seeded and the track areas keep clear of airports, so editing the airport list, the
+  spacing or `seedSalt` can move track areas. The world check records the six positions
+  (`AREA_GOLDEN`) and the layout hash (`AIRPORT_GOLDEN`); a change that moves them must be deliberate
+  and re-recorded.
+- A stand whose `u` equals the exit's `u` gave duplicate route points and a NaN in the taxi pilot:
+  `roundedRoute` skips duplicates and collinear points; stand 0 is across from the exit or the stub.
+- The Garage's turntable cannot be reused as is for an aircraft (fog, size); the floor must run out
+  past where the fog has swallowed it or its edge shows as a faint arc.
+- Headless Chrome (software GL) draws a frame in seconds, so the bay's 1.5 s dwell cannot be waited
+  for in a real page; the look and test scripts drive `places.update` by hand.
+
+**Known gaps and things to tell the user**
+- The major airport (the old home runway) sits in a cut in a ridge with its approaches blocked from
+  about 5 km out; it was kept exactly as it was, as asked, so the landing test uses the regionals.
+  Options for milestone 4 (the airliner needs it): move or hint it, or cut the approach.
+- A 1,200 m airstrip is long enough to take off from but short for an F-22 landing from a normal
+  approach; the landing test uses the regionals (1,500 to 1,900 m).
+- Buildings are not solid (collision with damage is milestone 5), like trees and the city biome.
+- No weathercocking (no wind until milestone 9). Damage is stored but not applied (milestone 5).
+  Missiles, rounds and flares are weight only until milestone 7.
+- The Chebyshev blend deviates slightly from a Euclidean one at the corners (by design, to keep the
+  major's ground identical).
+- Burial is asserted at levels 0 to 2 (and 3 from Medium) and only reported at 3 and 4 at the
+  finest Detail steps (the same as track areas).
+- `npm run world` ends with four failures in this container, and the same four fail on the
+  pristine tree (checked in a clean worktree of HEAD): the mesh hashes of copper-flats,
+  glacier-pass and pine-ridge, and "a chunk takes 2.56 ms against a 2 ms budget" (a wall-clock
+  check, best of three). They are not this milestone's; every check this milestone added passes.
+- `Turntable.js` duplicates the Garage's scene (debt noted, as the plan said).

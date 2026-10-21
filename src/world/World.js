@@ -1,5 +1,5 @@
-// The world, headless: the terrain, the biomes, the race-track areas and the
-// ground the aircraft meets.
+// The world, headless: the terrain, the biomes, the airports, the race-track areas
+// and the ground the aircraft meets.
 //
 // World.sample(x, z, y) is the ground contract the test field of milestone 1
 // defined and the flight code already calls, unchanged:
@@ -10,21 +10,32 @@
 // must read it before asking again). It is the same function the terrain mesh is
 // built from. Over the sea the height is the sea's, 0, and the surface is water.
 //
-// Surfaces: runway, tarmac and gravel (a race track's own), sand, rock, snow,
-// grass, water.
+// Surfaces: runway (or the airport's own), tarmac (taxiways and aprons, and a race
+// track's own), gravel, sand, rock, snow, grass, water.
 
 import { OPEN_WORLD } from '../data/tuning.js';
+import { AIRPORTS, landLifts } from '../data/airports.js';
 import { Heightfield } from './Heightfield.js';
+import { Airports } from './Airports.js';
 import { TrackAreas } from './TrackAreas.js';
 import { Biomes, BIOME_INDEX } from './Biomes.js';
 
 export class World {
   // trackData: the track data files (the registry's list in the game).
-  constructor(trackData, cfg = OPEN_WORLD) {
+  // airportData: the named airports (src/data/airports.js).
+  constructor(trackData, cfg = OPEN_WORLD, airportData = AIRPORTS) {
     this.cfg = cfg;
-    this.hf = new Heightfield(cfg);
-    this.areas = new TrackAreas(trackData, this.hf, cfg);
+    this.hf = new Heightfield(cfg, landLifts(airportData));
+    // The airports are placed from the seed alone; the track areas then keep clear
+    // of them; each track's airstrip comes from its own area. That order is what
+    // lets a new track file add an area and a strip and move nothing.
+    this.airports = new Airports(airportData, this.hf, cfg);
+    this.areas = new TrackAreas(trackData, this.hf, cfg, this.airports);
+    // A strip reads the land as its track's area shapes it, so the areas are set on
+    // the heightfield first and the airports last.
     this.hf.areas = this.areas;
+    this.airports.addStrips(this.areas.list);
+    this.hf.airports = this.airports;
     this.biomes = new Biomes(cfg, this.areas);
     this._out = { height: 0, normal: { x: 0, y: 1, z: 0 }, surface: 'grass' };
     this._w = new Float64Array(Object.keys(BIOME_INDEX).length);
@@ -32,11 +43,12 @@ export class World {
 
   height(x, z) { return this.hf.height(x, z); }
 
-  // Where the aircraft starts on the home runway, heading along it.
-  spawn() {
-    const h = this.cfg.home, hf = this.hf;
-    const off = h.startOffset;
-    return { x: h.x - hf.hSin * off, z: h.z + hf.hCos * off, y: h.height, heading: h.heading };
+  // Where the aircraft starts on a runway, heading along it: the major airport's,
+  // or the airport you name. (The flight game asks airports.start for the other
+  // starts.)
+  spawn(airport = this.airports.major) {
+    const p = this.airports.start(airport, 'runway', {});
+    return { x: p.x, z: p.z, y: p.y, heading: p.heading };
   }
 
   sample(x, z, y) {
@@ -60,7 +72,8 @@ export class World {
     out.height = h;
 
     const c = this.cfg;
-    if (hf.onRunway(x, z) && Math.abs(h - c.home.height) < 0.6) out.surface = 'runway';
+    const paved = this.airports.surfaceAt(x, z);
+    if (paved) out.surface = paved;
     else if (h < c.beachHeight) out.surface = 'sand';
     else if (n.y < c.rockSlope) out.surface = 'rock';
     else {

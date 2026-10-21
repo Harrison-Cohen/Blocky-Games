@@ -577,7 +577,418 @@ console.log('\nThe ground');
   check(stopAt > 0 && r.z - 200 < 1800 && Math.abs(r.x) < 20 && !r.crashed, `rolls out and stops on the runway: ${stopAt > 0 ? f1(stopAt) : 'never'} s, ${(r.z - 200).toFixed(0)} m, ${f1(Math.abs(r.x))} m off the line`);
 }
 
+// --- ground handling -------------------------------------------------------------------
+console.log('\nGround handling');
+{
+  const F = FLIGHT;
+  const rest = (over = {}) => {
+    const q = new AircraftPhysics(F22);
+    q.reset({ x: 0, y: 1.75, z: 0, heading: 0, fuel: 0.6, gear: 1, throttle: 0, ...over });
+    H.run(q, makeInput({ gearDown: true }), 3);
+    return q;
+  };
+  const gs = (q) => Math.hypot(q.vx, q.vz);
+  check(F.groundAssist === true, 'the ground assists are on as shipped (FLIGHT.groundAssist)');
+
+  // The taxi governor: a lever is a speed. Held, it settles and stays settled.
+  {
+    const rows = [];
+    let okAll = true;
+    for (const lever of [0.06, 0.1, 0.2, 0.3]) {
+      const q = rest(); q.throttle = lever;
+      const inp = makeInput({ gearDown: true });
+      H.run(q, inp, 20);
+      const v20 = gs(q);
+      H.run(q, inp, 20);
+      const v40 = gs(q), want = F.taxiSpeedPerLever * lever;
+      rows.push(`lever ${lever}: ${f1(v20)} then ${f1(v40)} m/s (asks ${f1(want)})`);
+      if (!(v40 > want * 0.9 && v40 < want * 1.35 + 0.5 && Math.abs(v40 - v20) < 0.3)) okAll = false;
+    }
+    check(okAll, `a lever holds a steady taxi speed: ${rows.join('; ')}`);
+  }
+  // Lever to nothing at 10 m/s: it stops, and stays stopped.
+  {
+    const q = rest({ heading: 0 }); q.vz = 10; q.throttle = 0;
+    const inp = makeInput({ gearDown: true });
+    let t = -1;
+    const z0 = q.z;
+    H.run(q, inp, 20, (time) => { if (t < 0 && gs(q) < 0.05) t = time; });
+    const z1 = q.z;
+    H.run(q, inp, 60);
+    check(t > 0 && t < 6 && z1 - z0 < 30 && Math.abs(q.z - z1) < 0.05, `lever to nothing at 10 m/s: stopped in ${t > 0 ? f1(t) : 'never'} s over ${f1(z1 - z0)} m, and 60 s later it has moved ${f3(Math.abs(q.z - z1))} m`);
+  }
+  // The governor is for taxiing: a takeoff roll and a landing roll are the pilot's.
+  {
+    const roll = (assist) => {
+      const saved = F.groundAssist; F.groundAssist = assist;
+      const q = new AircraftPhysics(F22);
+      q.reset({ x: 0, y: 1.9, z: 80, heading: 0, fuel: 0.6, gear: 1, throttle: 1 });
+      const inp = makeInput({ gearDown: true, ab: true });
+      let lift = -1, speed = 0, lifted = false;
+      H.run(q, inp, 20, (time) => {
+        const cas = q.cas / KT;
+        inp.pitch = cas > 125 && q.y < 60 ? Math.max(0, Math.min(0.5, ((lifted ? 0.17 : 0.14) - q.attitude().pitch) * 4)) : 0;
+        if (lift < 0 && !q.onGround && q.y > 3) { lift = time; speed = cas; lifted = true; }
+      });
+      F.groundAssist = saved;
+      return { lift, speed, z: q.z };
+    };
+    const on = roll(true), off = roll(false);
+    check(Math.abs(on.lift - off.lift) < 0.15 && Math.abs(on.speed - off.speed) < 2, `a takeoff is the same with the assists on and off: lift off at ${f1(on.lift)} s and ${f1(on.speed)} kt against ${f1(off.lift)} s and ${f1(off.speed)} kt`);
+  }
+
+  // The nose wheel: it turns at a rate, and its lock is limited by the side force.
+  {
+    const turn = (speed, lever) => {
+      const q = rest(); q.throttle = lever;
+      const inp = makeInput({ gearDown: true, analog: false });
+      H.run(q, inp, 60, () => { if (gs(q) >= speed) q.throttle = lever; });
+      // hold the speed on the governor, then a full pedal from the keys
+      inp.yaw = 1;
+      const h0 = q.attitude().heading;
+      let maxBank = 0, tip = 0, maxLat = 0, steerRate = 0, prevSteer = q.gear.steerAngle, t90 = -1, lock = 0;
+      H.run(q, inp, 6, (time) => {
+        const a = q.attitude();
+        maxBank = Math.max(maxBank, Math.abs(a.bank));
+        tip = Math.max(tip, q.gear.hullHit);
+        steerRate = Math.max(steerRate, Math.abs(q.gear.steerAngle - prevSteer) / DT);
+        prevSteer = q.gear.steerAngle;
+        lock = Math.max(lock, Math.abs(q.gear.steerAngle));
+        if (t90 < 0 && Math.abs(q.gear.steerAngle) > 0.9 * Math.min(F.noseSteerMax, 1e9) * 0.9) t90 = time;
+      });
+      let dh = q.attitude().heading - h0; while (dh < -Math.PI) dh += 2 * Math.PI; while (dh > Math.PI) dh -= 2 * Math.PI;
+      const rate = Math.abs(dh) / 6;
+      return { v: gs(q), radius: gs(q) / rate, maxBank, tip, steerRate, lock, rate };
+    };
+    const slow = turn(5, 0.125), mid = turn(8, 0.2);
+    check(slow.radius > 7 && slow.radius < 14 && mid.radius < 26 && slow.maxBank < deg(0.08) && mid.maxBank < deg(0.08) && slow.tip === 0 && mid.tip === 0,
+      `a full pedal turns the aircraft round in ${f1(slow.radius)} m at ${f1(slow.v)} m/s and ${f1(mid.radius)} m at ${f1(mid.v)} m/s, banking ${f1(deg(slow.maxBank))} and ${f1(deg(mid.maxBank))} deg`);
+    check(slow.steerRate <= F.noseSteerRate * 1.05 && mid.steerRate <= F.noseSteerRate * 1.05, `the nose wheel never turns faster than ${F.noseSteerRate} rad/s (${f2(Math.max(slow.steerRate, mid.steerRate))}): a tapped key is not a snap to full lock`);
+    // At 25 and 30 m/s a full pedal asked for 2 to 3 g, and scraped a wing tip.
+    const fast = (v0) => {
+      const q = rest(); q.vz = v0; q.throttle = 0.3;
+      const inp = makeInput({ gearDown: true, analog: false, yaw: 1 });
+      let bank = 0, tip = 0, minLoad = 1e9;
+      H.run(q, inp, 3, () => { bank = Math.max(bank, Math.abs(q.attitude().bank)); tip = Math.max(tip, q.gear.hullHit); minLoad = Math.min(minLoad, ...q.gear.load); });
+      return { bank, tip, minLoad };
+    };
+    const f25 = fast(25);
+    check(f25.tip === 0 && deg(f25.bank) < 8 && f25.minLoad > 1000, `full pedal at 25 m/s: ${f1(deg(f25.bank))} deg of bank, no wing tip scrape, every wheel loaded (${f1(f25.minLoad / 1000)} kN at the least)`);
+  }
+
+  // Standing on the brakes holds the aircraft against a run-up, and lets go when released.
+  {
+    const q = rest(); q.throttle = 0.5;
+    const inp = makeInput({ gearDown: true, brake: 1 });
+    H.run(q, inp, 15);
+    const held = q.z;
+    inp.brake = 0;
+    H.run(q, inp, 10);
+    check(Math.abs(held) < 0.05 && gs(q) > 5, `a lever at half held on the brakes for 15 s moves ${f2(Math.abs(held))} m; released, it is doing ${f1(gs(q))} m/s 10 s later`);
+  }
+  // The gear lever cannot raise the wheels while they carry the aircraft.
+  {
+    const q = rest();
+    H.run(q, makeInput({ gearDown: false }), 8);
+    check(q.gearDown > 0.99 && !q.crashed && q.y > 1.4, `the gear lever up on the ground changes nothing: gear ${f2(q.gearDown)}, still ${f2(q.y)} m up`);
+    const a = H.airborne(F22, { h: 600, mach: 0.5, fuel: 0.4, throttle: 0.7 });
+    a.gearDown = 1;
+    H.run(a, makeInput({ gearDown: false }), 8);
+    check(a.gearDown < 0.1, `and in the air it goes up (${f2(a.gearDown)} after 8 s)`);
+  }
+}
+
+// --- airports in the world -------------------------------------------------------------------
+console.log('\nAirports in the world');
+{
+  const T = await import('./lib/track-hash.mjs');
+  const { World } = await import(H.R + 'world/World.js');
+  const world = new World(await T.loadTrackData());
+  const AP = world.airports;
+  const loc = { u: 0, v: 0 };
+
+  // A takeoff in afterburner from runways at other places and other headings.
+  const rows = [];
+  let allOff = true;
+  for (const id of ['fort-falcon', 'pinecrest', 'strip-copper-flats', 'strip-pine-ridge']) {
+    const ap = AP.byId.get(id), sp = AP.start(ap, 'runway', {});
+    const q = new AircraftPhysics(F22);
+    q.reset({ x: sp.x, y: sp.y + 1.75, z: sp.z, heading: sp.heading, fuel: 0.6, gear: 1, throttle: 1 });
+    const inp = makeInput({ gearDown: true, ab: true });
+    const pilot = H.takeoffPilot(ap);
+    let maxOff = 0;
+    H.runOn(world, q, inp, 40, (time) => { pilot.step(q, inp, time); ap.toLocal(q.x, q.z, loc); if (q.onGround) maxOff = Math.max(maxOff, Math.abs(loc.v)); });
+    const ok = pilot.liftoff > 0 && pilot.liftSpeed > 110 && pilot.liftSpeed < 200 && pilot.roll < ap.length - 300 && !pilot.tailStrike && !q.crashed && maxOff < 4 && q.y - ap.base > 500;
+    if (!ok) allOff = false;
+    rows.push(`${id} (${ap.length} m, heading ${f1(deg(ap.heading))}): off at ${f1(pilot.liftSpeed)} kt after ${pilot.roll.toFixed(0)} m, ${f1(maxOff)} m off the line`);
+  }
+  check(allOff, `takes off in afterburner, no tail strike, on the line and climbing: ${rows.join('; ')}`);
+
+  // A landing: a 3 degree approach, gear down, a flare, the brakes, a stop on the runway.
+  {
+    const rows2 = [];
+    let allOk = true;
+    for (const id of ['pinecrest', 'redwater', 'cold-harbor']) {
+      const ap = AP.byId.get(id);
+      const aim = 300, dist = 5000, glide = 3, w = { x: 0, z: 0 };
+      ap.toWorld(-dist, 0, w);
+      const h0 = (aim + dist) * Math.tan((glide * Math.PI) / 180);
+      const q = new AircraftPhysics(F22);
+      q.reset({ x: w.x, y: ap.base + 1.75 + h0, z: w.z, heading: ap.heading, pitch: 0.09, speed: 80, fuel: 0.4, gear: 1, throttle: 0.3 });
+      const inp = makeInput({ gearDown: true });
+      const pilot = H.landingPilot(ap, { aim });
+      H.runOn(world, q, inp, 150, (time) => pilot.step(q, inp, time));
+      const ok = pilot.touched && pilot.tdU > 100 && pilot.tdU < 900 && pilot.tdSink < 3 && pilot.stopped && pilot.stopU < ap.length - 20 && pilot.maxOff < 4 && !q.crashed;
+      if (!ok) allOk = false;
+      rows2.push(`${id}: down at ${pilot.tdU.toFixed(0)} m at ${f1(pilot.tdSink)} m/s, stopped at ${pilot.stopU.toFixed(0)} of ${ap.length} m, ${f1(pilot.maxOff)} m off the line${q.crashed ? ', CRASHED: ' + q.crashReason : ''}`);
+    }
+    check(allOk, `lands at placed airports from a 3 degree approach and stops on the runway: ${rows2.join('; ')}`);
+  }
+
+  // Taxiing: from the first stand, across the apron, along the taxiway, up an exit and
+  // onto the runway, the wheels on pavement the whole way.
+  {
+    const rows3 = [];
+    let allOk = true;
+    for (const id of ['meridian-intl', 'pinecrest', 'fort-falcon', 'strip-copper-flats', 'skyline-heliport']) {
+      const ap = AP.byId.get(id), sp = AP.start(ap, 'apron', {});
+      const q = new AircraftPhysics(F22);
+      q.reset({ x: sp.x, y: sp.y + 1.75, z: sp.z, heading: sp.heading, fuel: 0.6, gear: 1, throttle: 0 });
+      const inp = makeInput({ gearDown: true, analog: false });
+      // First: it rests where it is put, on its stand, for 20 s.
+      H.runOn(world, q, inp, 20);
+      const creep = Math.hypot(q.x - sp.x, q.z - sp.z);
+      const route = H.standToRunway(ap);
+      const pilot = H.taxiPilot(ap, route, { reach: 4 });
+      let t = 0;
+      for (let k = 0; k < 120 * 240 && !pilot.done && !q.crashed; k++) { pilot.step(q, inp, world); q.step(DT, inp, world); t = k * DT; }
+      ap.toLocal(q.x, q.z, loc);
+      const ok = pilot.done && pilot.off === 0 && pilot.maxSpeed < 8 && creep < 0.05 && !q.crashed && Math.abs(loc.v) < 6;
+      if (!ok) allOk = false;
+      rows3.push(`${id} ${t.toFixed(0)} s${pilot.off ? `, ${pilot.off} steps off the pavement` : ''}`);
+    }
+    check(allOk, `taxis from the apron stand to the runway on pavement all the way, and sits still on its stand first: ${rows3.join('; ')}`);
+  }
+
+  // The hangar bay: taxi into it and stop; the world finds it, and the aircraft stays.
+  {
+    const ap = AP.byId.get('pinecrest'), L = ap.layout, z0 = L.zones[0];
+    const sp = AP.start(ap, 'hangar', {});
+    const q = new AircraftPhysics(F22);
+    q.reset({ x: sp.x, y: sp.y + 1.75, z: sp.z, heading: sp.heading, fuel: 0.6, gear: 1, throttle: 0 });
+    const inp = makeInput({ gearDown: true, analog: false });
+    const route = H.roundedRoute([[sp.u0 ?? (z0.u0 + z0.u1) / 2, z0.v0 - 16], [(z0.u0 + z0.u1) / 2, (z0.v0 + z0.v1) / 2 + 2]], 9);
+    const pilot = H.taxiPilot(ap, route, { reach: 3, speed: 3, slow: 3 });
+    for (let k = 0; k < 120 * 60 && !pilot.done && !q.crashed; k++) { pilot.step(q, inp, world); q.step(DT, inp, world); }
+    inp.throttleRate = -1;
+    H.runOn(world, q, inp, 8);
+    const zone = AP.zoneAt(q.x, q.z);
+    check(pilot.done && zone === z0 && gs0(q) < 0.05 && !q.crashed, `taxis into a hangar bay and stops in it (the world says it is in the bay: ${zone === z0}, doing ${f2(gs0(q))} m/s)`);
+  }
+}
+function gs0(q) { return Math.hypot(q.vx, q.vz); }
+
+// The places: the starts, the bay's dwell, landing somewhere.
+console.log('\nPlaces');
+{
+  const T = await import('./lib/track-hash.mjs');
+  const { World } = await import(H.R + 'world/World.js');
+  const { FlightPlaces } = await import(H.R + 'core/FlightPlaces.js');
+  const { HANGAR } = await import(H.R + 'data/tuning.js');
+  const world = new World(await T.loadTrackData());
+  const places = new FlightPlaces(world, F22);
+  const AP = world.airports;
+  const heli = AP.byId.get('skyline-heliport'), strip = AP.byId.get('strip-copper-flats'), major = AP.major;
+  check(places.eligible(major, 'apron').ok && places.eligible(major, 'runway').ok && places.eligible(strip, 'runway').ok &&
+    !places.eligible(heli, 'apron').ok && !places.eligible(heli, 'runway').ok && places.eligible(heli, 'air').ok,
+    'the fighter can start on the apron and the runway of any airport with a runway; a heliport is airborne only');
+  check(places.last === major && places.list.length === AP.list.length && places.list[0] === major, 'free flight starts at the major airport until another is used, and the list has them all, the big ones first');
+
+  const q = new AircraftPhysics(F22);
+  const put = (ap, mode) => { const p = places.pose(ap, mode); q.reset({ x: p.x, y: p.y + 1.6, z: p.z, heading: p.heading, fuel: 0.6, gear: 1, throttle: 0 }); places.rearm(); };
+  const inp = makeInput({ gearDown: true });
+  const settle = () => H.runOn(world, q, inp, 3);
+
+  // Put at the mouth of a bay: stopped, outside it. It does not fire.
+  put(major, 'hangar'); settle();
+  let fired = 0;
+  for (let k = 0; k < 120 * 6; k++) { q.step(DT, inp, world); if (places.update(DT, q)) fired++; }
+  check(fired === 0 && places.zone === null, 'put at the mouth of a hangar bay (a reset), it is outside the bay and nothing opens');
+  // Rolled into the bay and stopped: fires once after the dwell, and not again.
+  const z0 = major.layout.zones[0], w = { x: 0, z: 0 };
+  major.toWorld((z0.u0 + z0.u1) / 2, (z0.v0 + z0.v1) / 2, w);
+  q.reset({ x: w.x, y: major.base + 1.6, z: w.z, heading: major.heading - Math.PI / 2, fuel: 0.6, gear: 1, throttle: 0 });
+  settle();
+  let firedAt = -1, count = 0;
+  for (let k = 0; k < 120 * 8; k++) { q.step(DT, inp, world); if (places.update(DT, q)) { count++; if (firedAt < 0) firedAt = k * DT; } }
+  check(count === 1 && Math.abs(firedAt - HANGAR.dwell) < 0.3 && places.zone === z0, `stopped in a bay it fires once, after ${f2(firedAt)} s (dwell ${HANGAR.dwell} s), and not again while it stays`);
+  // Out of the bay and back in: it fires again. A rolling aircraft never does.
+  put(major, 'hangar'); settle();
+  for (let k = 0; k < 120; k++) { q.step(DT, inp, world); places.update(DT, q); }
+  let again = 0;
+  major.toWorld((z0.u0 + z0.u1) / 2, (z0.v0 + z0.v1) / 2, w);
+  q.reset({ x: w.x, y: major.base + 1.6, z: w.z, heading: major.heading, fuel: 0.6, gear: 1, throttle: 0.1 });
+  q.vx = -Math.sin(major.heading) * 3; q.vz = Math.cos(major.heading) * 3;
+  const passInp = makeInput({ gearDown: true });
+  for (let k = 0; k < 120 * 2; k++) { passInp.throttleRate = 0; q.step(DT, passInp, world); if (places.update(DT, q)) again++; }
+  check(again === 0, 'rolling through a bay does not open it, only stopping in it does');
+
+  // Landed: sitting stopped on an airport makes it the last one used.
+  const red = AP.byId.get('redwater');
+  put(red, 'apron'); settle();
+  for (let k = 0; k < 120 * (HANGAR.landedAfter + 1); k++) { q.step(DT, inp, world); places.update(DT, q); }
+  check(places.last === red, `sitting stopped on an airport for ${HANGAR.landedAfter} s makes it the one free flight starts at (${places.last.name})`);
+  check(places.where(q).startsWith('Redwater Airport'), `and the HUD can say where it is: "${places.where(q)}"`);
+}
+
 // --- the sound barrier -----------------------------------------------------------------
+// The Hangar: what it stores, what it changes, and what it must never change.
+console.log('\nThe Hangar');
+{
+  const L = await import(H.R + 'data/loadouts.js');
+  const Store = await import(H.R + 'core/HangarStore.js');
+  const { buildAircraft } = await import(H.R + 'render/AircraftBuilder.js');
+  const { Aircraft } = await import(H.R + 'flight/Aircraft.js');
+  const { HANGAR } = await import(H.R + 'data/tuning.js');
+  const T = await import('./lib/track-hash.mjs');
+  const { World } = await import(H.R + 'world/World.js');
+  const world = new World(await T.loadTrackData());
+  const major = world.airports.major;
+
+  // The defaults are the aircraft as fitted.
+  const dl = L.defaultLoadout('f22');
+  check(L.payloadMass(F22, dl) === F22.payload && L.isStockTune('f22', L.defaultTune('f22')),
+    `the default loadout weighs exactly the payload the aircraft was fitted with (${F22.payload} kg), and the default tuning is all 1`);
+  const empty = { medium: 0, short: 0, rounds: 0, flares: 0 };
+  const lighter = F22.payload - L.payloadMass(F22, empty);
+  check(near(lighter, 6 * 152 + 2 * 86 + 480 * 0.25 + 60 * 0.2, 1e-9) && L.payloadMass(F22, empty) > 0,
+    `an empty loadout is ${f1(lighter)} kg lighter and still carries the pilot (${f1(L.payloadMass(F22, empty))} kg)`);
+
+  // Whatever was stored, what comes out is safe.
+  const junk = [null, undefined, 'x', 42, [], { livery: 7, loadout: 'a', tune: [], damage: null }];
+  const stock = L.normalizeSetup('f22', {});
+  let allStock = true;
+  for (const j of junk) if (JSON.stringify(L.normalizeSetup('f22', j)) !== JSON.stringify(stock)) allStock = false;
+  check(allStock, 'garbage in the store (null, a string, a number, an array, the wrong shapes) becomes the defaults');
+  const bent = L.normalizeSetup('f22', {
+    livery: { body: 'nope', accent: 'sky', pattern: 5, number: 123456, insignia: 'x' },
+    loadout: { medium: 99, short: -3, rounds: NaN, flares: '7' },
+    tune: { power: 9, response: -1, assist: null },
+    damage: { wings: 7, tail: -2, engines: 'x' },
+  });
+  check(bent.livery.body === 'stock' && bent.livery.accent === 'sky' && bent.livery.pattern === 'plain' && bent.livery.number === 9999 && bent.livery.insignia === 'none' &&
+    bent.loadout.medium === 6 && bent.loadout.short === 0 && bent.loadout.rounds === 480 && bent.loadout.flares === 60 &&
+    bent.tune.power === HANGAR.tune.power.max && bent.tune.response === HANGAR.tune.response.min && bent.tune.assist === 1 &&
+    bent.damage.wings === 1 && bent.damage.tail === 0 && bent.damage.engines === 1 && Object.keys(bent.damage).length === 5,
+    'out of range and unknown values are clamped or dropped one by one, and a good value beside a bad one is kept');
+  const odd = L.normalizeLoadout('f22', { rounds: 333, medium: 2.6 });
+  check(odd.rounds % 20 === 0 && Number.isInteger(odd.medium), `a loadout is snapped to what the Hangar steps by (333 rounds is ${odd.rounds}, 2.6 missiles is ${odd.medium})`);
+
+  // The four records live under four keys, and a bad one costs only itself.
+  {
+    const store = new Map();
+    globalThis.window = { localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => { store.set(k, String(v)); }, removeItem: (k) => { store.delete(k); } } };
+    const setup = L.normalizeSetup('f22', { livery: { body: 'sky', pattern: 'tips', number: 7 }, loadout: { medium: 4 }, tune: { power: 1.1 }, damage: { wings: 0.5 } });
+    Store.saveSetup('f22', setup);
+    const keys = [...store.keys()].sort();
+    const want = Store.PARTS.map((p) => `racing-game.v1.flight.${p}.f22`).sort();
+    check(JSON.stringify(keys) === JSON.stringify(want), `a save writes four records, one per key: ${keys.map((k) => k.replace('racing-game.v1.', '')).join(', ')}`);
+    check(JSON.stringify(Store.loadSetup('f22')) === JSON.stringify(setup), 'and they read back as they were saved');
+    const before = JSON.stringify([...store].filter(([k]) => !k.includes('.livery.')));
+    Store.saveSetup('f22', { ...setup, livery: L.normalizeLivery({ body: 'ember', number: 1 }) }, ['livery']);
+    check(JSON.stringify([...store].filter(([k]) => !k.includes('.livery.'))) === before, 'repainting writes the livery and nothing else: the loadout, tuning and damage records are untouched');
+    store.set('racing-game.v1.flight.tune.f22', '{not json');
+    const back = Store.loadSetup('f22');
+    check(back.livery.body === 'ember' && back.loadout.medium === 4 && back.tune.power === 1 && back.damage.wings === 0.5, 'a corrupt record falls back to its own defaults and costs nothing else');
+    delete globalThis.window;
+  }
+
+  // The defaults change nothing: a takeoff with setup() called at its defaults is the
+  // same takeoff to the bit as one that never heard of the Hangar.
+  const takeoff = (setup, seconds = 40, ab = true) => {
+    const sp = world.airports.start(major, 'runway', {});
+    const q = new AircraftPhysics(F22);
+    if (setup) q.setup(setup);
+    q.reset({ x: sp.x, y: sp.y + 1.75, z: sp.z, heading: sp.heading, fuel: 0.6, gear: 1, throttle: 1 });
+    const inp = makeInput({ gearDown: true, ab });
+    const pilot = H.takeoffPilot(major);
+    H.runOn(world, q, inp, seconds, (time) => pilot.step(q, inp, time));
+    return { q, pilot };
+  };
+  const plain = takeoff(null), dflt = takeoff({ payload: L.payloadMass(F22, dl), tune: L.defaultTune('f22') });
+  check(['x', 'y', 'z', 'vx', 'vy', 'vz', 'qx', 'qy', 'qz', 'qw', 'fuel', 'mass'].every((k) => plain.q[k] === dflt.q[k]),
+    'a takeoff with the Hangar set to its defaults is identical to the bit to one that never touched it');
+
+  // What it does change.
+  const light = takeoff({ payload: L.payloadMass(F22, empty) });
+  check(light.q.mass < plain.q.mass - 1000 && light.pilot.roll < plain.pilot.roll, `an empty loadout is lighter on the runway (${f1(plain.q.mass - light.q.mass)} kg) and lifts off sooner (${plain.pilot.roll.toFixed(0)} m to ${light.pilot.roll.toFixed(0)} m)`);
+  const strong = takeoff({ tune: { power: 1.2 } }), weak = takeoff({ tune: { power: 0.8 } });
+  check(strong.pilot.roll < plain.pilot.roll && plain.pilot.roll < weak.pilot.roll, `engine power moves the takeoff roll the right way (120%: ${strong.pilot.roll.toFixed(0)} m, 100%: ${plain.pilot.roll.toFixed(0)} m, 80%: ${weak.pilot.roll.toFixed(0)} m)`);
+  const thrustAt = (power) => {
+    const q = new AircraftPhysics(F22);
+    q.setup({ tune: { power } });
+    q.reset({ x: 0, y: 1.75, z: 0, fuel: 0.6, gear: 1, throttle: 1 });
+    q.step(DT, makeInput({ gearDown: true, brake: 1 }), H.field);      // at rest, so the same air for each
+    return q.thrustTotal;
+  };
+  check(near(thrustAt(1.2) / thrustAt(1), 1.2, 1e-9) && near(thrustAt(0.8) / thrustAt(1), 0.8, 1e-9), 'thrust is scaled by exactly the power setting');
+  const extreme = takeoff({ payload: L.payloadMass(F22, { medium: 6, short: 2, rounds: 480, flares: 60 }), tune: { power: 0.8, response: 0.7, assist: 0.2 } });
+  check(extreme.pilot.liftoff > 0 && !extreme.q.crashed && extreme.pilot.roll < major.length - 300, `at the weakest tuning it still takes off (${extreme.pilot.roll.toFixed(0)} m)`);
+
+  // Control response and flight assist, in the air.
+  const bankAfter = (tune) => {
+    const q = H.airborne(F22, { h: 3000, mach: 0.6 });
+    q.setup({ tune });
+    const inp = makeInput({ roll: 0.6 });
+    H.run(q, inp, 1.0);
+    const peak = Math.abs(q.attitude().bank);
+    inp.roll = 0;
+    H.run(q, inp, 6);
+    return { peak, left: Math.abs(q.attitude().bank) };
+  };
+  const quick = bankAfter({ response: 1.3 }), norm = bankAfter({ response: 1 }), slow = bankAfter({ response: 0.7 });
+  check(quick.peak > norm.peak && norm.peak > slow.peak, `control response scales how far a second of roll gets (130%: ${f1(deg(quick.peak))} deg, 100%: ${f1(deg(norm.peak))}, 70%: ${f1(deg(slow.peak))})`);
+  // Flight assist is the auto trim: put the afterburner in with the stick centred and
+  // the path angle drifts as the speed builds, a lot with the assist low and little
+  // with it high.
+  const drift = (assist) => {
+    const q = H.airborne(F22, { h: 3000, mach: 0.5, throttle: 0.6 });
+    q.setup({ tune: { assist } });
+    const inp = makeInput({ ab: true });
+    H.run(q, inp, 2);
+    const g0 = Math.asin(q.vy / q.tas);
+    H.run(q, inp, 12);
+    return deg(Math.asin(q.vy / q.tas) - g0);
+  };
+  const d1 = drift(1.5), d2 = drift(1), d3 = drift(0.2);
+  check(d1 < d2 && d2 < d3 && d3 > 2 * d2, `flight assist scales the auto trim: with the stick centred and the afterburner in, the path drifts ${f1(d1)} deg at 150%, ${f1(d2)} at 100% and ${f1(d3)} at 20%`);
+
+  // The livery is paint: it never reaches the physics, and the default is the grey it
+  // has always been.
+  const colours = (root) => { const s = new Set(); root.traverse((o) => { if (o.isMesh && o.material && o.material.color) s.add(o.material.color.getHex()); }); return s; };
+  const d0 = buildAircraft(F22);
+  const stockSet = colours(d0.root);
+  check(stockSet.has(0x6e7782) && stockSet.has(0x7d8794) && !stockSet.has(0x2c3238), 'the default livery is the grey the aircraft has always been, and draws no accent');
+  d0.dispose();
+  let count = 0, built = 0;
+  d0.root.traverse((o) => { if (o.isMesh) count++; });
+  for (const pat of L.LIVERY_PATTERNS) for (const ins of L.LIVERY_INSIGNIA) for (const number of [null, 0, 7, 4012]) {
+    const b = buildAircraft(F22, { body: 'sky', accent: 'acid', pattern: pat.id, insignia: ins.id, number });
+    const c = colours(b.root);
+    if (!c.has(0x38a9e8) || c.has(0x6e7782) || (pat.id !== 'plain' || ins.id !== 'none' || number != null) !== c.has(0xf5c518)) throw new Error(`livery ${pat.id}/${ins.id}/${number}: wrong paint`);
+    if (b.parts.gear.length !== 3 || b.parts.nozzles.length !== 2 || b.parts.wingFlaps.length !== 2 || b.parts.rudders.length !== 2) throw new Error('a livery lost a moving part');
+    b.dispose();
+    built++;
+  }
+  check(built === L.LIVERY_PATTERNS.length * L.LIVERY_INSIGNIA.length * 4, `all ${built} combinations of pattern, insignia and tail number build, wear the paint they were given, and keep every moving part`);
+  const a1 = new Aircraft(F22), a2 = new Aircraft(F22, { body: 'ember', accent: 'ink', pattern: 'split', number: 22, insignia: 'diamond' });
+  a2.setLivery({ body: 'teal', pattern: 'spine' });
+  const flyIt = (a) => { const inp = makeInput({ pitch: 0.1, roll: 0.2, ab: true }); a.physics.reset({ x: 0, y: 3000, z: 0, speed: 200, fuel: 0.5, throttle: 1, gear: 0 }); H.run(a.physics, inp, 8); return a.physics; };
+  const f1p = flyIt(a1), f2p = flyIt(a2);
+  check(['x', 'y', 'z', 'qx', 'qw', 'fuel'].every((k) => f1p[k] === f2p[k]), 'two liveries (one of them repainted) fly the same flight to the bit: paint never reaches the physics');
+  a1.dispose(); a2.dispose();
+}
+
 console.log('\nThe sound barrier');
 {
   const THREE = await import('three');

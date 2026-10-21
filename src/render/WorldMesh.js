@@ -12,7 +12,8 @@
 //             also lands on
 //   props     trees, rocks, towers: one instanced mesh a kind a chunk
 //   the sea   one flat faceted plane that follows the camera
-//   the home runway
+//   the airports  each airport's four meshes (pavement, paint, buildings, lights),
+//             built a piece a frame when the camera comes within range
 //   the tracks  each area's TrackMesh, built a piece a frame without its own
 //             ground (the terrain chunks draw that), under a wrapper that is the
 //             area's rigid frame; its scenery is hidden beyond a distance
@@ -22,8 +23,8 @@
 // The build work is a queue of jobs (Streamer) given a few milliseconds a frame.
 
 import * as THREE from 'three';
-import { facets, flat } from './Materials.js';
-import { addRunway } from './FieldMesh.js';
+import { facets, flat, setLampLevel } from './Materials.js';
+import { AirportMesh } from './AirportMesh.js';
 import { TrackMesh } from '../game/TrackMesh.js';
 import { Vehicle } from '../game/Vehicle.js';
 import { carAppearance } from '../data/customization.js';
@@ -32,23 +33,27 @@ import { buildProps, KINDS } from '../world/Props.js';
 import { Streamer } from '../world/Streamer.js';
 import { WorldOrigin } from '../world/WorldOrigin.js';
 import { AmbientCars } from '../world/AmbientCars.js';
-import { OPEN_WORLD, FIELD } from '../data/tuning.js';
+import { OPEN_WORLD } from '../data/tuning.js';
 
 // What Scene.setEnvironment reads, as a track would give it: the sky, the fog and
 // the light, from the world's own settings.
-export function worldEnvironment(cfg = OPEN_WORLD, renderDistance = cfg.renderDistance.default) {
-  const half = cfg.size / 2;
+export function worldEnvironment(cfg = OPEN_WORLD, renderDistance = cfg.renderDistance.default, night = false) {
+  const half = cfg.size / 2, n = cfg.night;
   return {
     data: {
-      id: 'flight-world',
-      sky: { top: cfg.skyTop, haze: 0.3, gradient: 0.45, disc: true, discSize: 0.022, stars: 0, clouds: 0 },
+      id: night ? 'flight-world-night' : 'flight-world',
+      sky: night
+        ? { top: n.skyTop, haze: 0.04, gradient: 0.45, disc: true, discSize: 0.016, discColor: n.moon, discGlow: 3, stars: n.stars, clouds: 0 }
+        : { top: cfg.skyTop, haze: 0.3, gradient: 0.45, disc: true, discSize: 0.022, stars: 0, clouds: 0 },
       fog: { near: renderDistance * cfg.fogNear, far: renderDistance },
-      post: { bloom: 0.3, bloomThreshold: 1.0 },
-      hemiIntensity: 1.35,
-      sunIntensity: 2.3,
+      post: { bloom: night ? n.bloom : 0.3, bloomThreshold: 1.0 },
+      hemiIntensity: night ? n.hemiIntensity : 1.35,
+      sunIntensity: night ? n.sunIntensity : 2.3,
       sunDirection: cfg.sunDirection,
     },
-    palette: { sky: cfg.haze, fog: cfg.haze, ground: 0x6f8f56, sun: cfg.sun, hemiSky: 0xbfd9f2, hemiGround: 0x6f8f56 },
+    palette: night
+      ? { sky: n.haze, fog: n.haze, ground: n.hemiGround, sun: n.moon, hemiSky: n.hemiSky, hemiGround: n.hemiGround }
+      : { sky: cfg.haze, fog: cfg.haze, ground: 0x6f8f56, sun: cfg.sun, hemiSky: 0xbfd9f2, hemiGround: 0x6f8f56 },
     groundLevel: 0,
     minimap: { minX: -half, maxX: half, minZ: -half, maxZ: half },
   };
@@ -77,12 +82,14 @@ export class WorldMesh {
     this.ambient = new AmbientCars(world, cfg);
 
     this.renderDistance = cfg.renderDistance.default;
+    this.night = false;               // the night preview (the fog follows it)
     this.detail = cfg.detailDefault;
     this._shown = [];
     this._frame = 0;
     this._propGeo = KINDS.map((k) => geometryOf(k.geometry));
     this._geos = [];
     this.views = new Map();           // area id -> { area, mesh, wrapper, item, propsShown, cars: Map }
+    this.airportViews = new Map();    // airport id -> { airport, mesh, gen, group, item }
     this._fogTimer = 0;
     this._fog = new THREE.Color(cfg.haze);
     this._fogTarget = new THREE.Color(cfg.haze);
@@ -90,7 +97,7 @@ export class WorldMesh {
     this._vehicleBudget = 0;
 
     this._buildWater();
-    this._buildRunway();
+    this.setLights(cfg.airports.lampDay);
     this.setDetail(this.detail);
     this.setRenderDistance(this.renderDistance);
   }
@@ -105,23 +112,6 @@ export class WorldMesh {
     this.water = new THREE.Mesh(g, flat(this.cfg.sea, { offset: -4 }));
     this.water.frustumCulled = false;
     this.root.add(this.water);
-  }
-
-  _buildRunway() {
-    const h = this.cfg.home;
-    const group = new THREE.Group();
-    const flatQuad = (w, d) => {
-      const g = new THREE.PlaneGeometry(w, d);
-      g.rotateX(-Math.PI / 2);
-      this._geos.push(g);
-      return g;
-    };
-    addRunway(group, flatQuad, h.length, h.width, FIELD.runway, FIELD.marking);
-    group.rotation.y = h.heading;
-    group.matrixAutoUpdate = false;
-    this.root.add(group);
-    this.origin.add(group, h.x, h.height, h.z);
-    this.runway = group;
   }
 
   // --- render distance ----------------------------------------------------------------------------
@@ -163,10 +153,10 @@ export class WorldMesh {
     this._fogTimer = 0;
     const h = Math.max(0, this.world.hf.height(camAbs.x, camAbs.z));
     const rgb = this.world.biomes.fogAt(camAbs.x, camAbs.z, h, this._rgb);
-    this._fogTarget.set(c.haze);
+    this._fogTarget.set(this.night ? c.night.haze : c.haze);
     // The biome's horizon, a little: sRGB 0-1 to the colour space THREE works in.
     const tint = new THREE.Color().setRGB(rgb[0], rgb[1], rgb[2], THREE.SRGBColorSpace);
-    this._fogTarget.lerp(tint, c.fogTint);
+    this._fogTarget.lerp(tint, (this.night ? c.night.tint : c.fogTint));
     this._fog.lerp(this._fogTarget, 1 - Math.exp(-step / 2.5));
     scene.sky.setHorizon(this._fog.getHex());
   }
@@ -242,6 +232,7 @@ export class WorldMesh {
       this.streamer.add({ name: 'chunks', priority: 100, step: () => ch.buildNext() === null });
     }
     this._areaJobs(camAbs);
+    this._airportJobs(camAbs);
     this.streamer.run(cfg.chunkBudgetMs);
 
     // Chunks into meshes, and the ones no longer wanted out of sight.
@@ -270,9 +261,83 @@ export class WorldMesh {
     this.water.position.set(lx, -cfg.seaDrop, lz);
 
     this._areas(camAbs);
+    this._airports(camAbs);
     this.ambient.update(camAbs.x, camAbs.z);
     this._cars(camAbs, alpha, dt);
     return rebased;
+  }
+
+  // --- airports -----------------------------------------------------------------------------------------
+  // How bright the lights are: the day's, or the night's (OPEN_WORLD.airports).
+  setLights(level) { setLampLevel(level); }
+
+  // The night preview: the fog follows it, and the lamps are as bright as the
+  // night's. (The caller swaps the sky and the light, Scene.setEnvironment.)
+  setNight(on) {
+    this.night = !!on;
+    this.setLights(on ? this.cfg.airports.lampNight : this.cfg.airports.lampDay);
+    this._fogTimer = 1e9;
+  }
+
+  _airportDistance(a, camAbs) {
+    return Math.max(0, Math.hypot(camAbs.x - a.px, camAbs.z - a.pz) - a.radius);
+  }
+
+  _airportJobs(camAbs) {
+    const k = this.cfg.airports;
+    for (const a of this.world.airports.list) {
+      if (this.airportViews.has(a.id)) continue;
+      if (this._airportDistance(a, camAbs) < k.buildDistance) this._startAirport(a);
+    }
+  }
+
+  _startAirport(a) {
+    const mesh = new AirportMesh(a, this.cfg);
+    const view = { airport: a, mesh, gen: mesh.steps(), group: null, item: null };
+    this.airportViews.set(a.id, view);
+    this.streamer.add({
+      name: `airport:${a.id}`, priority: 80,
+      step: () => {
+        const r = view.gen.next();
+        if (r.done) this._airportBuilt(view);
+        return r.done;
+      },
+    });
+  }
+
+  _airportBuilt(view) {
+    const a = view.airport;
+    view.group = view.mesh.group;
+    this.root.add(view.group);
+    view.item = this.origin.add(view.group, a.x, a.base, a.z);
+  }
+
+  // Build, now, every airport within `range` metres of (x, z): what a start needs
+  // so it never begins on bare ground.
+  primeAirports(x, z, range) {
+    for (const a of this.world.airports.list) {
+      if (Math.max(0, Math.hypot(x - a.px, z - a.pz) - a.radius) > range) continue;
+      if (!this.airportViews.has(a.id)) this._startAirport(a);
+      const view = this.airportViews.get(a.id);
+      if (view.group) continue;
+      this.streamer.remove(`airport:${a.id}`);
+      for (let r = view.gen.next(); !r.done; r = view.gen.next());
+      this._airportBuilt(view);
+    }
+  }
+
+  _airports(camAbs) {
+    const k = this.cfg.airports;
+    for (const view of [...this.airportViews.values()]) {
+      if (this._airportDistance(view.airport, camAbs) > k.buildDistance * 1.4) this._dropAirport(view);
+    }
+  }
+
+  _dropAirport(view) {
+    this.streamer.remove(`airport:${view.airport.id}`);
+    if (view.group) { this.root.remove(view.group); this.origin.remove(view.item); }
+    view.mesh.dispose();
+    this.airportViews.delete(view.airport.id);
   }
 
   // --- track areas ---------------------------------------------------------------------------------------
@@ -386,7 +451,8 @@ export class WorldMesh {
       chunksDrawn: this.chunks.drawList.length, chunksCached: this.chunks.chunks.size,
       tris, props, detail: this.detail, cells: this.chunks.cells,
       pending: this.chunks.requests.length, streamerMs: this.streamer.lastMs, jobs: this.streamer.jobs.length,
-      areasBuilt: built, rebases: this.origin.rebases, carsLive: this.ambient.liveCount,
+      areasBuilt: built, airportsBuilt: [...this.airportViews.values()].filter((v) => v.group).length,
+      rebases: this.origin.rebases, carsLive: this.ambient.liveCount,
       originX: this.origin.ox, originZ: this.origin.oz,
     };
   }
@@ -394,6 +460,7 @@ export class WorldMesh {
   dispose() {
     for (const c of [...this.chunks.chunks.values()]) this._freeChunk(c);
     for (const v of [...this.views.values()]) if (v.wrapper) this._dropArea(v);
+    for (const v of [...this.airportViews.values()]) this._dropAirport(v);
     for (const g of this._propGeo) g.dispose();
     for (const g of this._geos) g.dispose();
   }

@@ -232,7 +232,7 @@ export class FlightAudio {
   }
 
   // Once per rendered frame. s null is silence (paused, a menu). Otherwise
-  // s = { spool 0..1, ab 0..1, speed m/s, stallWarn, cockpit, dt }.
+  // s = { spool 0..1, ab 0..1, speed m/s, stallWarn, gearWarn, cockpit, dt }.
   update(s) {
     if (!this.sound.ready) return;
     if (!this.built) this._build();
@@ -295,6 +295,11 @@ export class FlightAudio {
       const on = this._chirp % 1 < 0.5;
       this.stall.frequency.setTargetAtTime(this._chirp % 2 < 1 ? A.stallFreq : A.stallFreq * 1.26, t, 0.005);
       this.stallGain.gain.setTargetAtTime(on ? A.stallGain : 0, t, 0.006);
+    } else if (s.gearWarn) {
+      // Gear up on short final: one low tone, a quarter of a second in each second.
+      this._gearT = (this._gearT || 0) + s.dt;
+      this.stall.frequency.setTargetAtTime(A.stallFreq * 0.72, t, 0.005);
+      this.stallGain.gain.setTargetAtTime(this._gearT % 1.1 < 0.28 ? A.stallGain * 0.8 : 0, t, 0.006);
     } else {
       this.stallGain.gain.setTargetAtTime(0, t, 0.02);
     }

@@ -10,7 +10,8 @@
 //   console.log(b.console);                 // everything the page logged
 //   await b.close();
 //
-// Needs the dev server running (npm run dev) and Google Chrome installed.
+// Needs the dev server running (npm run dev) and Google Chrome installed. CHROME is
+// the path to it; CHROME_ARGS adds flags (a container wants --no-sandbox).
 
 import { spawn } from 'node:child_process';
 import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
@@ -36,7 +37,7 @@ export async function launch({ url, width = 1440, height = 900, port = 9333, arg
     `--window-size=${width},${height}`, '--hide-scrollbars', '--mute-audio',
     '--no-first-run', '--no-default-browser-check', '--disable-background-timer-throttling',
     '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
-    '--autoplay-policy=no-user-gesture-required', ...args, 'about:blank',
+    '--autoplay-policy=no-user-gesture-required', ...(process.env.CHROME_ARGS ? process.env.CHROME_ARGS.split(' ') : []), ...args, 'about:blank',
   ], { stdio: 'ignore' });
 
   // Wait for the debugging port, then open a page.

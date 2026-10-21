@@ -41,7 +41,7 @@ const FACES = [
   [[0, 0, -1], [[1, -1, -1], [-1, -1, -1], [-1, 1, -1], [1, 1, -1]]],
 ];
 
-function addBox(out, cx, cy, cz, w, h, d, rgb) {
+export function addBox(out, cx, cy, cz, w, h, d, rgb) {
   for (const [n, c] of FACES) {
     for (const k of [0, 1, 2, 0, 2, 3]) {
       out.pos.push(cx + c[k][0] * w / 2, cy + c[k][1] * h / 2, cz + c[k][2] * d / 2);
@@ -134,8 +134,8 @@ export function buildProps(world, chunk, scale = 1, densify = 1) {
         const x = (i + jx) * cell, z = (j + jz) * cell;
         if (x < x0 || x >= x0 + size || z < z0 || z >= z0 + size) continue;
 
-        // Not on the home runway or its verge.
-        if (hf.inHomeClear(x, z)) continue;
+        // Not on an airport's flat ground or its margin.
+        if (world.airports.inClear(x, z)) continue;
 
         // Not on a race track or hard up against one: the track brings its own.
         const p = areas.probe(x, z, _probe);

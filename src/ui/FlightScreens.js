@@ -7,6 +7,7 @@
 // untouched.
 
 import { MenuScreen } from './Screens.js';
+import { MapScreen } from './MapScreen.js';
 
 function screen(root, cls, title, sub, hint) {
   const el = document.createElement('section');
@@ -33,16 +34,16 @@ const KEYS = [
   ['G', 'Landing gear'],
   ['Z / X', 'Flaps up / down', true],
   ['V', 'Airbrake, held'],
-  ['B', 'Wheel brake, held'],
+  ['B', 'Wheel brake, held: it comes on a little at a time'],
   ['P', 'Autopilot', true],
   ['H', 'Hover assist', true],
   ['C', 'Camera: chase, cockpit, far orbit'],
   ['Right mouse', 'Free look, held'],
   ['U', 'HUD on or off'],
-  ['M', 'Map', true],
+  ['M', 'Map'],
   ['N', 'Mute'],
   ['T', 'Mouse flight on or off'],
-  ['R', 'Hold for a second to reset to the runway'],
+  ['R', 'Hold for a second to go back to the hangar'],
   ['Esc', 'Pause'],
 ];
 
@@ -58,8 +59,8 @@ const PAD = [
   ['D-pad up / down', 'Next target / autopilot', true],
   ['D-pad left / right', 'Flaps up / down', true],
   ['L3', 'HUD'],
-  ['Back, tapped', 'Map', true],
-  ['Back, held, then A', 'Reset to the runway, held'],
+  ['Back, tapped', 'Map'],
+  ['Back, held, then A', 'Back to the hangar, held'],
   ['Back, held, then B / X', 'Mute / hover assist (hover later)'],
   ['Start', 'Pause'],
 ];
@@ -74,7 +75,7 @@ function controlsCard(root) {
   el.innerHTML = `<h1>Flight controls</h1><div class="controls-grid">
     <div><h2>Keyboard</h2><dl>${list(KEYS)}</dl></div>
     <div><h2>Gamepad</h2><dl>${list(PAD)}</dl>
-    <p class="controls-dev">Mouse flight (T): the mouse moves pitch and roll, the wheel is the throttle, the left button fires the cannon, the right button a missile, the middle button looks round.</p></div>
+    <p class="controls-dev">Mouse flight (T): the mouse moves pitch and roll, the wheel is the throttle, the left button fires the cannon, the right button a missile, the middle button looks round. On the ground a low throttle lever holds a taxi speed and brakes for you (0.1 is a walk, 0.25 a jog); stop in a hangar bay for a second and a half and the hangar opens. Buildings are not solid yet.</p></div>
   </div>`;
   root.append(el);
   return el;
@@ -84,18 +85,20 @@ export class FlightScreens {
   constructor(uiRoot) {
     this.root = uiRoot;
     this.fly = new MenuScreen(screen(uiRoot, 'fly-screen', 'Fly',
-      'The F-22 Raptor on a flat test field. The open world comes next.',
+      'The F-22 Raptor.',
       'Up and down to choose, Enter to go. On a gamepad, the d-pad and A.'));
     this.pause = new MenuScreen(screen(uiRoot, 'flight-pause-screen', 'Paused', '',
       'Esc, or Start on a gamepad, goes back to flying.'));
     this.card = controlsCard(uiRoot);
+    this.map = new MapScreen(uiRoot);
   }
 
-  get visible() { return this.fly.visible || this.pause.visible; }
+  get visible() { return this.fly.visible || this.pause.visible || this.map.visible; }
 
   hideAll() {
     this.fly.hide();
     this.pause.hide();
+    this.map.hide();
     this.card.hidden = true;
   }
 
@@ -108,5 +111,6 @@ export class FlightScreens {
   handlePad(m) {
     if (this.fly.visible) this.fly.handlePad(m);
     else if (this.pause.visible) this.pause.handlePad(m);
+    else if (this.map.visible) this.map.handlePad(m);
   }
 }

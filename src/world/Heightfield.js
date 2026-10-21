@@ -6,42 +6,28 @@
 // seed, and allocation free.
 //
 //   base(x, z)    the world's own height: ocean, coast, plains, hills, mountain
-//                 ranges, canyons. No airports, no race tracks.
-//   height(x, z)  what is actually there: base, flattened under the home
-//                 runway, and blended into each race track's own ground inside
-//                 its area (see TrackAreas).
+//                 ranges, canyons. No airports, no race tracks (a plain is
+//                 lifted out of the sea where an airport asks for one).
+//   height(x, z)  what is actually there: base, blended into each race track's
+//                 own ground inside its area (see TrackAreas), and made flat
+//                 under every airport (see Airports).
 //
 // Heights are metres above the sea, which is 0. Below it is sea floor; the sea
 // itself is a separate flat surface (World.sample clamps to it).
 
 import { OPEN_WORLD } from '../data/tuning.js';
+import { LAND_LIFTS } from '../data/airports.js';
 import { fbm2, ridged2, smoothstep } from './Noise.js';
 
 export class Heightfield {
-  constructor(cfg = OPEN_WORLD) {
+  // lifts: [{ x, z, radius, bias }], land raised round a place so an airport stands
+  // on a plain and not in the sea (data: an airport's `land`).
+  constructor(cfg = OPEN_WORLD, lifts = LAND_LIFTS) {
     this.cfg = cfg;
     this.half = cfg.size / 2;
+    this.lifts = lifts;
     this.areas = null;       // set by World once the track areas are placed
-    this._homeSetup();
-  }
-
-  _homeSetup() {
-    const h = this.cfg.home;
-    // The runway's frame: it runs from (x, z) along its heading. Heading 0 is
-    // north (+z) and east is -x, as everywhere in flight.
-    this.hx = h.x; this.hz = h.z;
-    this.hSin = Math.sin(h.heading);
-    this.hCos = Math.cos(h.heading);
-  }
-
-  // Where a world point sits in the runway's own frame: `along` its length from
-  // the threshold, `across` it (positive to the left, +x for a northbound
-  // runway).
-  homeFrame(x, z, out) {
-    const dx = x - this.hx, dz = z - this.hz;
-    out.along = dz * this.hCos - dx * this.hSin;
-    out.across = dx * this.hCos + dz * this.hSin;
-    return out;
+    this.airports = null;    // and the airports
   }
 
   // The world's own height. No areas, no flat zones.
@@ -49,12 +35,14 @@ export class Heightfield {
     const c = this.cfg;
 
     // Land or sea: a slow fractal pattern through a threshold, with the edge of
-    // the world sunk and the home field's surroundings lifted.
+    // the world sunk and the surroundings of an airport that asked for it lifted.
     let land = (fbm2(x / c.continentScale, z / c.continentScale, c.seed + 1, 3) - c.seaThreshold) * c.continentGain;
     const edge = Math.max(Math.abs(x), Math.abs(z));
     land -= c.rimStrength * smoothstep(this.half - c.rimWidth, this.half, edge);
-    const dHome = Math.hypot(x - this.hx, z - this.hz);
-    land += c.home.landBias * (1 - smoothstep(0, c.home.landRadius, dHome));
+    for (let i = 0; i < this.lifts.length; i++) {
+      const l = this.lifts[i];
+      land += l.bias * (1 - smoothstep(0, l.radius, Math.hypot(x - l.x, z - l.z)));
+    }
 
     if (land <= 0) return Math.max(land, -1) * c.seaDepth;
 
@@ -94,42 +82,14 @@ export class Heightfield {
     return Math.max(y, c.landFloor * smoothstep(0, 0.12, land));
   }
 
-  _frame = { along: 0, across: 0 };
-
-  // What is actually there.
+  // What is actually there. The airports come last, so a platform is flat whatever
+  // else reaches it.
   height(x, z) {
     let y = this.base(x, z);
-    y = this._flatten(y, x, z);
     const areas = this.areas;
     if (areas) y = areas.blend(y, x, z);
+    const airports = this.airports;
+    if (airports) y = airports.flatten(y, x, z);
     return y;
-  }
-
-  // The home field is a level rectangle with a soft edge.
-  _flatten(y, x, z) {
-    const h = this.cfg.home;
-    const f = this.homeFrame(x, z, this._frame);
-    // Distance outside the flat rectangle (negative inside it).
-    const ox = Math.abs(f.across) - h.flatHalfWidth;
-    const oz = f.along < 0 ? -f.along - h.flatMargin : f.along > h.length ? f.along - h.length - h.flatMargin : -1;
-    const d = Math.max(ox, oz);
-    if (d >= h.blend) return y;
-    const m = 1 - smoothstep(0, h.blend, d);
-    return y + (h.height - y) * m;
-  }
-
-  // Is this point in the ground kept clear of scenery round the runway: the
-  // strip, a verge either side of it and a run-off past each end?
-  inHomeClear(x, z) {
-    const h = this.cfg.home;
-    const f = this.homeFrame(x, z, this._frame);
-    return Math.abs(f.across) <= h.width / 2 + h.clearSide && f.along >= -h.clearEnd && f.along <= h.length + h.clearEnd;
-  }
-
-  // Is this point on the runway's own strip?
-  onRunway(x, z) {
-    const h = this.cfg.home;
-    const f = this.homeFrame(x, z, this._frame);
-    return Math.abs(f.across) <= h.width / 2 && f.along >= 0 && f.along <= h.length;
   }
 }

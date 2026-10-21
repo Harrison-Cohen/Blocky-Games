@@ -15,10 +15,17 @@
 // the nozzles (flat, two-dimensional, which tilt for thrust vectoring) and their
 // flat burner plumes, and
 // the landing gear (which retracts and compresses).
+//
+// The livery (data/loadouts.js, set in the Hangar) is paint, a pattern, a tail
+// number and an insignia. Paint is a colour on the body's materials; the rest are
+// thin slabs of the accent colour laid on the surfaces a little proud of them
+// (never on a moving panel, which would leave them behind). The default livery is
+// exactly the grey the aircraft has always been.
 
 import * as THREE from 'three';
 import { Loft } from '../game/CarBuilder.js';
 import { glossy, unlit, ownLamp } from './Materials.js';
+import { normalizeLivery, paintHex } from '../data/loadouts.js';
 
 const GREY = 0x6e7782;
 const GREY_DARK = 0x4c545e;
@@ -78,7 +85,27 @@ const mirror = (points) => points.map(([a, b]) => [-a, b]);
 // A point on the segment a-b at fraction t.
 const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 
-export function buildAircraft(def) {
+// Seven segment digits for the tail number, as the car's roundel and the runway's
+// designator have (no textures anywhere): which of a (top), b (upper right),
+// c (lower right), d (bottom), e (lower left), f (upper left), g (middle) are lit.
+const DIGITS = {
+  0: 'abcdef', 1: 'bc', 2: 'abged', 3: 'abgcd', 4: 'fgbc', 5: 'afgcd', 6: 'afgedc', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg',
+};
+// [across, up, width, height] in a cell one wide and 1.8 tall.
+const DIGIT_BARS = {
+  a: [0.50, 1.72, 0.72, 0.16], b: [0.86, 1.30, 0.16, 0.68], c: [0.86, 0.42, 0.16, 0.68],
+  d: [0.50, 0.08, 0.72, 0.16], e: [0.14, 0.42, 0.16, 0.68], f: [0.14, 1.30, 0.16, 0.68],
+  g: [0.50, 0.86, 0.72, 0.16],
+};
+
+// A colour lightened toward white, for the lighter panels of a repainted body.
+const lighten = (hex, k) => {
+  const c = new THREE.Color(hex);
+  return c.lerp(new THREE.Color(0xffffff), k).getHex();
+};
+
+export function buildAircraft(def, livery = null) {
+  const L = normalizeLivery(livery);
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
@@ -86,8 +113,25 @@ export function buildAircraft(def) {
   const own = (g) => { owned.push(g); return g; };
   const lamps = [];
 
-  const hull = glossy(GREY, { shininess: 70, specular: 0x5a626c });
-  const hullLight = glossy(0x7d8794, { shininess: 70, specular: 0x5a626c });
+  const stockBody = L.body === 'stock';
+  const bodyHex = paintHex(L.body), accentHex = paintHex(L.accent);
+  const hull = glossy(stockBody ? GREY : bodyHex, { shininess: 70, specular: 0x5a626c });
+  const hullLight = glossy(stockBody ? 0x7d8794 : lighten(bodyHex, 0.14), { shininess: 70, specular: 0x5a626c });
+  const accent = glossy(accentHex, { shininess: 60, specular: 0x4a4e56 });
+  const accentLight = glossy(lighten(accentHex, 0.14), { shininess: 60, specular: 0x4a4e56 });
+  // The split livery paints the whole left side (+x) in the accent.
+  const split = L.pattern === 'split';
+  const sideHull = (side) => (split && side === 1 ? accent : hull);
+  const sideLight = (side) => (split && side === 1 ? accentLight : hullLight);
+  // A decal: a thin slab of the accent laid on a surface, a little thicker than the
+  // surface it sits on so it stands proud of it on both faces.
+  const decal = (parent, plan, thickness, bevel, x = 0, y = 0, z = 0) => {
+    const m = mesh(own(slab(plan, thickness, bevel)), accent);
+    m.castShadow = false;
+    m.position.set(x, y, z);
+    parent.add(m);
+    return m;
+  };
   const dark = glossy(GREY_DARK, { shininess: 60 });
   const black = glossy(BLACK, { shininess: 40 });
   const glass = glossy(GLASS, { shininess: 140, specular: 0xffffff, transparent: true, opacity: 0.82 });
@@ -134,6 +178,47 @@ export function buildAircraft(def) {
   ], 2.6, 24);
   body.add(mesh(own(canopy.geometry()), glass));
 
+  // The spine pattern: a narrow stripe of the accent standing a little proud of
+  // the fuselage's top, aft of the canopy and forward of it.
+  if (L.pattern === 'spine') {
+    const stripe = (stations) => new Loft(stations.map((q) => ({ z: q.z, y0: q.y1 - 0.14, y1: q.y1 + 0.03, hw: Math.max(0.05, q.hw * 0.14), xc: 0, top: 1 })), 3, 12);
+    const stations = fuselage.st;
+    for (const part of [stations.slice(0, 4), stations.slice(5)]) {
+      const m = mesh(own(stripe(part).geometry()), accent);
+      m.castShadow = false;
+      body.add(m);
+    }
+  }
+
+  // The insignia, on the upper surface of each wing about two thirds of the way
+  // out: invented marks, a few centimetres thick, flat on the wing.
+  if (L.insignia !== 'none') {
+    const sheet = (plan, mat, y) => {
+      const m = mesh(own(slab(plan, 0.01, 0.004)), mat);
+      m.castShadow = false;
+      m.position.y = y;
+      return m;
+    };
+    const disc = (r, mat, y) => {
+      const m = mesh(own(new THREE.CylinderGeometry(r, r, 0.012, 28)), mat);
+      m.castShadow = false;
+      m.position.y = y;
+      return m;
+    };
+    const mark = {
+      roundel: () => [disc(0.85, accent, 0.146), disc(0.6, hull, 0.152), disc(0.3, accent, 0.158)],
+      diamond: () => [sheet([[0, 1.1], [0.85, 0], [0, -1.1], [-0.85, 0]], accent, 0.146), sheet([[0, 0.6], [0.4, 0], [0, -0.6], [-0.4, 0]], hull, 0.152)],
+      chevron: () => [sheet([[-0.95, -0.7], [0, 0.7], [0.95, -0.7], [0.95, -1.1], [0, 0.0], [-0.95, -1.1]], accent, 0.146)],
+      bars: () => [-0.55, 0, 0.55].map((z) => sheet([[-0.85, z + 0.12], [0.85, z + 0.12], [0.85, z - 0.12], [-0.85, z - 0.12]], accent, 0.146)),
+    }[L.insignia];
+    for (const side of [1, -1]) {
+      const g = new THREE.Group();
+      g.position.set(side * 4.3, 0, -2.76);
+      for (const m of mark()) g.add(m);
+      body.add(g);
+    }
+  }
+
   // --- wings --------------------------------------------------------------
   // Leading edge swept 45 degrees, the trailing edge forward a little; the
   // roots are buried in the fuselage. The trailing edge carries the
@@ -151,7 +236,7 @@ export function buildAircraft(def) {
   const wingFlaps = [];
   for (const side of [1, -1]) {
     const flip = (pts) => (side === 1 ? pts : mirror(pts));
-    body.add(mesh(own(slab(flip(fixedPlan), 0.14, 0.05)), hull));
+    body.add(mesh(own(slab(flip(fixedPlan), 0.14, 0.05)), sideHull(side)));
     // Each flap is a group at the start of its hinge line, turning about the
     // hinge. The axis runs toward the left on both wings, so the same turn
     // lowers the trailing edge on both.
@@ -164,7 +249,7 @@ export function buildAircraft(def) {
       // wing the hinge runs the other way, inboard, to point to the left too.
       const axis = side === 1 ? new THREE.Vector3(dx, 0, dz).normalize() : new THREE.Vector3(dx, 0, -dz).normalize();
       const rel2 = flip(plan).map(([x, z]) => [x - a[0], z - a[1]]);
-      g.add(mesh(own(slab(rel2, 0.12, 0.04)), hullLight));
+      g.add(mesh(own(slab(rel2, 0.12, 0.04)), sideLight(side)));
       body.add(g);
       return { group: g, axis, side };
     };
@@ -173,6 +258,15 @@ export function buildAircraft(def) {
       inboard: panel(inboardPlan, hingeRoot, hingeMid),
       outboard: panel(outboardPlan, hingeMid, hingeTip),
     });
+
+    // Patterns on the fixed part of the wing, between the leading edge and the
+    // hinge. A band is the strip of it between two stations along the span.
+    const strip = (t0, t1) => [lerp2(rootLE, tipLE, t0), lerp2(rootLE, tipLE, t1), lerp2(hingeRoot, hingeTip, t1), lerp2(hingeRoot, hingeTip, t0)];
+    if (L.pattern === 'tips') decal(body, flip(strip(0.74, 1)), 0.16, 0.06);
+    if (L.pattern === 'bands') {
+      decal(body, flip(strip(0.34, 0.44)), 0.16, 0.06);
+      decal(body, flip(strip(0.56, 0.66)), 0.16, 0.06);
+    }
   }
 
   // --- stabilators --------------------------------------------------------
@@ -183,12 +277,19 @@ export function buildAircraft(def) {
   const rel = (pts) => pts.map(([x, z]) => [x, z - pivotZ]);
   const stabL = new THREE.Group();
   stabL.position.set(0, 0.02, pivotZ);
-  stabL.add(mesh(own(slab(rel(stabPlan), 0.11, 0.04)), hull));
+  stabL.add(mesh(own(slab(rel(stabPlan), 0.11, 0.04)), sideHull(1)));
   body.add(stabL);
   const stabR = new THREE.Group();
   stabR.position.set(0, 0.02, pivotZ);
   stabR.add(mesh(own(slab(rel(mirror(stabPlan)), 0.11, 0.04)), hull));
   body.add(stabR);
+  // The tips pattern puts the accent on the tailplane's outer end too; they are
+  // groups that turn, so the decal is inside them and turns with the panel.
+  if (L.pattern === 'tips') {
+    const outer = (pts) => [lerp2(pts[0], pts[1], 0.62), pts[1], pts[2], lerp2(pts[3], pts[2], 0.62)];
+    decal(stabL, rel(outer(stabPlan)), 0.13, 0.05);
+    decal(stabR, rel(outer(mirror(stabPlan))), 0.13, 0.05);
+  }
 
   // --- fins and rudders ---------------------------------------------------
   // A fixed fin and a rudder hinged behind it. The fin stays put; only the
@@ -207,12 +308,40 @@ export function buildAircraft(def) {
     const g = new THREE.Group();
     g.position.set(side * 1.1, 0.5, 0);
     g.rotation.z = -side * cant;
-    g.add(mesh(own(fin(finFixed, 0.1, 0.035)), hull));
+    g.add(mesh(own(fin(finFixed, 0.1, 0.035)), sideHull(side)));
     // The rudder: a group at the foot of the hinge line, turning about it.
     const r = new THREE.Group();
     r.position.set(0, 0, hz0);
-    r.add(mesh(own(fin(rudderPlan.map(([z, y]) => [z - hz0, y]), 0.09, 0.03)), hullLight));
+    r.add(mesh(own(fin(rudderPlan.map(([z, y]) => [z - hz0, y]), 0.09, 0.03)), sideLight(side)));
     g.add(r);
+    // The pattern at the tip of the fixed fin, and the tail number on its flank.
+    if (L.pattern === 'tips') {
+      const at = (y) => [finFixed[0][0] + (finFixed[3][0] - finFixed[0][0]) * (y / TIP), finFixed[1][0] + (finFixed[2][0] - finFixed[1][0]) * (y / TIP)];
+      const [le, hg] = at(2.0);
+      const f = mesh(own(fin([[le, 2.0], [hg, 2.0], [finFixed[2][0], TIP], [finFixed[3][0], TIP]], 0.13, 0.05)), accent);
+      f.castShadow = false;
+      g.add(f);
+    }
+    if (L.number != null) {
+      const text = String(L.number);
+      const n = text.length;
+      // Where the fixed fin is wide enough at the height of the digits: 1.45 m
+      // across, centred behind the leading edge. The digits shrink as they multiply.
+      const span = 1.45, pitch = Math.min(0.5, span / n), k = Math.min(0.6 / 1.8, pitch * 0.82);
+      const x = side * 0.1;
+      for (let i = 0; i < n; i++) {
+        // The writing runs nose to tail on the left flank and tail to nose on the
+        // right, as seen from outside it (the same as the car's number).
+        const u0 = (i - n / 2) * pitch + (pitch - k) / 2;
+        for (const key of DIGITS[text[i]] || '') {
+          const [su, sv, sw, sh] = DIGIT_BARS[key];
+          const bar = mesh(own(new THREE.BoxGeometry(0.03, sh * k, sw * k)), accent);
+          bar.castShadow = false;
+          bar.position.set(x, 0.95 + (sv - 0.9) * k, -7.35 - side * (u0 + su * k));
+          g.add(bar);
+        }
+      }
+    }
     body.add(g);
     // The hinge points up and aft; a positive turn about it swings the
     // trailing edge to the right (-x), which is what a right rudder does.

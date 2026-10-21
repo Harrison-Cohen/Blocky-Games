@@ -102,6 +102,10 @@ export class AircraftPhysics {
     const skid = def.gear.hull.find((h) => h.skid);
     this.tailDrop = skid ? -skid.pos[1] : 0;
     this.tailArm = skid ? -skid.pos[2] : 0;
+    // What the Hangar sets (data/loadouts.js): the mass carried and the three tune
+    // scales. 1 and the data's own payload are the aircraft as fitted.
+    this.payload = def.payload;
+    this.tune = { power: 1, response: 1, assist: 1 };
 
     this.atm = createAtmosphere();
     this.r = new Float64Array(9);
@@ -112,6 +116,15 @@ export class AircraftPhysics {
     this._q = { qx: 0, qy: 0, qz: 0, qw: 1 };
 
     this.reset({});
+  }
+
+  // The Hangar's setup: { payload (kg), tune: { power, response, assist } }. Kept
+  // across a reset; anything left out stays as it is.
+  setup(s = {}) {
+    if (s.payload != null) this.payload = s.payload;
+    if (s.tune) Object.assign(this.tune, s.tune);
+    for (const e of this.engines) e.power = this.tune.power;
+    this.mass = this.def.emptyMass + this.payload + this.fuel;
   }
 
   // Put the aircraft down. opts: { x, y, z, heading, pitch, bank, speed,
@@ -127,7 +140,7 @@ export class AircraftPhysics {
     this.vx = this.r[2] * speed; this.vy = this.r[5] * speed; this.vz = this.r[8] * speed;
     this.wx = 0; this.wy = 0; this.wz = 0;
     this.fuel = (opts.fuel ?? 0.6) * d.fuelCapacity;
-    this.mass = d.emptyMass + d.payload + this.fuel;
+    this.mass = d.emptyMass + this.payload + this.fuel;
 
     // Pilot's controls, as the physics holds them.
     this.pitchCmd = 0; this.rollCmd = 0; this.yawCmd = 0;
@@ -152,6 +165,7 @@ export class AircraftPhysics {
     this.gPullCap = 1; this.gPushCap = 1;
     this.agl = 0;
     this.parked = false;
+    this.brake = 0;                // the wheel brake as applied: the pilot's and the taxi governor's
     this.altitude = this.y;
     this.climb = 0;
     this.thrustTotal = 0;
@@ -234,21 +248,29 @@ export class AircraftPhysics {
     // pitched up on its own.
     const fade = clamp(F.qFadeRef / (qdyn + 1), F.qFadeMin, 1);
 
-    let pitch = this.pitchCmd;
-    let roll = this.rollCmd;
-    let yaw = this.yawCmd;
+    // The Hangar's control response scales the stick and the damping together, so
+    // the aircraft is quicker or slower to answer with the same character. The aids
+    // and the load limits below still act after it.
+    const R = this.tune.response;
+    let pitch = this.pitchCmd * R;
+    let roll = this.rollCmd * R;
+    let yaw = this.yawCmd * R;
 
     // Damping: the feel. Always on; set a gain to 0 to remove it.
     // The pitch damping is faded less than the stick (see dampFadePow): the
     // airframe's own stiffness grows with dynamic pressure, so damping that
     // stays put as the stick fades is, against it, weak at speed.
-    pitch += -F.dampPitch * Math.pow(fade, F.dampFadePow - 1) * (-this.wx);   // pitch-up rate is -wx
-    roll += -F.dampRoll * this.wz;               // roll-right rate is wz
-    yaw += F.dampYaw * this.wy;                  // yaw-right rate is -wy
+    pitch += -F.dampPitch * R * Math.pow(fade, F.dampFadePow - 1) * (-this.wx);   // pitch-up rate is -wx
+    roll += -F.dampRoll * R * this.wz;           // roll-right rate is wz
+    yaw += F.dampYaw * R * this.wy;              // yaw-right rate is -wy
 
     // The aids.
     this.stalled = this.alpha > this.stallAlpha;
     this.stallWarn = !onGround && this.alpha > this.stallAlpha * F.warnAlpha && tas > 20;
+    // The Hangar's flight assist scales the self levelling and the auto trim. The
+    // softening, the load limits, the sideslip limiter and the tail guard are
+    // safety, not assist, and are not touched by it.
+    const A = this.tune.assist;
     if (F.aids) {
       // Angle-of-attack softening: pull fades out as the stall nears and the
       // nose is pushed down past it, so it mushes rather than snapping.
@@ -303,10 +325,10 @@ export class AircraftPhysics {
       // force grows with q, the rate falls with it) stays what it was.
       if (flying && shallow) {
         if (Math.abs(this.pitchCmd) < 0.03) {
-          this.trim = clamp(this.trim - F.trimRate * fade * this.pathRate * dt, -F.trimLimit, F.trimLimit);
+          this.trim = clamp(this.trim - F.trimRate * A * fade * this.pathRate * dt, -F.trimLimit, F.trimLimit);
         } else if (Math.abs(this.pathRate) < F.trimSteady) {
           // Back pressure holding the path steady: trim it off.
-          this.trim = clamp(this.trim + F.trimHold * fade * this.pitchCmd * dt, -F.trimLimit, F.trimLimit);
+          this.trim = clamp(this.trim + F.trimHold * A * fade * this.pitchCmd * dt, -F.trimLimit, F.trimLimit);
         }
       } else if (flying) {
         // Steep: it stops integrating but keeps the trim it found. Relaxing to
@@ -319,7 +341,7 @@ export class AircraftPhysics {
 
       // Roll self-levelling when the stick is centred, gently.
       if (flying && Math.abs(this.rollCmd) < 0.03 && Math.abs(att.pitch) < F.levelMaxPitch) {
-        roll += clamp(-F.levelStrength * att.bank, -F.levelLimit, F.levelLimit);
+        roll += clamp(-F.levelStrength * A * att.bank, -F.levelLimit * A, F.levelLimit * A);
       }
     }
 
@@ -356,7 +378,9 @@ export class AircraftPhysics {
 
     // Body drag: the fuselage, the wave drag that rises through Mach 1, the
     // gear and the airbrake. It acts against the airflow at the centre of mass.
-    this.gearDown += clamp((input.gearDown ? 1 : 0) - this.gearDown, -dt / F.gearTime, dt / F.gearTime);
+    // The lever cannot raise the wheels while they carry the aircraft.
+    const gearWant = input.gearDown || (F.gearLock && this.gear.weightOnWheels > F.gearLockWow);
+    this.gearDown += clamp((gearWant ? 1 : 0) - this.gearDown, -dt / F.gearTime, dt / F.gearTime);
     this.airbrake += clamp((input.airbrake ? 1 : 0) - this.airbrake, -dt / F.airbrakeTime, dt / F.airbrakeTime);
     if (tas > 0.5) {
       const cda = d.bodyCdA + d.refArea * this.waveCdA.at(mach) +
@@ -392,8 +416,21 @@ export class AircraftPhysics {
     this.thrustTotal = thrustTotal;
     this.fuelFlow = flow * F.fuelBurn;
 
-    // Landing gear and the hull, against the ground.
-    this.gear.apply(this, ground, dt, input.yaw, input.brake || 0, this.gearDown, this.mass, acc);
+    // The taxi governor (FLIGHT.taxiLeverMax): on its wheels at a low lever the lever
+    // asks for a speed and the brakes hold the aircraft to it. The pilot's own
+    // brake is added to it, never taken from it.
+    let brake = input.brake || 0;
+    const gspd2 = this.vx * this.vx + this.vz * this.vz;
+    if (F.groundAssist && this.gear.weightOnWheels > 0.5 && !abOn && this.throttle <= F.taxiLeverMax &&
+        gspd2 < F.taxiSpeedMax * F.taxiSpeedMax) {
+      const over = Math.sqrt(gspd2) - F.taxiSpeedPerLever * this.throttle;
+      if (over > 0) brake = Math.max(brake, Math.min(F.taxiBrakeMax, over * F.taxiBrakeGain));
+    }
+    this.brake = brake;
+
+    // Landing gear and the hull, against the ground. The nose wheel is steered by
+    // the ramped pedal, so a tapped key is not a snap to full lock.
+    this.gear.apply(this, ground, dt, this.yawCmd, brake, this.gearDown, this.mass, acc);
 
     // --- 4. integrate ----------------------------------------------------
     const m = this.mass;
@@ -428,8 +465,10 @@ export class AircraftPhysics {
     // standing on its brakes. Static friction, in effect: it lets go the moment
     // the throttle comes up. It is done before the position moves, so not even a
     // step's worth of the creep gets through.
-    this.parked = this.gear.weightOnWheels > 0.5 && !abOn && this.throttle < F.parkThrottle &&
-      this.vx * this.vx + this.vz * this.vz < F.parkSpeed * F.parkSpeed;
+    // Standing on the brakes holds it too, up to a run-up (parkBrakeThrottle).
+    this.parked = this.gear.weightOnWheels > 0.5 && !abOn &&
+      this.vx * this.vx + this.vz * this.vz < F.parkSpeed * F.parkSpeed &&
+      (this.throttle < F.parkThrottle || (brake > F.parkBrake && this.throttle < F.parkBrakeThrottle));
     if (this.parked) { this.vx = 0; this.vz = 0; this.wy = 0; }
 
     this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
@@ -457,7 +496,7 @@ export class AircraftPhysics {
 
     // --- 5. bookkeeping --------------------------------------------------
     this.fuel = Math.max(0, this.fuel - this.fuelFlow * dt);
-    this.mass = d.emptyMass + d.payload + this.fuel;
+    this.mass = d.emptyMass + this.payload + this.fuel;
     if (abOn) {
       this.abFuel = Math.max(0, this.abFuel - (abMean * dt) / F.abDuration);
       if (this.abFuel <= 0) this.abLocked = true;

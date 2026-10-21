@@ -12,6 +12,7 @@
 
 import { FLIGHT_HUD as H } from '../data/tuning.js';
 import { speedIn, altitudeIn, climbIn } from '../flight/Units.js';
+import { Radar } from './Radar.js';
 
 const DEG = 180 / Math.PI;
 const fmt = (v) => Math.round(v).toLocaleString('en-US');
@@ -67,12 +68,28 @@ export class FlightHud {
     this.aoaEl = el('span', 'fhud-num', nums, 'AoA 0.0');
     this.gEl = el('span', 'fhud-num', nums, 'G 1.0');
     this.gearEl = el('span', 'fhud-num', nums, 'Gear down');
+    // On the ground: the wheel brake, and the nose wheel's lock.
+    this.groundEl = el('div', 'fhud-nums fhud-ground', en);
+    this.brakeEl = el('span', 'fhud-num', this.groundEl, 'Brake 0%');
+    this.steerEl = el('span', 'fhud-num', this.groundEl, 'Nose wheel 0');
+    this.parkEl = el('span', 'fhud-num', this.groundEl, '');
+    this.groundEl.hidden = true;
 
     // The warning, centre low.
     this.warnEl = el('div', 'fhud-warn', this.root);
     this.noteEl = el('div', 'fhud-note', this.root);
     this.resetEl = el('div', 'fhud-reset', this.root);
     this.camEl = el('div', 'fhud-cam', this.root);
+    // The radar, top left.
+    this.radar = new Radar(this.root);
+    // Where it is: the airport, the runway or the apron.
+    this.placeEl = el('div', 'fhud-place', this.root);
+    this.placeEl.hidden = true;
+    // Stopped in a hangar bay: the bar that fills until the Hangar opens.
+    this.zoneEl = el('div', 'fhud-zone', this.root);
+    el('span', 'fhud-zone-text', this.zoneEl, 'Hangar bay: hold still to open the hangar');
+    this.zoneBar = el('i', '', el('div', 'fhud-bar', this.zoneEl));
+    this.zoneEl.hidden = true;
 
     // The horizon: the full pitch ladder and flight path marker, which only
     // mean something looking down the nose (the cockpit), and a small
@@ -154,6 +171,21 @@ export class FlightHud {
     this._set('aoa', this.aoaEl, `AoA ${(d.alpha * DEG).toFixed(1)}`);
     this._set('g', this.gEl, `G ${d.nz.toFixed(1)}`);
     this._set('gear', this.gearEl, d.gear > 0.97 ? 'Gear down' : d.gear < 0.03 ? 'Gear up' : 'Gear moving');
+    // The ground: only while the wheels carry the aircraft.
+    const onWheels = d.onGround && d.weightOnWheels > 0.1;
+    if (this.groundEl.hidden === onWheels) this.groundEl.hidden = !onWheels;
+    if (onWheels) {
+      this._set('brake', this.brakeEl, `Brake ${Math.round((d.brake || 0) * 100)}%`);
+      this._set('steer', this.steerEl, `Nose wheel ${Math.round(Math.abs(d.steer || 0) * DEG)} ${d.steer > 0.02 ? 'left' : d.steer < -0.02 ? 'right' : ''}`.trim());
+      this._set('park', this.parkEl, d.parked ? 'Parked' : '');
+    }
+    this.radar.update({ x: d.x, z: d.z, heading: d.heading, units: this.units });
+    this._set('place', this.placeEl, d.where || '');
+    this.placeEl.hidden = !d.where;
+    // A bay: the bar fills while the aircraft stands still in it.
+    const inBay = d.zone !== undefined && d.zone >= 0;
+    if (this.zoneEl.hidden === inBay) this.zoneEl.hidden = !inBay;
+    if (inBay) this._fill('zone', this.zoneBar, d.zone);
     this.gEl.classList.toggle('over', d.nz > 8.2 || d.nz < -3);
 
     // The warning: the most urgent one.
@@ -161,12 +193,13 @@ export class FlightHud {
     if (d.stalled) { warn = 'Stall'; cls = 'alert'; }
     else if (d.stallWarn) { warn = 'Stall warning'; cls = 'warn'; }
     else if (d.agl < 120 && d.climb < -12 && d.gear < 0.5) { warn = 'Pull up'; cls = 'alert'; }
+    else if (d.gearWarn) { warn = 'Gear is up'; cls = 'alert'; }
     else if (d.fuel < 0.05) { warn = 'Fuel'; cls = 'warn'; }
     this._set('warn', this.warnEl, warn);
     if (this._cache.warnCls !== cls) { this._cache.warnCls = cls; this.warnEl.className = `fhud-warn ${cls}`; }
 
     if (d.resetProgress > 0.02) {
-      this._set('reset', this.resetEl, `Reset to the runway  ${Math.round(d.resetProgress * 100)}%`);
+      this._set('reset', this.resetEl, `Back to the hangar  ${Math.round(d.resetProgress * 100)}%`);
       this.resetEl.hidden = false;
     } else if (!this.resetEl.hidden) this.resetEl.hidden = true;
 

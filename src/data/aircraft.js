@@ -161,6 +161,11 @@ export const F22 = {
     ],
   },
 
+  // --- where it can be put ------------------------------------------------
+  // The shortest runway (m) it is started on or sent to, and whether it needs no
+  // runway at all (a helicopter does; the heliports are for it).
+  ground: { minRunway: 1000, vtol: false },
+
   // --- where the pilot sits and the camera looks --------------------------
   cockpitEye: [0, 1.36, 3.1],
   camTarget: [0, 0.5, 0],

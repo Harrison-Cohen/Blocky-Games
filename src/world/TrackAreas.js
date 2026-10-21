@@ -101,9 +101,12 @@ export class Area {
 export class TrackAreas {
   // trackData: the track data files (the registry's list in the game, the files
   // in the folder in a check). hf: the Heightfield the areas are placed on.
-  constructor(trackData, hf, cfg = OPEN_WORLD) {
+  // airports: the placed Airports, which the areas keep clear of (and which they
+  // measure "from home" against: the major airport).
+  constructor(trackData, hf, cfg = OPEN_WORLD, airports = null) {
     this.cfg = cfg;
     this.hf = hf;
+    this.airports = airports;
     this.list = trackData.map((d) => new Area(d, cfg));
     this.byId = new Map(this.list.map((a) => [a.id, a]));
     this._probe = { area: null, outside: 0, weight: 0 };
@@ -112,6 +115,8 @@ export class TrackAreas {
   }
 
   // --- placement ---------------------------------------------------------------------
+  get home() { return this.airports ? this.airports.center : { x: 0, z: 0 }; }
+
   _place() {
     const c = this.cfg;
     // The order is the seed's, not the registry's: a track added later, or
@@ -129,7 +134,7 @@ export class TrackAreas {
           for (let k = 0; k < limit; k++) {
             const x = (hash2(k, 11, s) - 0.5) * c.size * 0.84;
             const z = (hash2(k, 23, s) - 0.5) * c.size * 0.84;
-            const d = Math.hypot(x - c.home.x, z - c.home.z);
+            const d = Math.hypot(x - this.home.x, z - this.home.z);
             if (d < c.areaFromHome[0] || d > c.areaFromHome[1]) continue;
             if (!this._clear(a, x, z, placed)) continue;
             const score = needFit ? this._fit(a, x, z) : (this.hf.base(x, z) > 6 ? 0.01 : -1);
@@ -149,11 +154,18 @@ export class TrackAreas {
     }
   }
 
-  // Clear of every area already placed and of the home field, edge to edge.
+  // Clear of every area already placed and of every airport, edge to edge (with room
+  // left for the area's own airstrip, which sits beside it).
   _clear(a, x, z, placed) {
     const c = this.cfg;
     for (const o of placed) {
       if (Math.hypot(x - o.x, z - o.z) < a.reach + o.reach + c.areaMinSpacing) return false;
+    }
+    if (this.airports) {
+      const k = c.airports, gap = k.areaClear + k.stripAllowance;
+      for (const o of this.airports.list) {
+        if (Math.hypot(x - o.px, z - o.pz) < a.reach + o.reach + gap) return false;
+      }
     }
     return true;
   }
