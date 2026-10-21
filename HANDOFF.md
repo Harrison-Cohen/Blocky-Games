@@ -1,7 +1,8 @@
 # Handoff: blocky racing sim
 
-Read this file, then `Claude.md` (the project rules), then `PROMPT.md` (the
-full spec) before touching anything. This file is the state of the project and
+Read `AGENTS.md` (the agent entry point: who the user is, how they want to be worked with, the hand-off
+protocol between Claude Code and Codex), then this file, then `Claude.md` (the project rules), then
+`PROMPT.md` (the full spec) before touching anything. This file is the state of the project and
 everything the previous agent knew that is not written down elsewhere.
 
 **Flight work** (the second game mode, an F-22 and a world to fly it in): read
@@ -76,6 +77,19 @@ user approved, with the answers to the spec's open items), then sections 9 and
   committed on branch `Flight_test` (on top of `f00427b`) and pushed, so it is in the draft PR
   `Harrison-Cohen/Blocky-Games#1`. Anything done after that commit exists only in the cloud
   container until it is committed and pushed again: tell the user and offer it.
+- **Flight milestone 4a, the user's notes after flying the 737 (2026-10-21), built, verified, and
+  committed and pushed to `Flight_test` on 2026-10-21 when the user asked in words (they were running out of
+  Claude usage and asked for the agent hand-off files to be written and committed) as two commits on top of
+  `c6d2373`: the code, then the hand-off documents** (section 10l): wider runways and taxiways at every airport, spoilers that slow the
+  aircraft instead of stalling it, a firmer landing threshold, a gear that folds instead of passing
+  through the body, a crash menu (respawn at the hangar or the nearest runway), a first person view
+  without the black lines plus a new Cockpit view with a modelled inside (737 flight deck and F-22
+  cockpit), a 737 nose and flight deck glass remodelled from photographs, and the F-22's side
+  intakes remodelled from photographs (its three mesh goldens were re-recorded on purpose; the
+  physics goldens did not move). 4b (the Magpie 48) is still NOT started. The user's agents now include
+  Codex as well as Claude Code: `AGENTS.md` is Codex's entry point and holds what is known about the user, and
+  `FLIGHT_M4_PLAN.md` keeps the approved plan (the 4b design) in the repo. Anything done after the pushed
+  commits exists only in the container or working tree until it is committed and pushed again: tell the user.
 
 ## 1a. Milestones: what each one delivered
 
@@ -509,7 +523,9 @@ These are built; see the top of this section.
 
 ## 3. Standing instructions (every response)
 
-The same three are also in the auto-memory at
+`AGENTS.md` section 2 is the fuller, current list of the user's preferences (no em or en dashes, find the
+simplest solution and check online sources, they/them, academic calendar, and the rules below); read it.
+The same three below are also in the auto-memory at
 `~/.claude/projects/-Users-harrisoncohen-Documents-racing-game/memory/`.
 
 - **End every response with launch instructions**, in their own `bash` block:
@@ -811,7 +827,7 @@ Keyboard:
 | G | landing gear |
 | V | airbrake, held (the 737's spoilers; they also come up by themselves with the wheels down and the lever at idle) |
 | B | wheel brake, held (it comes on a little at a time, `FLIGHT_INPUT.brakeAttack`) |
-| C | camera: chase, cockpit, far orbit |
+| C | camera: chase, first person, cockpit, far orbit (the pad's Y too) |
 | Right mouse, held | free look (middle button in mouse flight) |
 | U | HUD on / off |
 | N | mute |
@@ -932,6 +948,9 @@ What comes next, in order:
 
 ### 10.0 Start here (for a new chat)
 
+- UPDATE 2026-10-21 (later): the user flew the 737 and sent ten notes; all are built and verified in
+  10l (committed and pushed). Read 10l after 10k. 4b still has not been started. A second agent, Codex,
+  may pick the work up: read `AGENTS.md` first.
 - UPDATE 2026-10-21: FLIGHT MILESTONE 4 IS HALF BUILT. 4a (the Boeing 737-800, flaps, spoilers, the
   autopilot, switching aircraft in the Hangar, the major's approach corridor) is built and
   verified and WAITING ON THE USER'S TEST: read 10k. It is committed and pushed (the commit after `f00427b`).
@@ -2232,3 +2251,125 @@ crate on a heliport), `AIRCRAFT = [F22, B737, MAGPIE]`, and sections 1 and 10.0 
 game numbers to fit: top speed 75 m/s, climb 10 m/s at sea level at 4,300 kg, ceiling 5,000 m, mass 4,800
 kg, rotor 12 m. The hover check: 60 s in a 4 m/s wind within 2 m, 1 m of height and 2 degrees, and more than
 10 m of drift with the assist off.
+
+### 10l. Milestone 4a, the user's notes after flying the 737: built (2026-10-21, waiting on the user's test)
+
+The user flew the 737 and wrote: the 737 flies fine; every runway is too narrow for it and the taxiways
+too; the speed brakes stall the plane without slowing it; a soft landing counts as a crash; the gear
+goes through the body and then vanishes when it retracts; after a crash offer a choice of where to
+respawn (the hangar or the nearest runway); first person is glitchy with black lines through the map, and
+they want a Cockpit view with the inside of the cockpit modelled IN ADDITION to the first person view they
+have; the 737's nose looks nothing like a real 737's glass; the F-22's side intakes look tacked on. All
+nine are done. Committed and pushed on the user's request (in words) together with the agent hand-off files.
+
+**Verified (all on this tree).** All nine car checks pass. `npm run flight` passes (251 checks, the F-22
+identical to the bit; see the mesh goldens below). `npm run world` fails only the three mesh hash checks
+(copper-flats, glacier-pass, pine-ridge) that fail on the pristine tree too. `npx vite build` is clean (the
+800 kB advisory is old). The dev server console is clean in the new views (`errors []` from the page).
+Screenshots were read for the nose, the intakes, both cockpits (forward, left, down, back) and first
+person.
+
+**What was built.**
+1. Runways and taxiways (`src/data/airports.js`, header comment explains it). Runway widths now: major 90 m
+   (was 60), air base 70 (45), regional 60 (30), strip 45, heliport pad unchanged; taxiways 45, 35, 30, strip
+   stub 25, heliport stub 20. The rule that kept the world as it was: every tier's flat PLATFORM is the same
+   rectangle (a runway's extra width comes out of its `right` margin, the parallel taxiway grows INWARD so
+   its outer edge, the apron and the buildings stay put, a stub's `gap` shrinks), so airport placement and
+   `AIRPORT_GOLDEN` (6dd44d5b) and `AREA_GOLDEN` did not move.
+2. Spoilers. The wing lift dump is split in two: `airbrakeLiftDump` (on the wheels, 0.8 on the 737) and
+   `airbrakeLiftDumpAir` (in the air, 0.1 on the 737), blended by the weight on the wheels, and
+   `airbrakeCdA` 7.0. In the air the 737's spoilers now take about 1.4 kt a second off without dropping
+   the nose; on the ground the dump keeps the weight on the wheels so the brakes work (check:
+   `scripts/flight/b737.mjs`, speed brake and ground load 482.6 against 128.1 kN).
+3. Landing hardness. New tunable `FLIGHT.hullCrashDepth` (0.35, how far the gear can compress past its
+   stop before the hull is counted as hitting; the F-22 keeps it) and `FLIGHT_OVERRIDES.b737`
+   `crashSpeed` 5, `maxSink` 6.5 m/s, `skidCrashSpeed` 7, `skidCrashDepth` 0.8, `hullCrashDepth` 0.6.
+   Checked: a firm landing and a late flare survive, an unflared 6 degree glide is a crash.
+4. Gear fold (`b737.js` `FOLD_MAIN`, `FOLD_NOSE`, `FOLD_SLIDE`; `Aircraft.js` for the F-22): the legs
+   swing inboard and aft with a slide as they retract, so they never pass through the skin and then pop.
+5. Crash menu (`FlightGame.openCrash`, `FlightScreens.crash`): after `FLIGHT_CAMERA.crashMenuDelay` (1.6 s)
+   of wreck a menu offers: respawn at the hangar of the last airport, respawn on the nearest runway that
+   can take the aircraft (with the distance), open the map (and come back to the menu), back to the title.
+   Esc goes to the hangar. Pad: the standard menu buttons.
+6. Cameras (`FlightCamera.js`, `FLIGHT_CAMERA`): C cycles Chase, First person, Cockpit, Far orbit
+   (`CAM`). THE BLACK LINES were depth fighting: the near plane was fixed small while the camera looked
+   across the far world, so the world's coplanar faces shimmered; the near plane now grows with height
+   above the ground (`firstNearMax` 2 m cap), and first person has its own field of view (`firstFov` 72).
+   First person keeps the eye it had (`def.cockpitEye`).
+   The COCKPIT view draws the inside in a SECOND PASS (`PostFX.OverlayPass`, `Scene.setOverlay`,
+   `_renderOverlay`): the world is drawn first, then the depth is cleared and the aircraft plus its
+   interior are drawn with their own camera (near `cockpitNear` 0.04, far `cockpitFar` 120, fov
+   `cockpitFov` 78), so a dashboard centimetres from the eye does not share a depth buffer with a mountain
+   100 km away. Three.js layers do the sorting: the interior is on layer 1 only (the ordinary camera never
+   draws it), the aircraft's body is on layers 0 and 1, the lights are on both. The overlay pass nulls
+   `scene.background`, and the shadow map is rendered per call with the view camera's layers. The eye is
+   `def.cockpitView.eye` (737: [0.55, 0.82, 14.1], the left seat; F-22: [0, 1.3, 2.9]).
+7. The interiors (`src/render/aircraft/cockpits.js`, `BUILDERS` keyed by `def.model`; the HULL IS ONE
+   SIDED so from inside it is invisible and the interior has to close the space itself, with holes where
+   there is glass). 737: a shell of grid cells standing 7 cm inside the skin with the windows left open
+   (the window list is `COCKPIT_GLASS` in `b737.js`, shared so the openings match the glass), the two
+   bulkheads, floor, overhead panel with lights, the instrument panel with six screens (a real moving
+   artificial horizon on both PFDs, cut to the window analytically every frame, nothing allocated per
+   frame; the screens are blocks of colour with rings and bars), the glareshield with the autopilot panel,
+   the pedestal with two throttle levers, a speed brake lever and a flap lever that move with the aircraft,
+   a gear lever, two yokes that turn with the roll and come back with the pull, seats and pedals. F-22: a
+   tub and sill rails, canopy arches (`CANOPY_STATIONS`, exported from `AircraftBuilder.js`, a Loft
+   whose arches follow the glass), coaming, a head-up display frame (the symbols are the page's own HUD),
+   a panel with a moving horizon, side consoles, left hand throttles that move, a stick that tilts with
+   the inputs, an ejection seat. Interior materials carry part of their colour as a glow (`inside()`):
+   the hemisphere light painted the roof the colour of the ground. An aircraft with no builder gets a
+   placeholder block (the Magpie will need its own).
+8. The 737's nose (`b737.js`): the fuselage tapers over the last 9 m to a small tip (measured off side
+   photographs, not the first version's blunt dome) and the flight deck has four glass panes a side
+   (`COCKPIT_GLASS`: forward windshield high on the slope so it faces forward over the top, front side
+   window, sliding window, small fixed one), each a curved patch of the skin (`patch()`) standing proud of it
+   with a dark frame under it. The old pane planes and side window row are gone.
+   Photos used (Wikimedia Commons, by file name): "D-ATUF B737-8K5W TUIfly-Hapag retro PMI 26SEP10
+   (6341092368).jpg" (side view of the nose and glass), "N785SW BWI MD1.jpg" (a 737-700, side), and "The
+   737-800 Flight Deck (3852492599).jpg" (the flight deck for the interior layout).
+9. The F-22's intakes (`AircraftBuilder.js` `INTAKE`, `intakeDuct`, `intakeThroat`): a lofted duct of
+   rounded parallelogram sections (top edge leaning outboard), its front ring raked back along the top and
+   outer edges (a swept lip), the cheek the colour of the hull and swelling out of the fuselage side under
+   the rear of the canopy, a black throat behind the lip, instead of dark pods under the wing roots. Modelled
+   on a head-on and a top-down photograph of an F-22 (Wikimedia Commons: "F-22 Raptor edit1 (cropped).jpg"
+   and a flying photo "Demo Teams A Special Formation Flight 201120-F-VA182-9002.jpg"); the shape facts
+   (a fixed geometry caret inlet, parallelogram from the front, swept on all entrance edges) are in the
+   Wikipedia article on the diverterless supersonic inlet and a patent describing it. THE F-22'S THREE MESH
+   GOLDENS WERE RE-RECORDED ON PURPOSE (`identity.mjs`: meshDefault c62a6dc3 to c55516da, meshTips 468e0c98
+   to 628e730d, meshSplit 3f01b48b to f8b23a12); the six physics hashes did not move.
+10. The controls card now reads "Camera: chase, first person, cockpit, far orbit".
+
+**What to test (tell the user, in this order).**
+1. Fly the 737 off the major and land it: the runway should now feel wide; taxi on the wider taxiway.
+2. Spoilers (V) in the air: the speed should fall and the nose should NOT drop. On the runway they stop it.
+3. Land softly and land firmly: a normal firm landing must not crash it. A really hard one still does.
+4. Retract the gear (G): the legs fold into the body, no pass through, no vanishing. The F-22's too.
+5. Crash on purpose: the menu should appear after a moment: hangar or nearest runway.
+6. C: Chase, First person (clean, no black lines), Cockpit (the inside), Far orbit. Look round with the
+   right mouse button: in the Cockpit view the flight deck should be built all round the eye. Does the
+   horizon on the panel follow the aircraft, do the throttles and yokes move?
+7. Judge the 737's nose and the F-22's intakes against the real ones by eye.
+
+**What bit (do not reintroduce).**
+- Draw order inside a cockpit: a screen is a thin box and its contents must sit IN FRONT of its face (more
+  negative z toward the pilot); the first panel had them behind and showed black.
+- The hemisphere light paints downward facing surfaces the ground colour: interior materials need their own
+  glow (`inside()`), and a roof lit that way read as dark green.
+- A shared cached material must not be mutated (two sided walls): clone it (`inside()` clones and the
+  interior frees them).
+- The hull is single sided: a window opening on the outside is a patch and on the inside a hole in the
+  shell; both come from `COCKPIT_GLASS` so they agree.
+- `identity.mjs` mesh goldens now stand on the new intakes; the physics goldens are untouched. If a later
+  change moves a PHYSICS hash, that is a real change in the F-22's flight.
+- Wikimedia: needs a User-Agent; it rate limits (429) and `upload.wikimedia.org` originals are blocked, but
+  `thumb.wikimedia.org/.../thumb/<h>/<hh>/<name>/1280px-<name>` works (the hash path is the md5 of the file
+  name, first one and two letters); search results are noisy (scanned PDFs), so name files directly.
+
+**Known gaps.**
+- The flight deck is a stylised, blocky 737: no overhead detail beyond lights, no tapes or ladders on the
+  screens, the engine gauges are static. The F-22's HUD frame carries no symbols (the page's HUD draws
+  them). Both are for the Cockpit view only; first person keeps its old eye.
+- The 737 has no cabin; looking back from the flight deck shows the rear bulkhead.
+- The intakes' throat is a flat black plane (no duct inside), the lip is swept but the mouth is partly
+  hidden by the fuselage cheek from the front.
+

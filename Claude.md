@@ -10,6 +10,11 @@ Full spec is in PROMPT.md. Read it before starting new work on a milestone.
 Picking this up in a new session? Read HANDOFF.md first: current state, the
 user's open requests, standing instructions, and testing gotchas.
 
+Two agents share this repo, Claude Code and Codex, and neither remembers the other's sessions. `AGENTS.md` is
+the entry point for Codex and also holds what is known about the user (their preferences and how they work);
+Claude should read it too. Both agents keep `HANDOFF.md` current and write down, in the repo, everything the
+next session needs, before a session ends.
+
 ## Commands
 
 ```
