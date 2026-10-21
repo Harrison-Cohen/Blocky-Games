@@ -90,6 +90,11 @@ export class Wing {
     this.drag = curves[def.curve].drag;
     this.stall = curves[def.curve].stall;
     this.flap = def.flap || 0;     // 1 if the surface carries the scheduled flaps
+    // Set by the airframe each step: the flaps' gain on the lift curve (and the
+    // spoilers' loss of it) and the drag they add, as a coefficient on this surface's
+    // area. 1 and 0 are the surface as the curves have it.
+    this.liftScale = 1;
+    this.cdAdd = 0;
     const c = def.control || {};
     this.cPitch = c.pitch || 0;
     this.cRoll = c.roll || 0;
@@ -126,12 +131,12 @@ export class Wing {
     const sign = eff < 0 ? -1 : 1;
     const a = eff < 0 ? -eff : eff;
 
-    const cl = sign * this.lift.at(a) * liftMach;
+    const cl = sign * this.lift.at(a) * liftMach * this.liftScale;
     // Induced drag grows with lift squared and gives way to the flat plate
     // term once the surface is well past the stall.
     const fade = a < this.stall ? 1 : a > (FULL_STALL_DEG * Math.PI) / 180 ? 0
       : 1 - (a - this.stall) / ((FULL_STALL_DEG * Math.PI) / 180 - this.stall);
-    const cd = this.drag.at(a) + this.induced * cl * cl * fade;
+    const cd = this.drag.at(a) + this.induced * cl * cl * fade + this.cdAdd;
     this.alpha = eff;
     this.cl = cl;
 

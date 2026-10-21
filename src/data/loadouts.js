@@ -54,19 +54,52 @@ export const TAIL_NUMBER_DIGITS = 4;
 
 export const DEFAULT_LIVERY = { body: 'stock', accent: 'charcoal', pattern: 'plain', number: null, insignia: 'none' };
 
+// What the livery offers on each aircraft. The paints are the same twelve; the patterns and
+// the insignia are drawn on that aircraft's own panels, so each has its own list, and `stock`
+// (the body colour that is the aircraft's own) is named for what it is. The airliner's are
+// fictional: no real airline's colours or marks.
+export const LIVERY_OPTIONS = {
+  f22: { patterns: LIVERY_PATTERNS, insignia: LIVERY_INSIGNIA, stockName: 'Standard grey', default: DEFAULT_LIVERY },
+  b737: {
+    patterns: [
+      { id: 'plain', name: 'Plain white' },
+      { id: 'cheatline', name: 'Cheat line' },
+      { id: 'tail', name: 'Tail colour' },
+      { id: 'belly', name: 'Belly band' },
+      { id: 'engines', name: 'Engine rings' },
+      { id: 'full', name: 'Cheat line, tail and engines' },
+    ],
+    insignia: [
+      { id: 'none', name: 'None' },
+      { id: 'ring', name: 'Ring' },
+      { id: 'wave', name: 'Wave' },
+      { id: 'star', name: 'Star' },
+      { id: 'bars', name: 'Bars' },
+    ],
+    stockName: 'Airline white',
+    default: { body: 'stock', accent: 'sky', pattern: 'full', number: null, insignia: 'ring' },
+  },
+};
+export const liveryOptions = (aircraftId) => LIVERY_OPTIONS[aircraftId] || LIVERY_OPTIONS.f22;
+export const defaultLivery = (aircraftId) => ({ ...liveryOptions(aircraftId).default });
+
 const has = (list, id) => list.some((o) => o.id === id);
 const num = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-export function normalizeLivery(raw) {
+// Whatever was stored, a livery that is safe to paint with. Each aircraft has its own
+// patterns and insignia and its own default; the F-22's, as it has always been, is the
+// default when no aircraft is named.
+export function normalizeLivery(raw, aircraftId = 'f22') {
   const r = raw && typeof raw === 'object' ? raw : {};
+  const o = liveryOptions(aircraftId), dflt = o.default;
   const n = r.number == null ? null : Math.round(num(r.number, NaN));
   return {
-    body: has(LIVERY_PAINTS, r.body) ? r.body : DEFAULT_LIVERY.body,
-    accent: has(LIVERY_PAINTS, r.accent) ? r.accent : DEFAULT_LIVERY.accent,
-    pattern: has(LIVERY_PATTERNS, r.pattern) ? r.pattern : DEFAULT_LIVERY.pattern,
+    body: has(LIVERY_PAINTS, r.body) ? r.body : dflt.body,
+    accent: has(LIVERY_PAINTS, r.accent) ? r.accent : dflt.accent,
+    pattern: has(o.patterns, r.pattern) ? r.pattern : dflt.pattern,
     number: n == null || !Number.isFinite(n) ? null : clamp(n, 0, TAIL_NUMBER_MAX),
-    insignia: has(LIVERY_INSIGNIA, r.insignia) ? r.insignia : DEFAULT_LIVERY.insignia,
+    insignia: has(o.insignia, r.insignia) ? r.insignia : dflt.insignia,
   };
 }
 
@@ -100,9 +133,33 @@ export const HANGAR_OPTIONS = {
       { id: 'fuselage', name: 'Fuselage' },
     ],
   },
+  // The 737: passengers and hold cargo are its payload. The default load (120 passengers and
+  // 2,500 kg) is the data's payload (aircraft.js), so every figure it was fitted to is at the
+  // default; fewer is lighter and shorter on the runway, more is heavier (the card says when it
+  // is over the maximum takeoff mass).
+  b737: {
+    loadout: [
+      { id: 'passengers', name: 'Passengers', max: 162, step: 2, default: 120, mass: 95, source: 'planning mass of a passenger with hand baggage, about 95 kg; 162 seats (spec; Boeing quotes 160 in two classes)' },
+      { id: 'cargo', name: 'Hold cargo, kg', max: 8000, step: 250, default: 2500, mass: 1, source: 'baggage and freight; the hold is 45 cubic metres (Boeing)' },
+    ],
+    tune: [
+      { id: 'power', name: 'Engine power', note: 'Thrust and fuel flow' },
+      { id: 'response', name: 'Control response', note: 'Stick authority and rate damping' },
+      { id: 'assist', name: 'Flight assist', note: 'How well it holds its path hands off: the auto trim. The load limits stay on' },
+    ],
+    damage: [
+      { id: 'wings', name: 'Wings, flaps and spoilers' },
+      { id: 'tail', name: 'Tail and fin' },
+      { id: 'engines', name: 'Engines' },
+      { id: 'gear', name: 'Landing gear' },
+      { id: 'fuselage', name: 'Fuselage' },
+    ],
+  },
 };
 
 export const hangarOptions = (aircraftId) => HANGAR_OPTIONS[aircraftId] || HANGAR_OPTIONS.f22;
+
+// The parts of an airliner. Same knobs as the fighter; the notes say what each does to it.
 
 export function defaultLoadout(aircraftId) {
   const o = {};
@@ -159,7 +216,7 @@ export function normalizeDamage(aircraftId, raw) {
 export function normalizeSetup(aircraftId, raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   return {
-    livery: normalizeLivery(r.livery),
+    livery: normalizeLivery(r.livery, aircraftId),
     loadout: normalizeLoadout(aircraftId, r.loadout),
     tune: normalizeTune(aircraftId, r.tune),
     damage: normalizeDamage(aircraftId, r.damage),

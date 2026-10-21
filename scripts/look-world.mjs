@@ -9,7 +9,8 @@
 // Writes PNGs into out-dir (default /tmp/look-world): the runway, the home field
 // from the air, each track area from the air and from beside its road, the airports
 // (one of each tier, the apron, a hangar bay, the night, the map, the Hangar), the
-// coast, the mountains, the high view, the pause card. `only` is a substring: only
+// coast, the mountains, the high view, the approach to the major (down its 3 degree path, through
+// the corridor cut in its ridge), the pause card. `only` is a substring: only
 // the shots whose name contains it are taken.
 //
 // It also measures z-fighting. Pavement is laid on a flat plateau a polygon offset
@@ -47,6 +48,18 @@ const place = (x, agl, z, headingDeg, speed = 120) => b.eval(`(() => {
   const f = flight;
   f.start('air');
   f.physics.reset({ x: ${x}, y: f.world.height(${x}, ${z}) + ${agl}, z: ${z}, heading: ${headingDeg} * Math.PI / 180, pitch: 0, speed: ${speed}, fuel: 0.6, throttle: 0.5, gear: 0 });
+  f.paused = true;
+  f.hud.hide();
+  f.camera.reset();
+  f._primeWorld();
+  return true;
+})()`);
+
+// The same, at a height above the sea (not the ground), and a pitch: for an approach.
+const placeAt = (x, y, z, headingDeg, pitchDeg = 0, speed = 75) => b.eval(`(() => {
+  const f = flight;
+  f.start('air');
+  f.physics.reset({ x: ${x}, y: ${y}, z: ${z}, heading: ${headingDeg} * Math.PI / 180, pitch: ${pitchDeg} * Math.PI / 180, speed: ${speed}, fuel: 0.6, throttle: 0.5, gear: 1 });
   f.paused = true;
   f.hud.hide();
   f.camera.reset();
@@ -249,6 +262,13 @@ try {
   await shot(`${n++}-high`, 'from 9 km up');
   await place(0, 60, -1200, 0, 200);
   await shot(`${n++}-low-pass`, '60 m over the home field');
+  // The major's approach, down a 3 degree path (15 m over the threshold) from the south, where the
+  // ridge was: the corridor cut for the airliner leaves it clear (the world check measures it).
+  for (const [d, tag] of [[8000, '8 km'], [5200, '5 km'], [3200, '3 km']]) {
+    const base = 22, y = base + 15 + d * Math.tan(3 * Math.PI / 180) + 10;
+    await placeAt(0, y, -d, 0, -3);
+    await shot(`${n++}-major-approach-${tag.replace(' ', '')}`, `the major's approach, ${tag} out`);
+  }
 
   // A rebase must be invisible. Let the frame settle (car meshes are built a frame
   // at a time, the eye adapts), draw it twice to see how much a frame differs from

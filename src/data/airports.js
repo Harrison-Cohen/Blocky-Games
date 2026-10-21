@@ -146,6 +146,9 @@ export const AIRPORTS = [
     id: 'meridian-intl', name: 'Meridian International', tier: 'major',
     placement: { x: 0, z: 0, heading: 0 }, height: 22,
     land: { radius: 15000, bias: 0.5 },
+    // The ridge it sits in blocks both approaches: cut a graded corridor at each end (the
+    // knobs are OPEN_WORLD.airports.corridor).
+    corridor: true,
   },
   { id: 'fort-falcon', name: 'Fort Falcon Air Base', tier: 'military' },
   { id: 'pinecrest', name: 'Pinecrest Regional', tier: 'regional', runway: { length: 1800 } },

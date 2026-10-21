@@ -68,6 +68,12 @@ export class FlightHud {
     this.aoaEl = el('span', 'fhud-num', nums, 'AoA 0.0');
     this.gEl = el('span', 'fhud-num', nums, 'G 1.0');
     this.gearEl = el('span', 'fhud-num', nums, 'Gear down');
+    // The systems an aircraft has: the flap lever and the spoilers, and the autopilot's targets.
+    this.sysEl = el('div', 'fhud-nums fhud-sys', en);
+    this.flapsEl = el('span', 'fhud-num', this.sysEl, 'Flaps up');
+    this.brakeNameEl = el('span', 'fhud-num', this.sysEl, '');
+    this.apEl = el('div', 'fhud-nums fhud-ap', en);
+    this.apEl.hidden = true;
     // On the ground: the wheel brake, and the nose wheel's lock.
     this.groundEl = el('div', 'fhud-nums fhud-ground', en);
     this.brakeEl = el('span', 'fhud-num', this.groundEl, 'Brake 0%');
@@ -103,6 +109,17 @@ export class FlightHud {
     this._cache = {};
     this._noteUntil = 0;
     this._camUntil = 0;
+  }
+
+  // What the aircraft being flown has: a burner row only where there is an afterburner, a flap
+  // readout only where there are flaps, and the name its airbrake goes by.
+  configure(def) {
+    const ab = def.engines.some((e) => e.ab > e.dry);
+    this.abBar.r.hidden = !ab;
+    this.hasFlaps = !!(def.flaps && def.flaps.detents.length > 1);
+    this.flapsEl.hidden = !this.hasFlaps;
+    this.airbrakeName = def.airbrakeName || 'Airbrake';
+    this._cache = {};
   }
 
   show() { this.root.hidden = false; }
@@ -187,6 +204,26 @@ export class FlightHud {
     if (this.zoneEl.hidden === inBay) this.zoneEl.hidden = !inBay;
     if (inBay) this._fill('zone', this.zoneBar, d.zone);
     this.gEl.classList.toggle('over', d.nz > 8.2 || d.nz < -3);
+
+    // The flaps (the setting the panel is at, lit while it moves) and the spoilers.
+    if (this.hasFlaps) {
+      this._set('flaps', this.flapsEl, `Flaps ${d.flapName}`);
+      this.flapsEl.classList.toggle('over', Math.abs(d.flaps - Math.round(d.flaps)) > 0.03);
+    }
+    this._set('brk', this.brakeNameEl, d.airbrake > 0.02 ? `${this.airbrakeName} ${Math.round(d.airbrake * 100)}%` : '');
+
+    // The autopilot, with what it holds.
+    const ap = d.ap;
+    if (ap && ap.on) {
+      if (this.apEl.hidden) this.apEl.hidden = false;
+      const alt = altitudeIn(ap.alt, this.units), spd = speedIn(ap.spd, this.units);
+      this._set('ap', this.apEl, [
+        'AP',
+        ap.altHold ? `ALT ${fmt(alt.value)} ${alt.unit}` : '',
+        ap.hdgHold ? `HDG ${String(Math.round((((ap.hdg * DEG) % 360) + 360) % 360) % 360).padStart(3, '0')}` : '',
+        ap.spdHold ? `SPD ${fmt(spd.value)} ${spd.unit}` : '',
+      ].filter(Boolean).join('  '));
+    } else if (!this.apEl.hidden) this.apEl.hidden = true;
 
     // The warning: the most urgent one.
     let warn = '', cls = '';

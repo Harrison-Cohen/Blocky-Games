@@ -8,7 +8,13 @@
 import * as THREE from 'three';
 import { AircraftPhysics, createRenderState } from './AircraftPhysics.js';
 import { buildAircraft } from '../render/AircraftBuilder.js';
+import { buildB737 } from '../render/aircraft/b737.js';
 import { FLIGHT } from '../data/tuning.js';
+
+// The mesh of each aircraft, by `def.model` (data/aircraft.js). The F-22's is the first, and
+// the default.
+const BUILDERS = { f22: buildAircraft, b737: buildB737 };
+const build = (def, livery) => (BUILDERS[def.model] || buildAircraft)(def, livery);
 
 export class Aircraft {
   // livery: the Hangar's paint, pattern, number and insignia (data/loadouts.js);
@@ -17,7 +23,7 @@ export class Aircraft {
     this.def = def;
     this.physics = new AircraftPhysics(def);
     this.render = createRenderState();
-    const built = buildAircraft(def, livery);
+    const built = build(def, livery);
     this.root = built.root;
     this.built = built;
     this.parts = built.parts;
@@ -28,7 +34,7 @@ export class Aircraft {
   // Repaint: build the body again and put it in the same root, so everything that
   // holds the root (the shock wave, the camera, the scene) keeps holding it.
   setLivery(livery) {
-    const next = buildAircraft(this.def, livery);
+    const next = build(this.def, livery);
     this.root.remove(this.built.body);
     this._dispose();
     this.built = next;
@@ -44,6 +50,10 @@ export class Aircraft {
     const s = this.physics.interpolate(alpha, this.render);
     this.root.position.set(s.x - ox, s.y, s.z - oz);
     this.root.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+
+    // An aircraft with its own animation moves its own parts (the 737); the F-22's are
+    // moved below.
+    if (this.built.update) { this.built.update(s, this.physics, dt); return; }
 
     const p = this.parts;
     // The stabilators are the third and fourth surfaces: pull is trailing

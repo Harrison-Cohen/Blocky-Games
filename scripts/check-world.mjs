@@ -53,6 +53,7 @@ const check = (ok, msg) => {
 };
 const DT = 1 / SIM.hz;
 const f1 = (v) => v.toFixed(1);
+const TAU2 = Math.PI * 2;
 let seed = 0x5eed;
 const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
 
@@ -784,6 +785,72 @@ const { AIRPORTS, TIERS } = await import(SRC + 'data/airports.js');
   const hinted = new World(trackData, OPEN_WORLD, [...AIRPORTS, { id: 'hinted-test', name: 'Hinted', tier: 'regional', placement: { x: 20000, z: 30000, heading: 0.5 } }, { id: 'added-test', name: 'Added', tier: 'regional' }]);
   const h1 = hinted.airports.byId.get('hinted-test'), h2 = hinted.airports.byId.get('added-test');
   check(h1.x === 20000 && h1.z === 30000 && Math.abs(h1.heading - 0.5) < 1e-12 && h2 && h2.placed, 'a placement hint in the airport data is honoured, and a new line there is placed');
+}
+
+console.log('\nThe approach corridor');
+{
+  // The major sits in a cut in a ridge; an airliner's glide path (3 degrees, 15 m over the
+  // threshold) needs the ground clear, so the data marks it and the land beyond its platform
+  // is cut down to a ramp (OPEN_WORLD.airports.corridor). It only lowers land, only there.
+  const AP = world.airports, K = OPEN_WORLD.airports, C = K.corridor;
+  const marked = AP.list.filter((a) => a.data.corridor).map((a) => a.id);
+  check(marked.length === 1 && marked[0] === AP.major.id, `only the major is marked for a corridor (${marked.join(', ')})`);
+  const bare = new World(trackData, OPEN_WORLD, AIRPORTS.map((a) => ({ ...a, corridor: false })));
+  const a = AP.major;
+  const at = (u, v, out) => { out.x = a.x + v * a.cos - u * a.sin; out.z = a.z + u * a.cos + v * a.sin; return out; };
+  const p = { x: 0, z: 0 };
+  // The 3 degree path from each threshold (the runway runs u 0 to its length), from the platform's end (500 m) out to the
+  // corridor's length: how far it clears the ground at the least, with the corridor and without.
+  const clearance = (wd, end) => {
+    let worst = Infinity;
+    for (let d = 500; d <= C.length; d += 50) {
+      at(end === 0 ? -d : a.length + d, 0, p);
+      worst = Math.min(worst, a.base + 15 + d * Math.tan(3 * Math.PI / 180) - wd.height(p.x, p.z));
+    }
+    return worst;
+  };
+  const south = clearance(world, 0), north = clearance(world, 1);
+  const southBare = clearance(bare, 0), northBare = clearance(bare, 1);
+  check(south >= 35 && north >= 35, `a 3 degree approach clears the ground by ${f1(south)} m (runway ${a.layout.designators[0]}) and ${f1(north)} m (runway ${a.layout.designators[1]}) at the least, out to ${C.length / 1000} km`);
+  check(southBare < 0 && northBare < 40, `without the cut it did not: ${f1(southBare)} m and ${f1(northBare)} m, so the corridor is doing the work`);
+  // Only lowers; nothing moves outside the corridor's own circle, or at any other airport,
+  // or on any track area; it is never steeper than the land it was cut from.
+  let raised = 0, lowered = 0, outsideMoved = 0, steepest = 0, steepestBare = 0, deepest = 0;
+  for (let k = 0; k < 30000; k++) {
+    const x = (rnd() - 0.5) * 130000, z = (rnd() - 0.5) * 130000;
+    const h = world.height(x, z), h0 = bare.height(x, z);
+    const inCircle = Math.hypot(x - a.px, z - a.pz) * Math.hypot(x - a.px, z - a.pz) <= AP.cr2[0];
+    if (h > h0 + 1e-9) raised++;
+    if (h < h0 - 1e-9) { lowered++; deepest = Math.max(deepest, h0 - h); if (!inCircle) outsideMoved++; }
+  }
+  for (let k = 0; k < 6000; k++) {
+    at(-3000 + rnd() * 10500, (rnd() - 0.5) * 3500, p);
+    const slope = (wd) => Math.hypot(wd.height(p.x + 16, p.z) - wd.height(p.x, p.z), wd.height(p.x, p.z + 16) - wd.height(p.x, p.z)) / 16;
+    steepest = Math.max(steepest, slope(world)); steepestBare = Math.max(steepestBare, slope(bare));
+  }
+  check(raised === 0 && lowered > 0 && outsideMoved === 0, `the cut only lowers the land (${lowered} of 30,000 random points lowered, deepest ${f1(deepest)} m, none raised, none outside the corridor's circle)`);
+  check(steepest <= steepestBare + 0.05, `its sides are no steeper than the land they were cut from (steepest ${steepest.toFixed(2)}, the land ${steepestBare.toFixed(2)})`);
+  let areaMoved = 0, other = 0;
+  for (const ar of world.areas.list) {
+    for (let k = 0; k < 300; k++) {
+      const r = Math.sqrt(rnd()) * ar.reach, t = rnd() * TAU2;
+      const x = ar.x + Math.cos(t) * r, z = ar.z + Math.sin(t) * r;
+      if (Math.abs(world.height(x, z) - bare.height(x, z)) > 1e-9) areaMoved++;
+    }
+  }
+  for (const o of AP.list) {
+    if (o === a) continue;
+    for (let k = 0; k < 300; k++) {
+      const r = Math.sqrt(rnd()) * (o.reach + 3000), t = rnd() * TAU2;
+      const x = o.px + Math.cos(t) * r, z = o.pz + Math.sin(t) * r;
+      if (Math.abs(world.height(x, z) - bare.height(x, z)) > 1e-9) other++;
+    }
+  }
+  check(areaMoved === 0 && other === 0, 'no track area and no other airport has any of its ground changed');
+  // The platform and the runway are as they were, and the airports are where they were.
+  let flat = true;
+  for (const u of [0, 1000, 2000, 3500]) { at(u, 0, p); if (world.height(p.x, p.z) !== a.base) flat = false; }
+  check(flat, 'the runway is still exactly flat at the major\'s base height');
 }
 
 console.log('\nThe ground at airports');

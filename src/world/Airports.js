@@ -435,6 +435,22 @@ export class Airports {
       this.cus[i] = a.cu; this.cvs[i] = a.cv;
     });
     this.major = this.list.find((a) => a.tier === 'major') || this.list[0] || null;
+
+    // The airports with an approach corridor: the index, the platform's ends in the airport's
+    // frame, and the circle (about the platform's centre) the corridor lies in.
+    const cor = this.k.corridor;
+    const ci = [];
+    this.list.forEach((a, i) => { if (a.data.corridor) ci.push(i); });
+    this.nc = ci.length;
+    this.ci = Int32Array.from(ci);
+    this.cu0 = new Float64Array(this.nc); this.cu1 = new Float64Array(this.nc);
+    this.cr2 = new Float64Array(this.nc);
+    ci.forEach((i, c) => {
+      const pl = this.list[i].layout.platform;
+      this.cu0[c] = pl.u0; this.cu1[c] = pl.u1;
+      const reach = this.hus[i] + cor.length, wide = cor.halfWidth + cor.widen * cor.length + cor.edge;
+      this.cr2[c] = reach * reach + wide * wide;
+    });
   }
 
   // --- the world's questions ----------------------------------------------------------------
@@ -455,6 +471,38 @@ export class Airports {
       if (d <= 0) return this.bs[i];
       const t = d / b;
       y += (this.bs[i] - y) * (1 - t * t * (3 - 2 * t));
+    }
+    return this.nc ? this._corridor(y, x, z) : y;
+  }
+
+  // The approach corridors: the land beyond a marked airport's platform is cut down to a ramp
+  // that rises from its base height (OPEN_WORLD.airports.corridor), inside a funnel that
+  // widens with the distance and whose sides and far end come back up to the land smoothly.
+  // Only ever lowers the ground, and only inside the corridor's circle (one distance test).
+  _corridor(y, x, z) {
+    const C = this.k.corridor;
+    for (let c = 0; c < this.nc; c++) {
+      const i = this.ci[c];
+      const dx = x - this.pxs[i], dz = z - this.pzs[i];
+      if (dx * dx + dz * dz > this.cr2[c]) continue;
+      // In the airport's frame: u along the runway from its threshold, v across it.
+      const u = dz * this.cs[i] - dx * this.sn[i] + this.cus[i];
+      const v0 = dx * this.cs[i] + dz * this.sn[i] + this.cvs[i];
+      const v = v0 < 0 ? -v0 : v0;
+      // How far beyond the platform's end, at whichever end is nearer.
+      const a = this.cu0[c] - u, b = u - this.cu1[c];
+      const d = a > b ? a : b;
+      if (d <= 0 || d >= C.length) continue;
+      const w = C.halfWidth + C.widen * d;
+      if (v >= w + C.edge) continue;
+      let t = v <= w ? 0 : (v - w) / C.edge;
+      let weight = 1 - t * t * (3 - 2 * t);
+      // It starts gently: no step in the land where the platform's end meets the cut.
+      if (d < C.onset) { t = d / C.onset; weight *= t * t * (3 - 2 * t); }
+      const fade = C.length * 0.7;
+      if (d > fade) { t = (d - fade) / (C.length - fade); weight *= 1 - t * t * (3 - 2 * t); }
+      const lim = this.bs[i] + C.slope * d;
+      if (y > lim) y -= (y - lim) * weight;
     }
     return y;
   }

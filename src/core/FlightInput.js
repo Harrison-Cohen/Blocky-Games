@@ -40,6 +40,10 @@ export class FlightInput {
       throttleRate: 0, throttleKick: 0,
       ab: false, brake: 0, airbrake: false,
       gearDown: true,
+      // The flap lever (a detent index; the game sets it) and the autopilot's three target
+      // keys, each -1..1 and the same on every aircraft: altitude (up, down), heading
+      // (right, left) and speed (W, S). The autopilot reads them only while it is on.
+      flaps: 0, apAlt: 0, apHdg: 0, apSpd: 0,
       // Weapons and systems, held states (later milestones read them).
       cannon: false,
     };
@@ -48,7 +52,7 @@ export class FlightInput {
     this.actions = {
       pause: false, camera: false, hud: false, map: false, mute: false,
       mouseFlight: false, reset: false, telemetry: false,
-      gear: false, flapsUp: false, flapsDown: false, autopilot: false, hover: false,
+      gear: false, flapsUp: false, flapsDown: false, autopilot: false, hover: false, hook: false,
       missile: false, flares: false, target: false,
     };
 
@@ -152,6 +156,7 @@ export class FlightInput {
       case 'KeyX': A.flapsDown = true; break;
       case 'KeyP': A.autopilot = true; break;
       case 'KeyH': A.hover = true; break;
+      case 'KeyK': A.hook = true; break;
       case 'KeyF': A.missile = true; break;
       case 'KeyQ': A.flares = true; break;
       case 'KeyE': A.target = true; break;
@@ -221,6 +226,7 @@ export class FlightInput {
       this.keys.clear();
       s.pitch = 0; s.roll = 0; s.yaw = 0; s.analog = false;
       s.throttleRate = 0; s.ab = false; s.brake = 0; s.airbrake = false; s.cannon = false;
+      s.apAlt = 0; s.apHdg = 0; s.apSpd = 0;
       this._brakeKey = 0;
       this._resetHeld = 0; this.resetProgress = 0;
       // Keep the pad's button states current so what was held to open or close
@@ -239,6 +245,9 @@ export class FlightInput {
     let roll = kb('ArrowRight', 'ArrowLeft');
     let yaw = kb('KeyD', 'KeyA');
     let throttleRate = kb('KeyW', 'KeyS');
+    let apAlt = kb('ArrowUp', 'ArrowDown');
+    let apHdg = kb('ArrowRight', 'ArrowLeft');
+    let apSpd = throttleRate;
     let ab = K.has('ShiftLeft') || K.has('ShiftRight');
     // The key's brake ramps (FLIGHT_INPUT.brakeAttack): a switch is grabby at taxi speed.
     const keyBrake = K.has('KeyB') ? 1 : 0;
@@ -288,12 +297,14 @@ export class FlightInput {
         const rx = deadzone(pad.axes[2] ?? 0, INPUT.stickDeadzone);
         const ry = deadzone(pad.axes[3] ?? 0, INPUT.stickDeadzone);
         if (sx || sy) { roll = sx; pitch = sy * inv; analog = true; }
+        if (sy) apAlt = -sy;
+        if (sx) apHdg = sx;
         if (down(11)) {
           // R3 held: the right stick looks round instead of flying.
           lookX = rx; lookY = ry; padLook = true;
         } else {
           if (rx) { yaw = rx; analog = true; }
-          if (ry) throttleRate = -ry * FI.stickThrottle;
+          if (ry) { throttleRate = -ry * FI.stickThrottle; apSpd = -ry; }
         }
         if (value(7) > FI.triggerFire) cannon = true;
         if (value(6) > 0.05) brake = Math.max(brake, value(6));
@@ -312,6 +323,9 @@ export class FlightInput {
           if (down(0)) ab = true;
           if (down(1)) airbrake = true;
           if (edge(2)) A.gear = true;
+          // A is the afterburner on a jet and the cargo hook on a helicopter: the game
+          // reads the edge only where it means something.
+          if (edge(0)) A.hook = true;
           this._prev[1] = down(1);
           if (this._backWas && !this._backUsed) A.map = true;
         }
@@ -355,6 +369,9 @@ export class FlightInput {
     s.brake = brake;
     s.airbrake = airbrake;
     s.cannon = cannon;
+    s.apAlt = clamp(apAlt, -1, 1);
+    s.apHdg = clamp(apHdg, -1, 1);
+    s.apSpd = clamp(apSpd, -1, 1);
 
     // --- free look ---
     if (padLook) {

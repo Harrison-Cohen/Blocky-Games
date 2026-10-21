@@ -23,6 +23,7 @@ const fmt = (v) => Math.round(v).toLocaleString('en-US');
 
 export class MapScreen {
   constructor(root) {
+    this.icon = 'delta';          // the aircraft's silhouette: 'delta' or 'airliner' (the game sets it)
     this.el = document.createElement('section');
     this.el.className = 'map-screen';
     this.el.hidden = true;
@@ -395,7 +396,16 @@ export class MapScreen {
       g.save();
       g.translate(x, y); g.rotate(a);
       g.fillStyle = css(MAP.aircraft); g.strokeStyle = '#0e1a2b'; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(0, -11); g.lineTo(7, 9); g.lineTo(0, 5); g.lineTo(-7, 9); g.closePath(); g.stroke(); g.fill();
+      g.beginPath();
+      if (this.icon === 'airliner') {
+        // A tube with swept wings and a tailplane.
+        g.moveTo(0, -12); g.lineTo(2, -8); g.lineTo(2, -2); g.lineTo(11, 4); g.lineTo(11, 6); g.lineTo(2, 3);
+        g.lineTo(2, 8); g.lineTo(5, 11); g.lineTo(5, 12); g.lineTo(0, 11); g.lineTo(-5, 12); g.lineTo(-5, 11);
+        g.lineTo(-2, 8); g.lineTo(-2, 3); g.lineTo(-11, 6); g.lineTo(-11, 4); g.lineTo(-2, -2); g.lineTo(-2, -8);
+      } else {
+        g.moveTo(0, -11); g.lineTo(7, 9); g.lineTo(0, 5); g.lineTo(-7, 9);
+      }
+      g.closePath(); g.stroke(); g.fill();
       g.restore();
     }
     // North, and the scale.

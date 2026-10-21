@@ -54,8 +54,22 @@ export class FlightPlaces {
     const g = this.def.ground || {};
     if (mode === 'air') return { ok: true, why: '' };
     if (ap.isHeliport && !g.vtol) return { ok: false, why: 'Needs a runway' };
-    if (mode === 'runway' && ap.length < (g.minRunway || 0)) return { ok: false, why: 'Runway too short' };
+    // The shortest runway it is based on: an airliner is not put on an airstrip's apron
+    // either, since it could never leave it.
+    if (!ap.isHeliport && ap.length < (g.minRunway || 0)) return { ok: false, why: 'Runway too short' };
     return { ok: true, why: '' };
+  }
+
+  // The nearest airport that can take the aircraft on the ground (a 737 is not put on an airstrip),
+  // to the point (x, z). Null if none can.
+  nearestEligible(x, z, mode = 'apron') {
+    let best = null, bd = Infinity;
+    for (const ap of this.list) {
+      if (!this.eligible(ap, mode).ok) continue;
+      const d = Math.hypot(ap.px - x, ap.pz - z);
+      if (d < bd) { bd = d; best = ap; }
+    }
+    return best;
   }
 
   // The pose for a start at an airport (a reused object; see Airports.start).

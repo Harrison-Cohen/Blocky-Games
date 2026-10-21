@@ -17,6 +17,7 @@
 // opens the Hangar; the map teleports to an airport.
 
 import { Aircraft } from '../flight/Aircraft.js';
+import { Autopilot } from '../flight/Autopilot.js';
 import { AIRCRAFT } from '../data/aircraft.js';
 import { World } from '../world/World.js';
 import { WorldMesh, worldEnvironment } from '../render/WorldMesh.js';
@@ -33,7 +34,7 @@ import { Hangar } from '../ui/Hangar.js';
 import { loadSetup, saveSetup } from './HangarStore.js';
 import { payloadMass } from '../data/loadouts.js';
 import { UNIT_SYSTEMS, normalizeUnits } from '../flight/Units.js';
-import { OPEN_WORLD, FLIGHT, FLIGHT_CAMERA as FC, SHOCK, HANGAR, DEFAULT_GRAPHICS_LEVEL } from '../data/tuning.js';
+import { OPEN_WORLD, FLIGHT_CAMERA as FC, SHOCK, HANGAR, DEFAULT_GRAPHICS_LEVEL } from '../data/tuning.js';
 import { isUnlocked } from '../data/unlocks.js';
 import * as Storage from './Storage.js';
 
@@ -47,8 +48,10 @@ export class FlightGame {
     this.uiRoot = game.uiRoot;
     const canvas = this.scene.renderer.domElement;
 
-    // Everything is unlocked for now; the first aircraft that is, is flown.
-    this.def = AIRCRAFT.find((a) => isUnlocked('aircraft', a.id)) || AIRCRAFT[0];
+    // Everything is unlocked for now; the aircraft last flown, or the first that is, is flown.
+    const flown = Storage.load('flight.aircraft', '');
+    this.def = AIRCRAFT.find((a) => a.id === flown && isUnlocked('aircraft', a.id)) ||
+      AIRCRAFT.find((a) => isUnlocked('aircraft', a.id)) || AIRCRAFT[0];
     // The world is made the first time you fly: its track areas are placed by
     // looking at the land, which takes about 20 ms.
     this.world = new World(TRACKS);
@@ -60,7 +63,7 @@ export class FlightGame {
     this.setup = loadSetup(this.def.id);
     this.aircraft = new Aircraft(this.def, this.setup.livery);
     this._applySetup();
-    this.shock = new ShockWave(this.aircraft.root, this.def.length / 2 - 1);
+    this.shock = this.def.supersonic ? new ShockWave(this.aircraft.root, this.def.length / 2 - 1) : null;
     this.input = new FlightInput(canvas);
     this.camera = new FlightCamera(this.scene.camera);
     // The camera is kept off the ground wherever it has got to. It works in drawn
@@ -81,6 +84,13 @@ export class FlightGame {
     this._camState = { x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1 };
     this._camAbs = { x: 0, y: 0, z: 0 };
     this._fwd = { x: 0, z: 1 };
+
+    // The systems the aircraft has: the flap lever (a detent), the autopilot, and the command
+    // the physics is flown with (what the pilot does, with the autopilot's hand on it).
+    this.flapLever = 0;
+    this.autopilot = new Autopilot(this.def);
+    this._cmd = { pitch: 0, roll: 0, yaw: 0, analog: false, throttleRate: 0, throttleKick: 0, ab: false, brake: 0, airbrake: false, gearDown: true, flaps: 0, cannon: false };
+    this._configure();
 
     this.active = false;
     this.paused = true;
@@ -103,6 +113,85 @@ export class FlightGame {
     this.mesh.setNight(this.night);
     this.env = worldEnvironment(OPEN_WORLD, this.mesh.renderDistance, this.night);
     if (this.active) this.scene.setEnvironment(this.env, this.mesh.root);
+  }
+
+  // What depends on which aircraft is flown: the camera's distances, the HUD's rows, the
+  // sound's voices, the map's silhouette.
+  _configure() {
+    const d = this.def;
+    this.camera.cfg = { ...FC, ...(d.camera || null) };
+    this.camera.reset();
+    this.hud.configure(d);
+    this.audio.setAircraft(d);
+    this.screens.map.icon = d.mapIcon || 'delta';
+  }
+
+  // The flap lever, one detent at a time. Out is refused above the detent's limit speed.
+  _flaps(dir) {
+    const det = this.def.flaps ? this.def.flaps.detents : null;
+    if (!det || det.length < 2) { this.hud.note('No flaps', 1.5); return; }
+    const next = Math.max(0, Math.min(det.length - 1, this.flapLever + dir));
+    if (next === this.flapLever) return;
+    if (next > this.flapLever && this.physics.cas > det[next].vfe) {
+      this.hud.note(`Too fast for flaps ${det[next].name}`, 1.8);
+      return;
+    }
+    this.flapLever = next;
+    this.hud.note(`Flaps ${det[next].name}`, 1.5);
+    this.audio.thump();
+  }
+
+  // The name of the flap setting the lever is at, for the HUD.
+  flapName() {
+    const det = this.def.flaps ? this.def.flaps.detents : null;
+    return det && det.length > 1 ? det[Math.round(this.physics.flapPos)].name : '';
+  }
+
+  // P: the autopilot takes the aircraft as it is (the altitude, heading and speed it has
+  // now), or lets go. Only in the air.
+  _autopilot() {
+    const p = this.physics;
+    if (this.autopilot.on) { this.autopilot.disengage(); this.hud.note('Autopilot off', 1.5); return; }
+    const agl = this.world.agl(p.x, p.y, p.z);
+    if (p.onGround || p.gear.weightOnWheels > 0.02 || p.crashed || agl < this.autopilot.cfg.engageAgl) {
+      this.hud.note('The autopilot needs some height above the ground', 1.8);
+      return;
+    }
+    this.autopilot.engage(p);
+    this.hud.note('Autopilot on: altitude, heading and speed held', 2);
+  }
+
+  _apOff() {
+    this.hud.note(`Autopilot off: ${this.autopilot.why}`, 2);
+    this.autopilot.why = '';
+  }
+
+  // Another aircraft, from the Hangar: the old one is taken out of the scene and put away, the new one
+  // built with its own setup and put in the same place, or at the nearest airport that can take it.
+  // `setup` is the Hangar's, for the new aircraft. Returns the airport it was put at.
+  switchAircraft(id, setup = null) {
+    const def = AIRCRAFT.find((a) => a.id === id && isUnlocked('aircraft', a.id));
+    if (!def || def === this.def) return this.places.last;
+    if (this.active) this.scene.scene.remove(this.aircraft.root);
+    this.aircraft.dispose();
+    if (this.shock) { this.shock.dispose?.(); }
+    this.def = def;
+    this.setup = setup || loadSetup(def.id);
+    this.aircraft = new Aircraft(def, this.setup.livery);
+    this._applySetup();
+    this.shock = def.supersonic ? new ShockWave(this.aircraft.root, def.length / 2 - 1) : null;
+    this.places.def = def;
+    this.autopilot = new Autopilot(def);
+    Storage.save('flight.aircraft', def.id);
+    if (this.active) this.scene.add(this.aircraft.root);
+    this._configure();
+    // Where it goes: this airport if it can take it, otherwise the nearest that can.
+    let ap = this.places.last;
+    if (!this.places.eligible(ap, 'apron').ok) {
+      const p = this.physics;
+      ap = this.places.nearestEligible(p.x, p.z) || this.places.airports.major;
+    }
+    return ap;
   }
 
   // --- entering and leaving ---------------------------------------------------
@@ -199,14 +288,20 @@ export class FlightGame {
     if (!this.places.eligible(airport, mode).ok) mode = 'air';
     this.lastStart = mode;
     const at = this.places.pose(airport, mode);
+    this.autopilot.disengage();
     if (mode === 'air') {
       // High, level, on the centre line and the heading of the runway, so what is
       // under you is the airport and the land round it.
-      p.reset({ x: at.x, y: at.y, z: at.z, heading: at.heading, pitch: 0.04, speed: 170, fuel: HANGAR.startFuel, throttle: 0.7, gear: 0 });
+      const a = this.def.airStart;
+      p.reset({ x: at.x, y: at.y, z: at.z, heading: at.heading, pitch: a.pitch, speed: a.speed, fuel: HANGAR.startFuel, throttle: a.throttle, gear: 0, flaps: a.flaps });
       this.gearLever = false;
+      this.flapLever = a.flaps;
     } else {
-      p.reset({ x: at.x, y: at.y + 1.6, z: at.z, heading: at.heading, fuel: HANGAR.startFuel, gear: 1, throttle: 0 });
+      // On its wheels, a little above them: the lowest tyre's height less a hand's breadth.
+      const stand = -Math.min(...this.def.gear.wheels.map((w) => w.pos[1])) - 0.15;
+      p.reset({ x: at.x, y: at.y + stand, z: at.z, heading: at.heading, fuel: HANGAR.startFuel, gear: 1, throttle: 0 });
       this.gearLever = true;
+      this.flapLever = 0;
     }
     this.places.setLast(airport);
     this.places.rearm();
@@ -214,7 +309,7 @@ export class FlightGame {
     const st = this.input.state;
     st.throttleKick = 0;
     this._crashT = -1;
-    this.shock.reset();
+    if (this.shock) this.shock.reset();
     this._tailNoteT = 0;
     this.camera.reset();
     this._primeWorld();
@@ -257,7 +352,14 @@ export class FlightGame {
     if (this.paused) return;
     const st = this.input.state;
     st.gearDown = this.gearLever;
-    this.physics.step(dt, st, this.world);
+    st.flaps = this.flapLever;
+    // The autopilot, if it is on, flies the stick and the throttle; otherwise this is the
+    // pilot's own input, copied. The physics clears the throttle's kick on what it is handed.
+    const cmd = this._cmd;
+    this.autopilot.step(dt, this.physics, st, cmd);
+    this.physics.step(dt, cmd, this.world);
+    st.throttleKick = 0;
+    if (!this.autopilot.on && this.autopilot.why) this._apOff();
     this.mesh.ambient.fixedStep();
   }
 
@@ -476,21 +578,36 @@ export class FlightGame {
     this.hud.hide();
     this.audio.update(null);
     this.uiRoot.classList.add('menu-open');
+    // Every aircraft's setup is offered; Save keeps all of them.
+    const setups = {};
+    for (const a of AIRCRAFT) setups[a.id] = a.id === this.def.id ? this.setup : loadSetup(a.id);
     this.hangar.open({
       defs: AIRCRAFT,
       id: this.def.id,
-      setups: { [this.def.id]: this.setup },
+      setups,
       onClose: (result) => {
+        let moved = null;
         if (result) {
-          this.setup = result.setups[this.def.id];
-          saveSetup(this.def.id, this.setup);
-          this._applySetup(true);
+          for (const [id, st] of Object.entries(result.setups)) saveSetup(id, st);
+          if (result.id !== this.def.id) {
+            // Another aircraft was chosen: it is built and put at this airport, or the
+            // nearest that can take it.
+            const was = this.places.last;
+            moved = this.switchAircraft(result.id, result.setups[result.id]);
+            this.places.setLast(moved);
+            this._place(from === 'play' ? 'hangar' : 'apron', moved);
+            this._moveNote = moved !== was ? `${this.def.name} needs a longer runway: moved to ${moved.name}` : '';
+          } else {
+            this.setup = result.setups[this.def.id];
+            this._applySetup(true);
+          }
         }
         if (from === 'fly') this.showFlyMenu();
         else if (from === 'pause') this.openPause();
         else {
           this.resume();
-          this.hud.note(result ? 'Hangar changes saved' : 'Left the hangar as it was', 2);
+          this.hud.note(this._moveNote || (result ? 'Hangar changes saved' : 'Left the hangar as it was'), 2.5);
+          this._moveNote = '';
         }
       },
     });
@@ -559,23 +676,26 @@ export class FlightGame {
         this.hud.note(inp.mouseFlight ? 'Mouse flight on. Esc or T to give the mouse back.' : 'Mouse flight off.', 2.5);
       }
       if (inp.consumeAction('gear')) {
-        if (this.gearLever && FLIGHT.gearLock && p.gear.weightOnWheels > FLIGHT.gearLockWow) {
+        if (this.gearLever && p.F.gearLock && p.gear.weightOnWheels > p.F.gearLockWow) {
           this.hud.note('Gear locked down: the wheels carry the aircraft', 1.8);
         } else {
           this.gearLever = !this.gearLever;
           this.hud.note(this.gearLever ? 'Gear down' : 'Gear up', 1.5);
         }
       }
+      if (inp.consumeAction('flapsDown')) this._flaps(1);
+      if (inp.consumeAction('flapsUp')) this._flaps(-1);
+      if (inp.consumeAction('autopilot')) this._autopilot();
       if (inp.consumeAction('reset')) this.toHangar();
       if (inp.consumeAction('map')) this.openMap('play');
-      // The rest are for later milestones: flaps, autopilot, hover, weapons, the map.
+      // The rest are for later milestones: hover, the hook, weapons.
       inp.clearActions();
     }
 
     // A crash, until there are real ones (milestone 5): note it, then start over.
     if (p.crashed && this._crashT < 0 && !this.paused) {
       this._crashT = 0;
-      this.hud.note(`The F-22 ${p.crashReason}. Back at the hangar in a moment.`, 3);
+      this.hud.note(`The ${this.def.name} ${p.crashReason}. Back at the hangar in a moment.`, 3);
     }
     if (this._crashT >= 0 && !this.paused) {
       this._crashT += dt;
@@ -629,10 +749,10 @@ export class FlightGame {
     let shake = 0;
     let boom = false;
     if (!this.paused) {
-      boom = this.shock.update(dt, p.mach, !p.crashed && !p.onGround, this.camera.mode === 1);
+      if (this.shock) boom = this.shock.update(dt, p.mach, !p.crashed && !p.onGround, this.camera.mode === 1);
       if (boom) this.camera.punch = SHOCK.kickFov;
       shake = p.engines[0].abLevel * FC.shakeBurner + (p.stalled ? FC.shakeStall : p.stallWarn ? FC.shakeStall * 0.4 : 0) +
-        this.shock.envelope * SHOCK.shake;
+        (this.shock ? this.shock.envelope * SHOCK.shake : 0);
     }
     this.camera.update(cs, p.tas, agl, look, shake, this.def.cockpitEye, 0, dt);
 
@@ -646,13 +766,15 @@ export class FlightGame {
         cas: p.cas, tas: p.tas, mach: p.mach, altitude: p.altitude, agl,
         climb: p.climb, heading: att.heading, pitch: att.pitch, bank: att.bank,
         alpha: p.alpha, beta: p.beta, nz: p.nz,
-        throttle: p.throttle, ab: p.engines[0].abLevel, abFuel: p.abFuel, abLocked: p.abLocked,
+        throttle: p.throttle, ab: p.abLevel, abFuel: p.abFuel, abLocked: p.abLocked,
+        flaps: p.flapPos, flapName: this.flapName(), airbrake: p.airbrake,
+        ap: this.autopilot,
         fuel: p.fuel / this.def.fuelCapacity, gear: p.gearDown, onGround: p.onGround,
         stallWarn: p.stallWarn, stalled: p.stalled, resetProgress: inp.resetProgress,
         cockpit: this.camera.mode === 1,
         x: p.x, z: p.z,
         brake: p.brake, parked: p.parked, steer: p.gear.steerAngle, weightOnWheels: p.gear.weightOnWheels,
-        gearWarn: !p.onGround && p.gearDown < 0.5 && agl < FLIGHT.gearWarnAgl && p.cas < FLIGHT.gearWarnCas && p.climb < 3,
+        gearWarn: !p.onGround && p.gearDown < 0.5 && agl < p.F.gearWarnAgl && p.cas < p.F.gearWarnCas && p.climb < 3,
         where: this._where(dt), zone: this.places.zone ? this.places.progress : -1,
       });
     }
@@ -662,11 +784,11 @@ export class FlightGame {
       this.audio.update(null);
     } else {
       this.audio.update({
-        spool: (p.engines[0].n + p.engines[1].n) * 0.5,
-        ab: (p.engines[0].abLevel + p.engines[1].abLevel) * 0.5,
+        spool: p.spool,
+        ab: p.abLevel,
         speed: p.tas,
         stallWarn: p.stallWarn && !p.onGround,
-        gearWarn: !p.onGround && p.gearDown < 0.5 && agl < FLIGHT.gearWarnAgl && p.cas < FLIGHT.gearWarnCas && p.climb < 3,
+        gearWarn: !p.onGround && p.gearDown < 0.5 && agl < p.F.gearWarnAgl && p.cas < p.F.gearWarnCas && p.climb < 3,
         cockpit: this.camera.mode === 1,
         boom,
         dt,

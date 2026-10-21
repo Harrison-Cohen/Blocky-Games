@@ -67,6 +67,15 @@ user approved, with the answers to the spec's open items), then sections 9 and
   3 first and send notes; those go in the next free section after 10j). Commit again only
   when asked, as the user, with no Claude co-author trailer (section 3). Section 10 is the
   whole story.
+- **Flight milestone 4, first stop (4a), 2026-10-21: the Boeing 737-800, flaps, spoilers, the
+  autopilot, switching aircraft and the major's approach, built and verified; committed and
+  pushed to `Flight_test` on 2026-10-21 at the user's request ("commit the change now"), the
+  commit after `f00427b`; waiting on the user's test** (section 10k: what was built, what to test, what bit, the known
+  gaps). The user approved a two stop plan (4a, then 4b the Magpie 48 helicopter with hover assist
+  and the sling hook); 4b has NOT been started and must not be until they say so. Everything is
+  committed on branch `Flight_test` (on top of `f00427b`) and pushed, so it is in the draft PR
+  `Harrison-Cohen/Blocky-Games#1`. Anything done after that commit exists only in the cloud
+  container until it is committed and pushed again: tell the user and offer it.
 
 ## 1a. Milestones: what each one delivered
 
@@ -800,7 +809,7 @@ Keyboard:
 | W / S | throttle up / down (a lever: held keys move it) |
 | Left Shift | afterburner, held |
 | G | landing gear |
-| V | airbrake, held |
+| V | airbrake, held (the 737's spoilers; they also come up by themselves with the wheels down and the lever at idle) |
 | B | wheel brake, held (it comes on a little at a time, `FLIGHT_INPUT.brakeAttack`) |
 | C | camera: chase, cockpit, far orbit |
 | Right mouse, held | free look (middle button in mouse flight) |
@@ -811,8 +820,10 @@ Keyboard:
 | Esc | pause |
 | Space, F, Q, E | cannon, missile, flares, next target (later) |
 | ` (backquote) | telemetry (collected, nothing reads it yet) |
-| Z / X | flaps up / down (later) |
-| P, H | autopilot, hover assist (later) |
+| Z / X | flaps up / down, one setting at a time (the 737: up, 5, 15, 30; the F-22: Auto, Combat). Out is refused above the setting's limit speed, with a note |
+| P | autopilot on / off, in the air only (60 m or more above the ground). It takes the altitude, heading and speed the aircraft has. While it is on, Up / Down move the altitude target, Left / Right the heading, W / S the speed (the stick and the lever are not flown) |
+| H | hover assist (later, milestone 4b) |
+| K | cargo hook (later, milestone 4b) |
 | M | the map (milestone 3: pick an airport, Teleport) |
 | L | reserved for lights (milestone 9) |
 
@@ -828,11 +839,12 @@ Gamepad (standard mapping):
 | R3, held | the right stick looks round instead |
 | LT | wheel brake (analog) |
 | RT | cannon (later) |
-| A / B | afterburner / airbrake, held |
+| A / B | afterburner / airbrake, held (A is the cargo hook on the helicopter, 4b: the game reads the edge only there) |
 | X / Y | gear / camera |
 | RB / LB | missile / flares (later) |
-| D-pad up / down | next target / autopilot (later) |
-| D-pad left / right | flaps up / down (later) |
+| D-pad up | next target (later) |
+| D-pad down | autopilot; then left stick Y moves the altitude target, left stick X the heading, right stick Y the speed |
+| D-pad left / right | flaps up / down |
 | L3 | HUD |
 | Back, tapped | the map |
 | Back, held, then A | back to the hangar (held 1 s) |
@@ -920,6 +932,14 @@ What comes next, in order:
 
 ### 10.0 Start here (for a new chat)
 
+- UPDATE 2026-10-21: FLIGHT MILESTONE 4 IS HALF BUILT. 4a (the Boeing 737-800, flaps, spoilers, the
+  autopilot, switching aircraft in the Hangar, the major's approach corridor) is built and
+  verified and WAITING ON THE USER'S TEST: read 10k. It is committed and pushed (the commit after `f00427b`).
+  4b (the Magpie 48 helicopter: rotor and power model, hover assist, skids, the sling hook, its
+  mesh, sound and Hangar options, its checks) has NOT been started: wait for the user's notes
+  and for them to say "start 4b", then plan it with them (10k lists what 4b still owes). The
+  paragraphs below were written when milestone 4 was not started; where they differ from 10k,
+  10k wins.
 - State: flight milestones 1 (the F-22 on a test field), 2 (the open world) and 3
   (airports and the ground) are built. Milestones 1 and 2 are accepted. MILESTONE 3 IS
   BUILT, COMMITTED (`4f4b427`) AND PUSHED, AND WAITING ON THE USER'S TEST (2026-10-21): read
@@ -954,10 +974,13 @@ What comes next, in order:
   and `RADAR`, `src/core/Flight*.js` (`FlightPlaces.js` the last airport and the bays),
   `src/core/HangarStore.js`, `src/render/{Aircraft,AircraftBuilder,AirportMesh,Field,World,Flight,ShockWave}*.js`,
   `src/ui/{Flight*,MapScreen,Radar,Hangar,Turntable}.js`, `scripts/check-flight.mjs`,
-  `scripts/check-world.mjs`, `scripts/lib/{flight-harness,browser,track-hash}.mjs`.
+  `scripts/check-world.mjs`, `scripts/lib/{flight-harness,browser,track-hash}.mjs`. Milestone 4a added
+  `src/flight/Autopilot.js`, `src/render/aircraft/b737.js`, `scripts/flight/{identity,b737,autopilot,
+  switching,flaps}.mjs` (loaded by `check-flight.mjs` before its verdict), `scripts/lib/{airliner-harness,
+  fit-b737}.mjs`; the tuning blocks `FLIGHT_OVERRIDES`, `AUTOPILOT` and `FLIGHT_AUDIO_PROFILES`.
 - Storage keys of flight: `flight.units`, `flight.hud`, `flight.renderDistance`, `flight.detail`,
   `flight.seenControls`, `flight.invertY`, `flight.night`, `flight.lastAirport`,
-  `flight.teleportMode`, and per aircraft `flight.livery.<id>`, `flight.loadout.<id>`,
+  `flight.teleportMode`, `flight.aircraft` (the one last flown), and per aircraft `flight.livery.<id>`, `flight.loadout.<id>`,
   `flight.tune.<id>`, `flight.damage.<id>` (all under the `racing-game.v1.` prefix).
 - What has been heard or flown by the user, and what has not: they confirmed the
   idle hold works and that the Mach 1 effects "work well". NOT yet judged by them:
@@ -2032,3 +2055,180 @@ Decisions to put to the user in the plan (FLIGHT.md's open-items habit; recommen
 13. The refit script. [`scripts/fit-aircraft.mjs <id>` generalised: for the 737, cruise Mach 0.785 and
     maximum Mach 0.82 at altitude, takeoff and landing field lengths; for the helicopter, the game
     numbers (top speed, climb, ceiling).]
+
+### 10k. Milestone 4a: the Boeing 737-800, built (2026-10-21, waiting on the user's test)
+
+Branch `Flight_test`, on top of `f00427b`. Committed and pushed on 2026-10-21 when the user said
+"commit the change now" (the user's rule: commit only when asked, as the user, no Claude trailer,
+section 3; the stop hook alone is not a request, they asked in words). The plan was made in plan mode and the user approved
+it unchanged: two stops, 4a (this) and 4b (the Magpie 48), the major's approach cut (not moved),
+the hook on K and pad A, 737 flap detents Up, 5, 15, 30. FLIGHT_M4_PROMPT.md is not in the repo; the
+user's pasted prompt was the brief.
+
+**Verified (all on the final tree).** All nine car checks pass. `npm run flight` passes (249 checks):
+the F-22 is identical to the bit (`scripts/flight/identity.mjs`: six scripted runs and three mesh
+hashes recorded on the pristine tree). `npm run world` passes everything except the four failures
+that also fail on the pristine tree (three mesh hashes for copper-flats, glacier-pass and pine-ridge,
+with the SAME hash values as the pristine tree, and the wall-clock chunk time check, which is noise
+on a busy machine; it passed on one pristine run and failed on one of mine). `npx vite build` is
+clean (the 800 kB advisory is old). The dev server starts with no error. `npm run look` and
+`npm run look-world` exit non-zero in this container ONLY because Chromium's software WebGL logs
+"Automatic fallback to software WebGL" and "GPU stall due to ReadPixels" warnings, which the scripts
+count; the pristine tree does exactly the same (checked on a worktree). Read the PNGs, not the exit
+code. The page's physics barely runs in software GL (a few steps a frame): the scripts and any scratch
+flight step the aircraft by hand (`flight.step(1/120)` in a loop, in ONE eval: the input is polled
+between evals and resets a held key such as the airbrake).
+
+**What was built.**
+- Per aircraft feel without touching the F-22: `AircraftPhysics.F = Object.assign(Object.create(FLIGHT),
+  FLIGHT_OVERRIDES[def.id])` and `Gear` takes the same `F`. The F-22 has no overrides. Everything new is
+  an exact 0 or exact 1 at the F-22's values (`x + 0`, `x * 1`), which is why the identity check can
+  hold. `FLIGHT_OVERRIDES.b737` is in `tuning.js`, every value commented with a range.
+- Flaps (`def.flaps`: detents with a name, angle, zero-lift shift, lift gain, drag, limit speed;
+  `time`; `autoRetract`): `input.flaps` is the lever, `flapPos` follows it at a rate, `Wing.liftScale`
+  and `Wing.cdAdd` (1 and 0 by default), the stall angle falls with the flaps. The F-22 got a second
+  setting, Combat (lift 7 percent, 3 degrees of zero-lift shift, drag 0.012, retracts by itself above
+  165 m/s), checked by `scripts/flight/flaps.mjs`; its first, Auto, is the aircraft as it was.
+- Spoilers: `airbrakeLiftDump` (0.8 on the 737) and automatic ground spoilers (`FLIGHT.autoSpoilers`,
+  on for the 737 only: wheels down and the lever at idle). The HUD calls the airbrake "Spoilers" on the
+  737 (`def.airbrakeName`).
+- A turbofan has no afterburner (`hasAb`), ground effect (`def.groundEffect`: 10 percent more lift at
+  the ground, 36 m reach), a constant wind stub (`OPEN_WORLD.wind`, default 0, `World.windX/windZ`, the
+  physics subtracts it from the velocity; no UI until milestone 9).
+- The 737 (`src/data/aircraft.js` B737): Boeing's mass, fuel, wheelbase 15.6 m and track 5.72 m, the
+  spec's performance, estimates marked as such. Fitted by `scripts/fit-aircraft.mjs b737`
+  (`scripts/lib/fit-b737.mjs`): maximum Mach 0.82 at 35,000 ft, cruise Mach 0.785 at lever 0.77,
+  ceiling 41,000 ft (0.49 m/s of climb left), stall speeds at 65 t of 153.4, 135.0, 126.0 and
+  117.9 kt for up, 5, 15 and 30, Vref 145 kt at flaps 30 (1.23 times the stall, an estimate), takeoff
+  at the maximum mass with flaps 5: 35 ft at 2,100 m, times 1.15 is 2,415 m (published 2,316, 4 percent
+  over, tolerance 8), landing at the maximum landing mass with flaps 30: 50 ft to a stop divided by
+  0.6 is 1,640 m (published 1,600, tolerance 10). A refit prints flap gains a little different from
+  the ones in the data (0.293, 0.495, 0.676 against 0.299, 0.467, 0.732) because the stall measurement
+  now runs under the new speed loop; both meet every figure, so the data was left alone and the CHECKS
+  are the authority.
+- The mesh (`src/render/aircraft/b737.js`, `buildB737(def, livery)`, `glossy()` smooth shading): a
+  lofted fuselage with a radome and tail cone, windscreen and window rows, swept wings with dihedral
+  and winglets, slats, two flaps, an aileron and four spoilers a wing (all of them move), nacelles
+  with a turning fan, tailplane and elevators, fin and rudder, twin-wheel gear. About 5,000
+  triangles, 3 ms a build. Fictional livery: cheat line, tail colour, belly band, engine rings, a
+  tail logo (ring, wave, star, bars), a tail number. Chosen by `def.model` in `Aircraft.js`
+  (`BUILDERS`); the F-22 builder is untouched except that its helpers are exported.
+- The autopilot (`src/flight/Autopilot.js`, tuning `AUTOPILOT`): a pilot, not a physics mode. It reads
+  the state and writes the same stick, lever and flaps a player does, once per fixed step, so it is
+  frame rate invariant and deterministic. Altitude: error to a vertical speed to the stick, with an
+  integral that only works within 30 m of the target (it wound up and overshot before). Heading: error
+  to a bank to the roll stick. Speed: a CASCADE (error asks for an acceleration, the lever moves at a
+  rate in proportion to the acceleration still missing): no integrator to wind up. It lets go by itself
+  on the ground, in a stall and in a wreck, and refuses to engage below 60 m (`engageAgl`). Measured
+  (`scripts/flight/autopilot.mjs`): a 300 m step settles inside 4 m with 2 to 8 m of overshoot and load
+  factor 0.67 to 1.24 on the 737 (2.9 g at the most on the F-22), a turn rolls out on the heading to
+  0.00 degrees inside the bank limit (25 degrees on the 737, 57 on the F-22), speed steps of 30 to 40
+  kt settle to 0.0 kt with 1.5 kt of overshoot.
+- Switching (`FlightGame.switchAircraft`, `openHangar`): the Hangar offers all aircraft, Save keeps
+  every setup, the one chosen is built (`Aircraft`, `ShockWave` only if `def.supersonic`, `FlightPlaces`,
+  `Autopilot`), the camera, HUD rows, sound profile and map silhouette are configured from the data
+  (`_configure`), `flight.aircraft` is stored, and it is put at the same airport at the mouth of the
+  bay, or, if that airport cannot take it (a 737 needs `ground.minRunway` 1,500 m, never a strip or
+  heliport), at the nearest that can (`FlightPlaces.nearestEligible`) with a note.
+- Hangar per aircraft (`loadouts.js`, `Hangar.js`, `HangarStore.js`): liveries per aircraft
+  (`LIVERY_OPTIONS[id]`, `normalizeLivery(raw, id)`: another aircraft's pattern falls back to this
+  one's default), loadouts (737: passengers 0 to 162 at 95 kg, cargo to 8,000 kg), damage parts, card
+  figures per aircraft (the 737 adds the landing speed, and shows the mass in yellow above the maximum
+  takeoff mass or above Boeing's maximum zero fuel mass, 62,731 kg, which a full cabin and hold exceeds).
+- HUD: flaps and spoilers, an autopilot line (`AP ALT 5,090 ft HDG 000 SPD 224 kt`), no burner row on an
+  aircraft with no afterburner. Sound: `FLIGHT_AUDIO_PROFILES.b737` (deeper rumble, higher and quieter
+  fan whine, no burner or boom) and a flap clunk. The 737's chase camera is 78 m back and 19 m up.
+  Map: an airliner silhouette (`def.mapIcon`). Controls card: flaps, autopilot, hook rows.
+- The major's approach corridor (`Airports.flatten` -> `_corridor`, `OPEN_WORLD.airports.corridor`,
+  `corridor: true` on `meridian-intl`): the ridge it sits in blocked both approaches (a 3 degree path
+  was 171 m under the ground on the south, 20 m on the north). The land beyond the platform's end is cut
+  down to a 2 degree ramp (`slope` 0.035) out to 7 km, 300 m half width widening 0.06 a metre, sides
+  rising back over 600 m, fading in over 300 m and out over the last third. It only lowers land
+  (deepest cut 290 m), never steeper than the land (1.40 either way), touches no track area and no
+  other airport. The 3 degree path now clears the ground by 39 m (runway 36) and 41 m (runway 18) at
+  the least from the platform's end to 7 km. Placement is untouched, so `AIRPORT_GOLDEN` and
+  `AREA_GOLDEN` did not move. The F-22's takeoff golden in `identity.mjs` is flown over the world
+  WITHOUT the corridor (`corridor: false` on the data) because the climb out now crosses lowered ground
+  and the tail guard sees a different height: the world changed, the aircraft did not (proved: the
+  hash returns to the golden).
+- Checks added: `scripts/flight/{identity,b737,autopilot,switching,flaps}.mjs` and a corridor section in
+  `check-world.mjs`; `scripts/lib/airliner-harness.mjs` (737 pilots and measurements). The harness flies
+  the autopilot with its OWN fixed altitude gains (`MEASURING`: the stall and ceiling measurements must
+  not move when the autopilot is tuned) and the autopilot checks ask for the tuned ones (`tuned: true`).
+  `look.mjs` takes the 737 through the Hangar (hangar-737-a to d, apron, runway, approach, spoilers,
+  cockpit, autopilot, map); `look-world.mjs` has the approach to the major (name contains `approach`).
+
+**What I found about the 737 (sources, as asked).** Boeing, 737 Airplane Characteristics for Airport
+Planning, D6-58325-7 Rev C (October 2025): max takeoff 79,015 kg, operating empty 41,412 kg, max
+landing 66,360 kg, max zero fuel 62,731 kg, usable fuel 20,897 kg (26,024 L), wheelbase 15.60 m, main
+gear track 5.72 m, nose wheel steering 78 degrees (tiller), tyres, and takeoff and landing field length
+charts (about 2.2 to 2.3 km takeoff at the maximum mass; landing about 1.8 to 1.9 km at flaps 30 read off
+the chart, the spec's 1,600 m fits a lighter landing or flaps 40; both are FAR lengths). THE APPROACH
+SPEED IS NOT PUBLISHED: Boeing computes Vref per weight in the flight computer. Training and sim sources
+agree on the mid 130s to high 140s KIAS at flaps 30 and ordinary weights, flaps 40 a few knots lower,
+about 142 kt at flaps 40 near 65 t, final approach Vref plus 5. The data uses Vref 145 kt at flaps 30 and
+65 t, scaled with the square root of the mass, marked an estimate. Real detents are 1, 2, 5, 10, 15, 25,
+30, 40 (takeoff normally 5, landing 30 or 40); the user chose Up, 5, 15, 30. Flap limit speeds from the
+training sources (not Boeing): 5 at 250 kt, 15 at 200, 30 at 175 (used: 128.6, 102.9, 90.0 m/s calibrated).
+NOT FOUND: the trailing edge flap angle per detent and the lift coefficient at each (the mesh turns the
+flaps by the detent number in degrees, unconfirmed; the aerodynamics are fitted to stall speeds). Gear
+speeds (extend 270 kt, retract 235, extended limit 320, from the same training sites) are not enforced
+until damage (milestone 5).
+
+**What to test (tell the user, in this order).**
+1. Pick the 737 in the Hangar (Fly menu, Open the hangar, Aircraft row, Save). Look at it on the
+   turntable: livery rows (pattern, insignia, number, two colours), passengers and cargo, the card (the
+   mass goes yellow with a full cabin and hold). Then Start on the apron and on the runway.
+2. Take off at Meridian: flaps to 5 (X, once), full lever, rotate about 155 kt, gear up, flaps in
+   (Z) as it accelerates (out is refused above each setting's limit with a note). Does it feel like a
+   heavy airliner: slow to answer, stable, a long roll (about 1.8 km)? Does the nose wheel steer on the
+   roll and the taxi feel right (a low lever holds a taxi speed)?
+3. Land at Meridian from either end (it is now clear): flaps 15 then 30 (X), gear down, 145 kt, about
+   3 degrees; the spoilers come up by themselves on touchdown (V by hand in the air), brakes B.
+4. P in the air: the autopilot holds altitude, heading and speed; Up/Down, Left/Right and W/S move the
+   three targets; P again, or a stall or a landing, lets go. Try it on the F-22 too.
+5. The F-22: Z/X now cycles Auto and Combat flaps. Otherwise it must feel exactly as before.
+6. Switch back and forth; chosen at an airstrip, the 737 is moved to a long runway with a note.
+7. Judge by ear (not heard by me): the 737's engine sound and the flap clunk.
+
+**What bit (do not reintroduce).**
+- The harness autopilot WAS the measurement tool: changing the autopilot's gains moved the stall speeds
+  and broke the landing checks (a negative Vref made the whole landing run dive). Hence `MEASURING`.
+- The speed target is clamped to `spdMin` (65 m/s on the 737): a stall speed run that lowers the
+  target needs `spdMin` lowered too (the harness does).
+- The speed loop must not trust the first airspeed reading: before the first physics step `p.cas` is a
+  stale value, and a jump to the real one read as a huge acceleration and chopped the lever. It
+  baselines on the first step and clamps the measured acceleration (`ACC_LIMIT`).
+- Windscreen panes drawn as boxes block the cockpit camera; they are single sided planes now, raked
+  back (front edge low), so the eye looks through them.
+- A pasted `maxZeroFuelMass` ended up twice in the data (harmless, removed).
+- `identity.mjs` must stay on the world as it was; if the world changes again, the F-22's takeoff
+  golden does NOT mean the aircraft changed.
+- The first `look` run of a 737 flaps/spoiler shot showed nothing because `flight.input.state.airbrake`
+  is reset by the next frame's poll: set it and step in one eval.
+
+**Known gaps and things to tell the user.**
+- The 737's crosswind takeoff drifts 9.1 m off the line at 15 kt in the check (the scripted pilot has no
+  aileron into the wind; a person will do better); a crosswind LANDING is not tested.
+- The cut in the major's ridge is large (up to 290 m deep and about 1.5 km wide at its widest): it is the
+  price of an airliner approach at that airport; its knobs are `OPEN_WORLD.airports.corridor` if they want
+  it narrower (the world check pins the 3 degree path clearance at 35 m).
+- No reversers, no gear or flap limit speeds enforced beyond the flap lever's refusal, no cockpit
+  interior, no passengers, no cabin sound; stalls are soft-edged (the aids ease the pull); the 737's
+  flaps animate by detent degrees (unconfirmed angles).
+- The autopilot refuses below 60 m and holds a fixed bank limit; no approach mode. The radar's own symbol
+  is still the star. Hover assist, the hook and the helicopter do not exist yet.
+- The Hangar's switch is exercised end to end by a scratch page script (flaps, autopilot, switching,
+  placement, storage all passed) but not by a person; the pad was not tried.
+
+**What 4b still owes (not started).** The Magpie 48: `HelicopterPhysics` + `Rotor.js` (one disc, momentum
+theory power with an engine limit, ground effect, translational lift), cascaded PD hover assist (H, on by
+default, a Hangar knob), skids as contact points in `Gear`, `SlingLoad.js` (spring damper rope that only
+pulls, hook rating 1,500 kg, K and pad A, a crate at ground starts), its mesh (blocky smooth, turning rotor,
+rope and crate), HUD rows (collective, power, hover assist, hook and load), a rotor chop in the sound, its
+Hangar options and livery, its autopilot mode (altitude, heading and ground speed through hover assist),
+`scripts/flight/magpie.mjs`, a helicopter harness and fit plan in `fit-aircraft.mjs`, `look` shots (with the
+crate on a heliport), `AIRCRAFT = [F22, B737, MAGPIE]`, and sections 1 and 10.0 updated at the end. The
+game numbers to fit: top speed 75 m/s, climb 10 m/s at sea level at 4,300 kg, ceiling 5,000 m, mass 4,800
+kg, rotor 12 m. The hover check: 60 s in a 4 m/s wind within 2 m, 1 m of height and 2 degrees, and more than
+10 m of drift with the assist off.

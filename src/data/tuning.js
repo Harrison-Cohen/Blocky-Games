@@ -1641,6 +1641,15 @@ export const FLIGHT = {
   gearTime: 4,
   airbrakeTime: 1.2,
 
+  // Ground spoilers (an airliner's, off for the fighter): with the weight on the
+  // wheels above autoSpoilerWow of the aircraft's weight and the throttle lever under
+  // autoSpoilerLever, the airbrake comes out by itself and dumps the wings' lift, so
+  // the weight goes onto the wheels and the brakes bite. A real airliner's landing
+  // distance assumes it. Range: wow 0.1-0.6, lever 0.05-0.3.
+  autoSpoilers: false,
+  autoSpoilerWow: 0.3,
+  autoSpoilerLever: 0.12,
+
   // Nose wheel steering: the most lock (rad) and the speed (m/s) at which it
   // has faded to half. Range: max 0.3-1.0, speed 10-60.
   noseSteerMax: 0.6,
@@ -1885,6 +1894,31 @@ export const FLIGHT_AUDIO = {
   boomDelay: 0.12,
   // How fast every sound parameter reaches its target, seconds. Range 0.02-0.15.
   smoothing: 0.06,
+  // The clunk of a flap lever moving to a detent: its level (0 = none) and its pitch (Hz).
+  // Range: gain 0-1.5, freq 40-140.
+  clunkGain: 0.8,
+  clunkFreq: 90,
+};
+
+// What differs by aircraft in the sound: any of the keys above, laid over them. The F-22 has
+// none (it sounds as it always has). The 737 is two big turbofans: a deeper rumble, a higher
+// and quieter fan whine, a softer exhaust and no afterburner. Same ranges as above.
+export const FLIGHT_AUDIO_PROFILES = {
+  b737: {
+    engineGain: 0.2,
+    whineIdle: 900,
+    whineMil: 2600,
+    whineGain: 0.05,
+    rumbleIdle: 90,
+    rumbleMil: 300,
+    rumbleGain: 1.4,
+    exhaustIdle: 260,
+    exhaustMil: 800,
+    exhaustGain: 0.5,
+    windGain: 0.14,
+    boomGain: 0,
+    burnerKick: 0,
+  },
 };
 
 // ============================================================================
@@ -2087,6 +2121,18 @@ export const OPEN_WORLD = {
   //                300-4000, 8-40.
   //   zone         the size of a hangar bay, metres: stop inside it to open the
   //                Hangar. Range w 24-60, d 26-60 (the fighter is 19 m by 13.6 m).
+  //   corridor     the approach corridor cut into the land at both ends of an airport the
+  //                data marks `corridor: true` (the major, which sits in a cut in a ridge: an
+  //                airliner needs the ground clear of its glide path). From the end of the
+  //                platform the ground is cut down to a ramp that rises `slope` (rise over
+  //                run: 0.035 is 2 degrees, which stays under a 3 degree glide path with a
+  //                15 m crossing height from the first metre) and is left alone beyond
+  //                `length` metres (it fades out over the last third, and in over the first `onset`
+  //                metres, so there is no step where it meets the platform). The cut is `halfWidth`
+  //                metres either side of the centre line at the platform, widening by `widen`
+  //                per metre out, and its sides come back up to the land over `edge` metres.
+  //                Land already below the ramp is not touched. Range: slope 0.02-0.05,
+  //                length 3000-9000, onset 100-800, halfWidth 150-600, widen 0-0.15, edge 150-800.
   //   buildDistance how near (m) an airport's meshes are built and kept (dropped
   //                beyond 1.4 times it). Range 8000-60000.
   //   lampDay, lampNight  how bright the lights are by day and at night, as the
@@ -2114,6 +2160,7 @@ export const OPEN_WORLD = {
     approachLength: 6000,
     approachStep: 250,
     approachMargin: 25,
+    corridor: { slope: 0.035, length: 7000, onset: 300, halfWidth: 300, widen: 0.06, edge: 600 },
     propMargin: 60,
     startOffset: 80,
     airDistance: 2600,
@@ -2145,6 +2192,14 @@ export const OPEN_WORLD = {
     sunIntensity: 0.5, hemiIntensity: 0.8, hemiSky: 0x2a3f66, hemiGround: 0x1c2e24,
     stars: 1400, tint: 0.08, bloom: 0.65,
   },
+
+  // --- wind (a stub until milestone 9) --------------------------------------------------
+  // A constant wind: `speed` in m/s and `from`, the compass bearing it blows FROM (0 is
+  // from the north, 90 from the east), in degrees. It moves the air the aircraft flies in
+  // and nothing else (the ground does not move), so a crosswind is felt on the runway and
+  // on the approach. It is the same everywhere and at every time, so the checks stay
+  // deterministic; zero, as shipped, changes nothing at all. Range: speed 0-20, from 0-360.
+  wind: { speed: 0, from: 0 },
 
   // --- chunks ---------------------------------------------------------------------
   // The terrain is a quadtree of square chunks over the whole map. The smallest
@@ -2408,4 +2463,136 @@ export const RADAR = {
   airport: 0xedede7,
   track: 0xff7a1a,
   hostile: 0xff7a1a,
+};
+
+// ============================================================================
+// PER-AIRCRAFT FLIGHT FEEL (flight milestone 4)
+// ----------------------------------------------------------------------------
+// FLIGHT, above, is how the F-22 feels, and is the default for every aircraft. An
+// aircraft listed here gets those values with its own on top: the physics builds
+// `FLIGHT` with these laid over it (AircraftPhysics.F), so a key that is not listed
+// is the F-22's, and an aircraft with no entry (the F-22) is exactly FLIGHT. Every
+// key is one of FLIGHT's and keeps its meaning and its range; what is explained
+// here is only why this aircraft differs. Units are SI.
+// ============================================================================
+export const FLIGHT_OVERRIDES = {
+  // The Boeing 737-800: 41 to 79 tonnes, a long way from a fighter. Slow on the stick
+  // (the control surfaces are small for the mass and the pilot is flying a heavy
+  // airliner), a gentle auto-trim, a nose wheel that is a tiller on a 15.6 m wheelbase
+  // (Boeing's airport planning manual: wheelbase 15.60 m, steering to 78 degrees), a
+  // taxi governor for 9 m/s, and crash limits for a 79 tonne aircraft. Values are
+  // first estimates, tuned against the harness (scripts/flight/b737.mjs).
+  b737: {
+    // The stick and the damping. Rates come out of the damping: full stick against it
+    // gives about 1/damp rad/s, so a heavy airliner wants a big number.
+    dampPitch: 8,
+    dampRoll: 2.2,
+    dampYaw: 3.5,
+    // The rudder is limited to a sideslip of seven degrees (the F-22's is thirteen): an
+    // airliner's fin is for the engine out, not for skidding it round.
+    betaLimit: 0.12,
+    stickAttack: 0.9,
+    stickRelease: 3,
+    pitchAttack: 2.5,
+    pitchRelease: 3.5,
+    yawAttack: 1.6,
+    yawRelease: 3,
+    throttleRate: 0.18,
+    actuatorTau: 0.18,
+    // Auto-trim: the tailplane trims the airliner for you, slowly.
+    trimRate: 1.6,
+    trimLimit: 0.8,
+    trimMinSpeed: 55,
+    // The gear takes eight seconds, the spoilers two and a half.
+    gearTime: 8,
+    airbrakeTime: 1.6,
+    autoSpoilers: true,
+    // The tiller: a big lock at walking pace, fading from 12 m/s, turning at 26 degrees
+    // a second, limited to a quarter of a g of side force (airlines hold to about that).
+    noseSteerMax: 1.3,
+    noseSteerSpeed: 12,
+    noseSteerRate: 0.45,
+    noseSteerLatG: 0.25,
+    // Taxi: lever 0.3 holds 9 m/s, which is 17 knots.
+    taxiSpeedPerLever: 30,
+    taxiSpeedMax: 15,
+    // Anti-skid brakes at full pressure: a little over half the load on the main wheels, a
+    // firm 0.45 to 0.5 g with the spoilers dumping the lift.
+    brakeFriction: 0.54,
+    wheelRadius: 0.56,
+    // Gear up on a short final: a horn under 250 m and 100 m/s.
+    gearWarnAgl: 250,
+    gearWarnCas: 100,
+    // The tail guard of an airliner that rotates at three degrees a second: a narrower band,
+    // a shorter look ahead and less margin, or it eases the pull off two degrees too soon
+    // and the aircraft sits on the runway at 175 knots (a real one lifts off at about 160).
+    tailMargin: 0.05,
+    tailBand: 0.03,
+    tailLead: 0.15,
+    // A tail that scrapes is a tail strike, and a hard touchdown over 4 m/s of sink is a
+    // hard landing (the gear is certified for about 3 m/s).
+    skidCrashSpeed: 5,
+    skidCrashDepth: 0.5,
+    crashSpeed: 3,
+    maxSink: 4,
+  },
+};
+
+// ============================================================================
+// THE AUTOPILOT (flight milestone 4, src/flight/Autopilot.js)
+// ----------------------------------------------------------------------------
+// Altitude, heading and speed hold, on every aircraft. `default` is a fixed wing's;
+// an aircraft listed by id has its own on top. Units are SI and radians.
+//   altRate, hdgRate, spdRate   how fast a held key moves its target: metres a second,
+//                               radians a second, metres a second per second (range
+//                               5-80, 0.02-0.3, 1-12)
+//   spdMin, spdMax              the speeds the target stays between, m/s calibrated;
+//                               altMin, altMax the altitudes, m
+//   engageAgl                   the height above the ground (m) below which it will not take
+//                               over, so it is not engaged on the apron or just off the runway
+//                               (range 20-300)
+//   intBand, intLeak            the altitude integral works only within `intBand` metres of the
+//                               target (range 10-80) and bleeds away at `intLeak` a second
+//                               outside it (range 0.2-3), so it cannot wind up on a climb
+//   kAlt, kAltI, vsInt, vsMax   altitude error to the vertical speed asked for (per
+//                               second, range 0.03-0.2), the vertical speed built up
+//                               per metre of error per second (range 0.0005-0.01) and
+//                               the most of it (m/s, range 0.5-4), and the most
+//                               vertical speed asked for, m/s
+//   kVs, pitchMax               the vertical speed error to the stick (a fraction of
+//                               full per m/s, range 0.01-0.15) and the most stick it
+//                               uses
+//   kHdg, bankMax               heading error to the bank asked for (range 0.5-2.5) and
+//                               the most bank, rad
+//   kBank, rollMax              the bank error to the roll stick (range 0.8-4) and the
+//                               most stick
+//   kSpd, aMax, kSpdA, accTau  the speed loop: the speed error to the acceleration asked for
+//                               (per second, range 0.05-0.3), the most acceleration asked for
+//                               (m/s2, range 0.3-5), the lever's rate per m/s2 of acceleration
+//                               still missing (a fraction of its full rate, range 0.05-1) and
+//                               the time constant that smooths the measured acceleration
+//                               (seconds, range 0.3-3)
+// ============================================================================
+export const AUTOPILOT = {
+  default: {
+    altRate: 25, hdgRate: 0.0524, spdRate: 2.5, spdMin: 45, spdMax: 400, altMin: 30, altMax: 20000,
+    intBand: 30, intLeak: 1, accTau: 1, engageAgl: 60,
+    kAlt: 0.08, kAltI: 0.0008, vsInt: 2, vsMax: 15, kVs: 0.1, pitchMax: 0.25,
+    kHdg: 1.2, bankMax: 0.44, kBank: 2, rollMax: 0.6,
+    kSpd: 0.1, aMax: 0.7, kSpdA: 0.5,
+  },
+  // A fighter climbs and turns hard and the stick it needs is smaller.
+  f22: {
+    altRate: 60, hdgRate: 0.15, spdRate: 8, spdMin: 60, spdMax: 700, altMax: 25000,
+    kAlt: 0.1, kAltI: 0.004, vsInt: 3, vsMax: 20, kVs: 0.05, pitchMax: 0.3,
+    kHdg: 1.6, bankMax: 1.0, kBank: 1.5, rollMax: 0.8,
+    kSpd: 0.15, aMax: 3, kSpdA: 0.2,
+  },
+  // An airliner: 2,500 feet a minute, 25 degrees of bank, a standard rate turn.
+  b737: {
+    altRate: 25, hdgRate: 0.0524, spdRate: 2.5, spdMin: 65, spdMax: 175, altMax: 12500,
+    kAlt: 0.08, kAltI: 0.0008, vsInt: 2, vsMax: 12.7, kVs: 0.1, pitchMax: 0.25,
+    kHdg: 1.2, bankMax: 0.44, kBank: 2, rollMax: 0.6,
+    kSpd: 0.1, aMax: 0.7, kSpdA: 0.5,
+  },
 };

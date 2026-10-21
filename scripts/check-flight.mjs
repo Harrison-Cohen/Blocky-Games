@@ -1098,5 +1098,13 @@ console.log('\nAllocation');
   }
 }
 
+// --- milestone 4: the three aircraft ---------------------------------------------------
+// Each module is scripts/flight/<name>.mjs and exports a default async function that
+// takes the kit below and reports through its check().
+{
+  const kit = { check, near, f1, f2, f3, deg, H, FT, KT, DT, makeInput, AircraftPhysics, field };
+  for (const name of ['identity', 'b737', 'autopilot', 'switching', 'flaps']) await (await import(`./flight/${name}.mjs`)).default(kit);
+}
+
 console.log(failed ? '\nFLIGHT CHECK FAILED' : '\nFLIGHT CHECK PASSED');
 process.exit(failed ? 1 : 0);

@@ -63,6 +63,16 @@ export const F22 = {
   id: 'f22',
   name: 'F-22 Raptor',
   role: 'fighter',
+  // How it is built and drawn: 'fixed' is AircraftPhysics (wings and engines), 'f22'
+  // the mesh in render/AircraftBuilder.js, `supersonic` whether the Mach 1 effects
+  // apply, `mapIcon` its silhouette on the map and the radar.
+  kind: 'fixed',
+  model: 'f22',
+  supersonic: true,
+  mapIcon: 'delta',
+  // "Start airborne": the speed (m/s), pitch (rad), throttle and flaps it is put in the
+  // air with.
+  airStart: { speed: 170, pitch: 0.04, throttle: 0.7, flaps: 0 },
   blurb: 'Twin-engine stealth fighter. Fast, with thrust vectoring that keeps it flying where wings alone would not.',
 
   // --- mass ---------------------------------------------------------------
@@ -103,6 +113,20 @@ export const F22 = {
   // takes them up as the aircraft speeds up (FLIGHT.flapUp).
   flapAlpha: rad(4),
   stallAlpha: 26,          // degrees at the fuselage: the wings' stall (31) less their incidence (5)
+  // The flap lever (Z and X): detent 0 is the scheduled flaps above, which the flight
+  // computer sets by itself; detent 1 is the combat setting, the flaperons and leading
+  // edges drooped for turning: more lift (and more drag) at a given angle of attack, so
+  // a tighter turn at low speed. It is let up by itself above `vfe` (m/s calibrated).
+  // alpha is the shift of the wings' zero-lift angle (rad), gain a multiple on their
+  // lift, cd the drag it adds (a coefficient on the wing area). Estimates.
+  flaps: {
+    time: 1.5,
+    autoRetract: true,
+    detents: [
+      { name: 'Auto', alpha: 0, gain: 0, cd: 0, vfe: Infinity },
+      { name: 'Combat', alpha: rad(3), gain: 0.07, cd: 0.012, vfe: 165 },
+    ],
+  },
 
   // Six lifting surfaces. Control gains are the effective change of angle of
   // attack, radians, at full command: how far the surface moves times how much
@@ -195,6 +219,212 @@ export const F22 = {
   },
 };
 
-export const AIRCRAFT = [F22];
+// ============================================================================
+// BOEING 737-800
+// ----------------------------------------------------------------------------
+// Figures are Boeing's where Boeing publishes them (737 Airplane Characteristics for
+// Airport Planning, D6-58325-7 Rev C, October 2025: weights, fuel, wheelbase, track,
+// nose wheel steering, tyres, and the takeoff and landing field length charts) and the
+// spec's (FLIGHT.md) otherwise. Where nobody publishes a figure (the inertias, the tail
+// areas, the lift curve, the lift coefficient at each flap setting, the approach speed
+// as a function of weight) it is an estimate, said so, and fitted
+// (scripts/fit-aircraft.mjs b737) to the figures that are.
+// ============================================================================
+
+// A swept transport wing with slats: a lift slope of 0.088 a degree (about 5.0 a
+// radian), a peak of 1.31 at 17 degrees, then the soft fall of a swept wing into the
+// flat plate. The flaps' gain on the lift is the detent's (below), not in this curve.
+const WING_LIFT_737 = [
+  [0, 0], [2, 0.176], [4, 0.352], [6, 0.528], [8, 0.704], [10, 0.88], [12, 1.05],
+  [14, 1.19], [15, 1.25], [16, 1.29], [17, 1.31], [18, 1.29], [19, 1.22], [20, 1.14],
+  [22, 1.04], [25, 0.98], [30, 0.96], [40, 0.96], [50, 0.98], [60, 0.98], [70, 0.82],
+  [80, 0.5], [90, 0], [100, -0.5], [110, -0.82], [120, -0.98], [135, -1.0], [150, -0.78],
+  [165, -0.4], [180, 0],
+];
+const WING_DRAG_737 = [
+  [0, 0.0085], [4, 0.0095], [8, 0.0125], [12, 0.019], [16, 0.035], [18, 0.06], [20, 0.1],
+  [25, 0.22], [30, 0.35], [40, 0.5], [50, 0.72], [60, 0.95], [75, 1.18], [90, 1.25],
+  [105, 1.18], [120, 0.95], [135, 0.72], [150, 0.42], [165, 0.12], [180, 0.015],
+];
+// The wings sit at three degrees to the fuselage (a cambered wing's zero-lift angle is a few
+// degrees below its chord, so this stands for the camber too), so it cruises at a
+// level body angle.
+const INC_737 = 3;
+const chord737 = [0, Math.sin(rad(INC_737)), Math.cos(rad(INC_737))];
+const normal737 = [0, Math.cos(rad(INC_737)), -Math.sin(rad(INC_737))];
+
+const CFM56 = {
+  // CFM56-7B26, about 117 kN (26,300 lbf) each, no afterburner (ab is dry). A turbofan's
+  // thrust falls with speed and with density: machDry is its thrust against Mach
+  // relative to standing still, kDry its density exponent. Estimates, fitted so full
+  // thrust at 35,000 ft is about Mach 0.82 and the service ceiling is 41,000 ft.
+  dry: 117000, ab: 117000, idle: 0.07, kDry: 0.836, kAb: 0.836,
+  machDry: [[0, 1], [0.2, 0.87], [0.4, 0.76], [0.6, 0.66], [0.8, 0.6], [0.9, 0.58]],
+  machAb: [[0, 1], [1, 1]],
+  spoolUp: 3.0, spoolDown: 2.4, abUp: 1, abDown: 1, sfcDry: 1.7e-5, sfcAb: 1.7e-5,
+};
+
+export const B737 = {
+  id: 'b737',
+  name: 'Boeing 737-800',
+  role: 'airliner',
+  blurb: 'Twin-engine airliner. Heavy and stable, slow to answer the stick, and it needs its flaps and a long runway.',
+  kind: 'fixed',
+  model: 'b737',
+  supersonic: false,
+  mapIcon: 'airliner',
+  airStart: { speed: 125, pitch: 0.03, throttle: 0.6, flaps: 0 },
+  camera: { distance: 78, height: 19, speedPullback: 30, orbitDistance: 150 },
+
+  // --- mass ---------------------------------------------------------------
+  emptyMass: 41413,        // kg, operating empty (Boeing: 41,412)
+  maxTakeoffMass: 79016,   // kg (Boeing: 79,015)
+  maxLandingMass: 66360,   // kg, Boeing
+  maxZeroFuelMass: 62731,  // kg, Boeing: the most it may weigh with empty tanks (the Hangar's card warns above it)
+  fuelCapacity: 20897,     // kg, usable (26,024 litres), Boeing
+  // Two pilots and four cabin crew at 90 kg, 120 passengers at 95 kg with their hand
+  // baggage, and 2,500 kg of hold baggage and freight (estimates: a planning mass per
+  // passenger of about 95 kg).
+  payload: 14440,
+  // Radius of gyration squared about the pitch, yaw and roll axes (x, y, z), m2: about
+  // 0.34 and 0.36 of the length and 0.23 of the span, as transport aircraft run.
+  // Estimates.
+  gyration: [180, 205, 68],
+
+  // --- shape --------------------------------------------------------------
+  length: 39.47,           // m
+  span: 35.79,             // m, with winglets
+  height: 12.6,            // m, the fin's top (Boeing: 12.62 m at empty weight)
+  refArea: 124.6,          // m2, wing area
+
+  // --- aerodynamics -------------------------------------------------------
+  curves: {
+    wing: { lift: WING_LIFT_737, drag: WING_DRAG_737, stall: 17 },
+    tail: { lift: TAIL_LIFT, drag: TAIL_DRAG, stall: 26 },
+    fin: { lift: TAIL_LIFT, drag: TAIL_DRAG, stall: 26 },
+  },
+  // Compressibility: a swept wing's drag rises from about Mach 0.78 and climbs hard past
+  // 0.84. Estimates, fitted so full thrust at 35,000 ft settles at its maximum Mach, 0.82.
+  liftMach: [[0, 1], [0.5, 1.02], [0.7, 1.05], [0.8, 1.07], [0.9, 0.95], [1.1, 0.8]],
+  waveCd: [[0, 0], [0.74, 0], [0.78, 0.00113], [0.8, 0.00353], [0.82, 0.00847], [0.84, 0.01553], [0.86, 0.02543], [0.9, 0.04802], [0.95, 0.07769], [1, 0.09888], [1.2, 0.08475], [2, 0.07063]],
+  bodyCdA: 0.95,           // m2: the fuselage and nacelles (the wings and tails carry their own; a clean airliner's CD0 is about 0.021)
+  gearCdA: 2.4,            // m2 added with the gear down
+  airbrakeName: 'Spoilers', // what the HUD calls the airbrake
+  airbrakeCdA: 5.0,        // m2 added with the spoilers out
+  airbrakeLiftDump: 0.8,   // the share of the wings' lift the spoilers kill, fully out
+  // Ground effect: 10% more lift at the ground, nothing a wingspan up. `wingY` is where the
+  // wings are against the centre of mass (m). It cushions the flare, as it does in life.
+  groundEffect: { gain: 0.1, height: 36, wingY: -1.3 },
+  flapAlpha: 0,            // no scheduled flaps: the lever sets them
+  stallAlpha: 14,          // degrees at the fuselage: the wings' stall (17) less their incidence (3)
+
+  // The flap lever (Z and X): up, then three detents, flaps 5 (takeoff), 15 (approach)
+  // and 30 (landing). `vfe` is the speed the flaps may be out at, m/s calibrated (the
+  // certified flap limit speeds: 250, 200 and 175 knots). alpha, gain and cd are what
+  // each does to the wings: the shift of their zero-lift angle (rad), a multiple on
+  // their lift, and the drag (a coefficient on the wing area). Estimates, fitted so
+  // the approach speed at flaps 30 is 145 knots at 65 tonnes, with the others in order.
+  flaps: {
+    time: 9,
+    autoRetract: false,
+    detents: [
+      { name: 'Up', deg: 0, alpha: 0, gain: 0, cd: 0, vfe: Infinity },
+      { name: '5', deg: 5, alpha: rad(1.5), gain: 0.298, cd: 0.008, vfe: 128.6 },
+      { name: '15', deg: 15, alpha: rad(3), gain: 0.467, cd: 0.028, vfe: 102.9 },
+      { name: '30', deg: 30, alpha: rad(4.5), gain: 0.732, cd: 0.075, vfe: 90.0 },
+    ],
+  },
+
+  // Five surfaces. Roll is ailerons and spoilers on the wings; pitch is the elevators and
+  // the trimmable tailplane; yaw is the rudder. The tail areas are estimates.
+  surfaces: [
+    { name: 'wingL', area: 62.3, pos: [7.6, -1.3, -0.5], chord: chord737, normal: normal737, induced: 0.04, curve: 'wing', flap: 1, control: { roll: 0.05 } },
+    { name: 'wingR', area: 62.3, pos: [-7.6, -1.3, -0.5], chord: chord737, normal: normal737, induced: 0.04, curve: 'wing', flap: 1, control: { roll: -0.05 } },
+    { name: 'stabL', area: 16.4, pos: [4.6, 1.0, -17.8], chord: [0, 0, 1], normal: [0, 1, 0], induced: 0.1, curve: 'tail', control: { pitch: -0.42 } },
+    { name: 'stabR', area: 16.4, pos: [-4.6, 1.0, -17.8], chord: [0, 0, 1], normal: [0, 1, 0], induced: 0.1, curve: 'tail', control: { pitch: -0.42 } },
+    { name: 'fin', area: 26.4, pos: [0, 4.6, -17.6], chord: [0, 0, 1], normal: [1, 0, 0], induced: 0.12, curve: 'fin', control: { yaw: 0.28 } },
+  ],
+
+  // --- engines ------------------------------------------------------------
+  // Slung under the wings, 5.7 m out from the centre line, a little below the centre
+  // of mass, so power pitches the nose up a little, as it does on a 737.
+  engines: [
+    { x: 5.7, y: -1.9, z: 2.0, ...CFM56 },
+    { x: -5.7, y: -1.9, z: 2.0, ...CFM56 },
+  ],
+  tvMax: 0,
+
+  // --- load limit ---------------------------------------------------------
+  gLimit: 2.5,             // g, the flaps-up limit of a transport (flaps down is 2.0)
+  gLimitNeg: -1,           // g
+
+  // --- landing gear -------------------------------------------------------
+  // Boeing: the nose gear is 15.60 m ahead of the main gear, the main gear are 5.72 m
+  // apart. The centre of mass is 1.6 m ahead of the mains (so the nose carries a tenth of
+  // the weight) and 3.4 m up, from the clearances in the airport planning manual.
+  gear: {
+    wheels: [
+      { name: 'nose', pos: [0, -3.5, 14.0], k: 0.9e6, c: 0.9e5, travel: 0.45, steer: true, brake: false },
+      { name: 'mainL', pos: [2.86, -3.5, -1.6], k: 2.6e6, c: 3.0e5, travel: 0.5, steer: false, brake: true },
+      { name: 'mainR', pos: [-2.86, -3.5, -1.6], k: 2.6e6, c: 3.0e5, travel: 0.5, steer: false, brake: true },
+    ],
+    hull: [
+      { name: 'nose', pos: [0, -0.3, 17.5] },
+      { name: 'tail', pos: [0, -0.25, -17.0], skid: true },
+      { name: 'belly', pos: [0, -1.9, 0] },
+      { name: 'bellyAft', pos: [0, -1.9, -9] },
+      { name: 'nacelleL', pos: [5.7, -2.85, 1.0] },
+      { name: 'nacelleR', pos: [-5.7, -2.85, 1.0] },
+      { name: 'tipL', pos: [17.9, 0.7, -8.2] },
+      { name: 'tipR', pos: [-17.9, 0.7, -8.2] },
+      { name: 'fin', pos: [0, 9.0, -19.0] },
+    ],
+  },
+
+  // --- where it can be put ------------------------------------------------
+  // The shortest runway (m) it is started on or sent to: it lands in 1,600 m and takes
+  // off in 2,316 at full weight, so 1,500 m is the least that is worth putting it on.
+  ground: { minRunway: 1500, vtol: false },
+
+  // --- where the pilot sits and the camera looks --------------------------
+  cockpitEye: [-0.5, 1.5, 14.0],
+  camTarget: [0, 0.5, 0],
+
+  // --- the figures it is held to ------------------------------------------
+  figures: {
+    length: { value: 39.47, tol: 0.001, source: 'Boeing 737-800 (spec, FLIGHT.md)' },
+    span: { value: 35.79, tol: 0.01, source: 'Boeing 737-800 with winglets (spec)' },
+    refArea: { value: 124.6, tol: 0.02, source: 'Boeing 737-800 (spec)' },
+    emptyMass: { value: 41413, tol: 0.001, source: 'Boeing operating empty mass 41,412 kg (airport planning manual, 2.1.3)' },
+    maxTakeoffMass: { value: 79016, tol: 0.001, source: 'Boeing 79,015 kg (airport planning manual, 2.1.3)' },
+    maxLandingMass: { value: 66360, tol: 0.001, source: 'Boeing (airport planning manual, 2.1.3)' },
+    maxZeroFuelMass: { value: 62731, tol: 0.001, source: 'Boeing (airport planning manual, 2.1.3)' },
+    fuelCapacity: { value: 20897, tol: 0.001, source: 'Boeing usable fuel 26,024 L, 20,897 kg (airport planning manual, 2.1.3)' },
+    thrust: { value: 234000, tol: 0.01, source: 'two CFM56-7B26 at about 117 kN (spec)' },
+    wheelbase: { value: 15.6, tol: 0.01, source: 'Boeing: 51 ft 2 in (airport planning manual, 7.2.1)' },
+    track: { value: 5.72, tol: 0.01, source: 'Boeing: 18 ft 9 in (airport planning manual, 7.2.1)' },
+    // The speed it settles at in level flight at 35,000 ft, mid weight, with the lever at
+    // the stop, and with the lever at a cruise setting.
+    maxMach: { value: 0.82, tol: 0.015, source: 'maximum operating Mach 0.82 (spec)' },
+    cruiseMach: { value: 0.785, tol: 0.015, source: 'cruise Mach 0.785 (spec)' },
+    ceiling: { value: 41000, tol: 0.03, source: 'service ceiling 41,000 ft (spec)' },
+    // The FAA rule: the all-engine distance to 35 ft, times 1.15, at the maximum takeoff
+    // mass, flaps 5, sea level, standard day, is the field length.
+    takeoffFieldLength: { value: 2316, tol: 0.08, source: 'takeoff field length 2,316 m (spec; Boeing chart 3.3.29 reads about 2.2 to 2.3 km)' },
+    // The FAA rule: the distance from 50 ft to a stop, divided by 0.6, at the maximum
+    // landing mass, flaps 30, sea level, dry, spoilers and brakes, no reversers.
+    landingFieldLength: { value: 1600, tol: 0.1, source: 'landing field length 1,600 m (spec; Boeing chart 3.4.3 reads about 1.8 to 1.9 km at flaps 30)' },
+    // An estimate: Boeing does not publish it. Training and sim pages put flaps 30 at the
+    // mid 130s to the high 140s knots at ordinary weights.
+    vref30: { value: 145, mass: 65000, tol: 0.05, source: 'estimate: knots calibrated at flaps 30, 65 t (mid 130s to high 140s kt in training sources)' },
+    // The 1 g stall speed (knots calibrated) at 65 tonnes for up, 5, 15 and 30: flaps 30 is
+    // Vref (145) over the 1.23 the rules give it, the others follow from plausible lift
+    // coefficients for each setting (about 1.35, 1.75, 2.0 and 2.28). Estimates.
+    stall: { speeds: [153, 135, 126, 117.9], mass: 65000, tol: 0.03, source: 'estimates, from the Vref estimate and plausible lift coefficients' },
+    gLimit: { value: 2.5, source: 'transport category limit, flaps up (estimate)' },
+  },
+};
+
+export const AIRCRAFT = [F22, B737];
 export const DEFAULT_AIRCRAFT = F22.id;
 export const getAircraft = (id) => AIRCRAFT.find((a) => a.id === id) || AIRCRAFT[0];

@@ -14,7 +14,7 @@ export const PARTS = ['livery', 'loadout', 'tune', 'damage'];
 export const storageKey = (part, aircraftId) => `flight.${part}.${aircraftId}`;
 
 const NORMALIZE = {
-  livery: (id, raw) => normalizeLivery(raw),
+  livery: (id, raw) => normalizeLivery(raw, id),
   loadout: normalizeLoadout,
   tune: normalizeTune,
   damage: normalizeDamage,

@@ -21,7 +21,7 @@
 //   5. bookkeeping: fuel, afterburner tank, engine state, load factor
 // ============================================================================
 
-import { SIM, FLIGHT } from '../data/tuning.js';
+import { SIM, FLIGHT, FLIGHT_OVERRIDES } from '../data/tuning.js';
 import { atmosphere, createAtmosphere, calibratedAirspeed } from './Atmosphere.js';
 import { Wing, Curve, MachTable } from './Wing.js';
 import { Engine } from './Engine.js';
@@ -59,7 +59,7 @@ export function createAttitude() { return { pitch: 0, bank: 0, heading: 0 }; }
 
 export function createRenderState() {
   return { x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1,
-    nozzle: 0, abLevel: 0, spool: 0, gear: 1, airbrake: 0, steer: 0, wheelSpin: 0,
+    nozzle: 0, abLevel: 0, spool: 0, gear: 1, airbrake: 0, flaps: 0, steer: 0, wheelSpin: 0,
     surfaces: new Float64Array(8), compression: new Float64Array(4) };
 }
 
@@ -87,6 +87,10 @@ export function quatFromAttitude(heading, pitch, bank, out) {
 export class AircraftPhysics {
   constructor(def) {
     this.def = def;
+    // How this aircraft feels: FLIGHT, with its own values (FLIGHT_OVERRIDES, if it has
+    // any) laid over it. Read through the prototype, so an aircraft with none (the
+    // F-22) reads FLIGHT itself, and a test that changes FLIGHT still reaches it.
+    this.F = Object.assign(Object.create(FLIGHT), FLIGHT_OVERRIDES[def.id] || null);
     const curves = {};
     for (const [name, c] of Object.entries(def.curves)) {
       curves[name] = { lift: new Curve(c.lift), drag: new Curve(c.drag), stall: (c.stall * Math.PI) / 180 };
@@ -95,8 +99,31 @@ export class AircraftPhysics {
     this.liftMach = new MachTable(def.liftMach);
     this.waveCdA = new MachTable(def.waveCd);
     this.engines = def.engines.map((e) => new Engine(e));
-    this.gear = new Gear(def.gear.wheels, def.gear.hull);
+    this.gear = new Gear(def.gear.wheels, def.gear.hull, this.F);
     this.stallAlpha = (def.stallAlpha * Math.PI) / 180;
+    // The flap detents (data/aircraft.js, `flaps`): per detent the flaps' shift of the
+    // wings' zero-lift angle (rad), gain on their lift, drag (a coefficient on the wing
+    // area) and the speed (m/s calibrated) they must not be out above. An aircraft with
+    // none has one detent of nothing, which is exactly no flaps.
+    const fl = def.flaps || { detents: [{ alpha: 0, gain: 0, cd: 0, vfe: Infinity }], time: 1 };
+    this.flapDetents = fl.detents.length;
+    this.flapAlphaD = Float64Array.from(fl.detents, (x) => x.alpha || 0);
+    this.flapGainD = Float64Array.from(fl.detents, (x) => x.gain || 0);
+    this.flapCdD = Float64Array.from(fl.detents, (x) => x.cd || 0);
+    this.flapVfeD = Float64Array.from(fl.detents, (x) => (x.vfe == null ? Infinity : x.vfe));
+    this.flapRate = (this.flapDetents - 1) / (fl.time || 1);       // detents a second
+    this.flapAutoRetract = !!fl.autoRetract;
+    // The spoilers' loss of the wings' lift at full extension, and whether the
+    // afterburner exists at all (a turbofan's `ab` is its `dry`).
+    this.liftDump = def.airbrakeLiftDump || 0;
+    this.hasAb = def.engines.some((e) => e.ab > e.dry);
+    // Ground effect: within a wingspan of the ground the wings lift more (the air under them
+    // is held), by `gain` at the ground, falling off as the square of how high the wings
+    // are over `height`. An airliner's flare is cushioned by it; a fighter's is not modelled.
+    const ge = def.groundEffect || null;
+    this.geGain = ge ? ge.gain : 0;
+    this.geHeight = ge ? ge.height : 1;
+    this.geWing = ge ? ge.wingY : 0;
     // The tail skid point, for the tail strike protection: how far below the
     // centre of mass it sits when level, and how far behind.
     const skid = def.gear.hull.find((h) => h.skid);
@@ -152,6 +179,10 @@ export class AircraftPhysics {
     this.abWanted = false;
     this.gearDown = opts.gear ?? (speed > 0 ? 0 : 1);
     this.airbrake = 0;
+    // The flaps, in detents (0 is up, or the F-22's scheduled flaps) and the three
+    // things they do right now, read from the table at flapPos each step.
+    this.flapPos = opts.flaps ?? 0;
+    this.flapA = 0; this.flapG = 0; this.flapC = 0;
     this.nozzle = 0;
     this.defl.fill(0);
     for (const e of this.engines) e.reset(this.throttle);
@@ -187,6 +218,20 @@ export class AircraftPhysics {
 
   get speed() { return Math.sqrt(this.vx * this.vx + this.vy * this.vy + this.vz * this.vz); }
 
+  // What the game reads of the engines, whatever kind of aircraft: the mean spool
+  // (0 idle to 1 full) and the mean afterburner level.
+  get spool() {
+    let s = 0;
+    for (let i = 0; i < this.engines.length; i++) s += this.engines[i].n;
+    return s / this.engines.length;
+  }
+
+  get abLevel() {
+    let s = 0;
+    for (let i = 0; i < this.engines.length; i++) s += this.engines[i].abLevel;
+    return s / this.engines.length;
+  }
+
   attitude() { return attitude(this.r, this._att); }
 
   // input: { pitch, roll, yaw (-1..1; pitch + is pull, roll + is right, yaw +
@@ -204,15 +249,17 @@ export class AircraftPhysics {
       return;
     }
     const d = this.def;
-    const F = FLIGHT;
+    const F = this.F;
     const r = this.r;
 
     // --- 1. the air ------------------------------------------------------
     const atm = atmosphere(this.y, this.atm);
-    // Velocity in body axes (no wind yet).
-    const vbx = r[0] * this.vx + r[3] * this.vy + r[6] * this.vz;
-    const vby = r[1] * this.vx + r[4] * this.vy + r[7] * this.vz;
-    const vbz = r[2] * this.vx + r[5] * this.vy + r[8] * this.vz;
+    // Velocity through the air in body axes: the aircraft's own less the wind's (a
+    // constant, OPEN_WORLD.wind, or none: a ground that has no wind is calm).
+    const windX = ground.windX || 0, windZ = ground.windZ || 0;
+    const vbx = r[0] * (this.vx - windX) + r[3] * this.vy + r[6] * (this.vz - windZ);
+    const vby = r[1] * (this.vx - windX) + r[4] * this.vy + r[7] * (this.vz - windZ);
+    const vbz = r[2] * (this.vx - windX) + r[5] * this.vy + r[8] * (this.vz - windZ);
     const v2 = vbx * vbx + vby * vby + vbz * vbz;
     const tas = Math.sqrt(v2);
     const mach = tas / atm.a;
@@ -227,9 +274,30 @@ export class AircraftPhysics {
     // --- 2. controls -----------------------------------------------------
     // The stick: digital keys ramp on the fixed clock, analog passes through.
     const analog = !!input.analog;
-    this.pitchCmd = ramp(this.pitchCmd, input.pitch, analog, dt, FLIGHT.pitchAttack, FLIGHT.pitchRelease);
-    this.rollCmd = ramp(this.rollCmd, input.roll, analog, dt);
-    this.yawCmd = ramp(this.yawCmd, input.yaw, analog, dt, FLIGHT.yawAttack, FLIGHT.yawRelease);
+    this.pitchCmd = ramp(this.pitchCmd, input.pitch, analog, dt, F.pitchAttack, F.pitchRelease);
+    this.rollCmd = ramp(this.rollCmd, input.roll, analog, dt, F.stickAttack, F.stickRelease);
+    this.yawCmd = ramp(this.yawCmd, input.yaw, analog, dt, F.yawAttack, F.yawRelease);
+
+    // The flaps move toward the lever's detent at the flap rate, and what they do is read
+    // from the table between the two detents either side of where they are. An aircraft
+    // whose flaps may be blown back (the fighter's combat setting) lets them up when it
+    // goes too fast; an airliner's lever refuses to go out too fast (FlightGame) and does
+    // not have them pulled in for it.
+    {
+      const last = this.flapDetents - 1;
+      let want = input.flaps | 0;
+      if (want > last) want = last; else if (want < 0) want = 0;
+      if (this.flapAutoRetract) while (want > 0 && this.cas > this.flapVfeD[want]) want--;
+      const step = this.flapRate * dt;
+      const diff = want - this.flapPos;
+      this.flapPos = diff > step ? this.flapPos + step : diff < -step ? this.flapPos - step : want;
+      let i = Math.floor(this.flapPos);
+      if (i > last) i = last;
+      const j = i < last ? i + 1 : last, f = this.flapPos - i;
+      this.flapA = this.flapAlphaD[i] + (this.flapAlphaD[j] - this.flapAlphaD[i]) * f;
+      this.flapG = this.flapGainD[i] + (this.flapGainD[j] - this.flapGainD[i]) * f;
+      this.flapC = this.flapCdD[i] + (this.flapCdD[j] - this.flapCdD[i]) * f;
+    }
 
     // The throttle is a lever: held keys and the stick move it, the wheel kicks it.
     this.throttle = clamp(this.throttle + input.throttleRate * F.throttleRate * dt + input.throttleKick, 0, 1);
@@ -265,8 +333,11 @@ export class AircraftPhysics {
     yaw += F.dampYaw * R * this.wy;              // yaw-right rate is -wy
 
     // The aids.
-    this.stalled = this.alpha > this.stallAlpha;
-    this.stallWarn = !onGround && this.alpha > this.stallAlpha * F.warnAlpha && tas > 20;
+    // The flaps lift the wings' zero-lift angle, so the aircraft stalls at that much less
+    // angle at the fuselage.
+    const stallAlpha = this.stallAlpha - this.flapA;
+    this.stalled = this.alpha > stallAlpha;
+    this.stallWarn = !onGround && this.alpha > stallAlpha * F.warnAlpha && tas > 20;
     // The Hangar's flight assist scales the self levelling and the auto trim. The
     // softening, the load limits, the sideslip limiter and the tail guard are
     // safety, not assist, and are not touched by it.
@@ -274,7 +345,7 @@ export class AircraftPhysics {
     if (F.aids) {
       // Angle-of-attack softening: pull fades out as the stall nears and the
       // nose is pushed down past it, so it mushes rather than snapping.
-      const soft = smooth(this.stallAlpha * F.softAlpha, this.stallAlpha, this.alpha);
+      const soft = smooth(stallAlpha * F.softAlpha, stallAlpha, this.alpha);
       if (pitch > 0) pitch *= 1 - soft;
       pitch -= F.softPush * soft;
       // The sideslip limiter: the rudder fades as the sideslip it makes grows.
@@ -359,10 +430,23 @@ export class AircraftPhysics {
     const actK = 1 - Math.exp(-dt / F.actuatorTau);
     // The flight computer drops the flaperons and leading edges with the gear
     // down, and takes them up above flapUp (m/s of calibrated airspeed).
-    const flapAlpha = d.flapAlpha * this.gearDown * clamp((F.flapUp - this.cas) / F.flapUpBand, 0, 1);
+    // The flap lever's setting (this.flapA) is added to it, and with the flaps' gain on the
+    // lift and the spoilers' dump of it, the wings that carry flaps get their lift scale
+    // and the drag the flaps add (Wing.liftScale, Wing.cdAdd).
+    const flapAlpha = d.flapAlpha * this.gearDown * clamp((F.flapUp - this.cas) / F.flapUpBand, 0, 1) + this.flapA;
+    // Ground effect, for the aircraft that has it: a gain on the wings' lift that is the most
+    // at the ground and nothing a `geHeight` up. The height is the wings': the centre of mass's
+    // (agl) plus where the wings are against it (geWing, negative when they are below it).
+    let geLift = 0;
+    if (this.geGain > 0) {
+      const k = 1 - (this.agl + this.geWing) / this.geHeight;
+      if (k > 0) geLift = this.geGain * k * k;
+    }
+    const wingLift = (1 + this.flapG) * (1 - this.liftDump * this.airbrake) * (1 + geLift);
     const surfaces = this.surfaces;
     for (let i = 0; i < surfaces.length; i++) {
       const s = surfaces[i];
+      if (s.flap) { s.liftScale = wingLift; s.cdAdd = this.flapC; }
       const target = s.cPitch * pitchOut + fade * (s.cRoll * roll + s.cYaw * yaw) + s.flap * flapAlpha;
       this.defl[i] += (target - this.defl[i]) * actK;
       // Velocity of the surface through the air: v + w x r.
@@ -381,7 +465,10 @@ export class AircraftPhysics {
     // The lever cannot raise the wheels while they carry the aircraft.
     const gearWant = input.gearDown || (F.gearLock && this.gear.weightOnWheels > F.gearLockWow);
     this.gearDown += clamp((gearWant ? 1 : 0) - this.gearDown, -dt / F.gearTime, dt / F.gearTime);
-    this.airbrake += clamp((input.airbrake ? 1 : 0) - this.airbrake, -dt / F.airbrakeTime, dt / F.airbrakeTime);
+    // The spoilers: the pilot's, or an airliner's ground spoilers, which come out by
+    // themselves with the weight on the wheels and the lever at idle (FLIGHT.autoSpoilers).
+    const spoil = input.airbrake || (F.autoSpoilers && this.gear.weightOnWheels > F.autoSpoilerWow && this.throttle < F.autoSpoilerLever);
+    this.airbrake += clamp((spoil ? 1 : 0) - this.airbrake, -dt / F.airbrakeTime, dt / F.airbrakeTime);
     if (tas > 0.5) {
       const cda = d.bodyCdA + d.refArea * this.waveCdA.at(mach) +
         d.gearCdA * this.gearDown + d.airbrakeCdA * this.airbrake;
@@ -391,7 +478,7 @@ export class AircraftPhysics {
 
     // Engines, with thrust vectoring. The nozzle deflects with the pilot's
     // pull and its authority fades as the surfaces take over.
-    const wantAb = !!input.ab;
+    const wantAb = !!input.ab && this.hasAb;
     this.abWanted = wantAb;
     const abOn = wantAb && !this.abLocked && this.abFuel > 0;
     const fuelOk = this.fuel > 0;
@@ -545,6 +632,7 @@ export class AircraftPhysics {
     out.spool = sp / this.engines.length;
     out.gear = this.gearDown;
     out.airbrake = this.airbrake;
+    out.flaps = this.flapPos;
     out.steer = this.gear.steerAngle;
     out.wheelSpin = this.gear.spin[0];
     for (let i = 0; i < this.defl.length && i < 8; i++) out.surfaces[i] = this.defl[i];

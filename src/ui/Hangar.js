@@ -21,7 +21,7 @@ import { Turntable } from './Turntable.js';
 import { hexToCss } from '../data/palette.js';
 import { HANGAR } from '../data/tuning.js';
 import {
-  LIVERY_PAINTS, LIVERY_PATTERNS, LIVERY_INSIGNIA, TAIL_NUMBER_MAX, TAIL_NUMBER_DIGITS,
+  LIVERY_PAINTS, liveryOptions, TAIL_NUMBER_MAX, TAIL_NUMBER_DIGITS,
   hangarOptions, normalizeSetup, defaultTune, payloadMass,
 } from '../data/loadouts.js';
 
@@ -162,13 +162,15 @@ export class Hangar {
         const name = el('small', 'hangar-paint-name');
         label.append(name);
         const box = el('div', 'garage-field hangar-swatches');
+        const stockName = liveryOptions(this.def.id).stockName;
         li._sw = LIVERY_PAINTS.map((p) => {
           const b = el('button', 'garage-swatch');
           b.type = 'button';
           b.tabIndex = -1;
-          b.title = p.name;
+          const name = p.id === 'stock' ? stockName : p.name;
+          b.title = name;
           b.style.background = hexToCss(p.hex);
-          b.setAttribute('aria-label', p.name);
+          b.setAttribute('aria-label', name);
           b.addEventListener('click', (e) => { e.stopPropagation(); this._focus(this.fields.indexOf(it)); this._setKey(it.key, p.id); });
           box.append(b);
           return b;
@@ -211,8 +213,8 @@ export class Hangar {
 
   _options(key) {
     if (key === 'aircraft') return this.defs.map((d) => ({ id: d.id, name: d.name }));
-    if (key === 'pattern') return LIVERY_PATTERNS;
-    if (key === 'insignia') return LIVERY_INSIGNIA;
+    if (key === 'pattern') return liveryOptions(this.def.id).patterns;
+    if (key === 'insignia') return liveryOptions(this.def.id).insignia;
     if (key === 'body' || key === 'accent') return LIVERY_PAINTS;
     return [];
   }
@@ -239,6 +241,7 @@ export class Hangar {
 
   _switch(def) {
     this.def = def;
+    this.statEls = null;
     this._buildRows();
     this._makeDisplay();
     this.index = 0;
@@ -263,21 +266,33 @@ export class Hangar {
   }
 
   // The figures on the card, for the aircraft as set up: the same sums the physics
-  // does, so what it says is what it flies at.
+  // does, so what it says is what it flies at. A fighter's are thrust and wing loading; an
+  // airliner's add the landing speed, and the mass says so when it is over the maximum.
   _figures() {
     const d = this.def, s = this.setup;
+    const kg = (v) => `${Math.round(v).toLocaleString('en-US')} kg`;
+    const hasAb = d.engines.some((e) => e.ab > e.dry);
     const mass = d.emptyMass + payloadMass(d, s.loadout) + d.fuelCapacity * HANGAR.startFuel;
     const thrust = d.engines.reduce((a, e) => a + e.ab, 0) * s.tune.power;
     const stockMass = d.emptyMass + d.payload + d.fuelCapacity * HANGAR.startFuel;
     const stockThrust = d.engines.reduce((a, e) => a + e.ab, 0);
-    return [
-      { label: 'Empty mass', v: d.emptyMass, stock: d.emptyMass, show: (v) => `${Math.round(v).toLocaleString('en-US')} kg`, ref: d.maxTakeoffMass },
-      { label: `Mass, ${Math.round(HANGAR.startFuel * 100)}% fuel`, v: mass, stock: stockMass, show: (v) => `${Math.round(v).toLocaleString('en-US')} kg`, ref: d.maxTakeoffMass },
-      { label: 'Thrust, afterburner', v: thrust, stock: stockThrust, show: (v) => `${(v / 1000).toFixed(0)} kN`, ref: stockThrust * 1.25 },
-      { label: 'Thrust to weight', v: thrust / (mass * G), stock: stockThrust / (stockMass * G), show: (v) => v.toFixed(2), ref: 1.8 },
+    const airliner = d.role === 'airliner';
+    const rows = [
+      { label: 'Empty mass', v: d.emptyMass, stock: d.emptyMass, show: kg, ref: d.maxTakeoffMass },
+      { label: `Mass, ${Math.round(HANGAR.startFuel * 100)}% fuel`, v: mass, stock: stockMass, show: kg, ref: d.maxTakeoffMass,
+        over: mass > d.maxTakeoffMass * 1.0005 || (d.maxZeroFuelMass > 0 && d.emptyMass + payloadMass(d, s.loadout) > d.maxZeroFuelMass * 1.0005) },
+      { label: hasAb ? 'Thrust, afterburner' : 'Thrust', v: thrust, stock: stockThrust, show: (v) => `${(v / 1000).toFixed(0)} kN`, ref: stockThrust * 1.25 },
+      { label: 'Thrust to weight', v: thrust / (mass * G), stock: stockThrust / (stockMass * G), show: (v) => v.toFixed(2), ref: airliner ? 0.45 : 1.8 },
       { label: 'Wing loading', v: mass / d.refArea, stock: stockMass / d.refArea, show: (v) => `${Math.round(v)} kg/m²`, ref: d.maxTakeoffMass / d.refArea },
-      { label: 'Load limit', v: d.gLimit, stock: d.gLimit, show: (v) => `${v} g`, ref: 12 },
+      { label: 'Load limit', v: d.gLimit, stock: d.gLimit, show: (v) => `${v} g`, ref: airliner ? 4 : 12 },
     ];
+    // The approach speed scales with the square root of the mass (the lift is the weight).
+    const v30 = d.figures && d.figures.vref30;
+    if (v30) {
+      const vref = (m) => v30.value * Math.sqrt(Math.min(m, d.maxLandingMass || m) / v30.mass);
+      rows.splice(4, 0, { label: 'Landing speed, flaps 30', v: vref(mass), stock: vref(stockMass), show: (v) => `${Math.round(v)} kt`, ref: 190 });
+    }
+    return rows;
   }
 
   _paint() {
@@ -291,7 +306,7 @@ export class Hangar {
       } else if (it.kind === 'swatch') {
         const id = s.livery[it.key];
         li._sw.forEach((b, k) => b.classList.toggle('on', LIVERY_PAINTS[k].id === id));
-        li._name.textContent = LIVERY_PAINTS.find((p) => p.id === id)?.name ?? '';
+        li._name.textContent = id === 'stock' ? liveryOptions(this.def.id).stockName : (LIVERY_PAINTS.find((p) => p.id === id)?.name ?? '');
       } else if (it.kind === 'number') {
         const text = s.livery.number == null ? '' : String(s.livery.number);
         if (document.activeElement !== li._input) li._input.value = text;
@@ -321,7 +336,7 @@ export class Hangar {
     const onButtons = this.fields[this.index].kind === 'buttons';
     this.buttons.forEach((b, k) => b.classList.toggle('focused', onButtons && k === this.button));
 
-    this.kickerEl.textContent = this.def.role === 'fighter' ? 'Fighter' : 'Aircraft';
+    this.kickerEl.textContent = { fighter: 'Fighter', airliner: 'Airliner', helicopter: 'Helicopter' }[this.def.role] || 'Aircraft';
     this.nameEl.textContent = this.def.name;
     this.blurbEl.textContent = this.def.blurb;
     if (!this.statEls) {
@@ -343,9 +358,12 @@ export class Hangar {
       e.dt.textContent = f.label;
       e.dd.textContent = f.show(f.v);
       e.row.classList.toggle('tuned', Math.abs(f.v - f.stock) > 1e-6 * Math.max(1, Math.abs(f.stock)));
+      e.row.classList.toggle('over', !!f.over);
       e.fill.style.width = `${Math.min(100, Math.max(3, (100 * f.v) / f.ref)).toFixed(1)}%`;
     });
-    this.noteEl.textContent = 'Figures in orange differ from the aircraft as fitted. Missiles, rounds and flares are carried as weight; there is nothing to fire them with until the weapons arrive. Fuel is not refilled here.';
+    this.noteEl.textContent = this.def.role === 'airliner'
+      ? 'Figures in orange differ from the aircraft as fitted. Passengers and cargo are weight. Over the maximum takeoff mass, or over the maximum zero fuel mass (what it weighs with empty tanks), the mass is shown in yellow: it still flies, but the runway it needs is no longer the one it was fitted to. Fuel is not refilled here.'
+      : 'Figures in orange differ from the aircraft as fitted. Missiles, rounds and flares are carried as weight; there is nothing to fire them with until the weapons arrive. Fuel is not refilled here.';
     this.hintEl.textContent = this._note ? this._note.text : this._defaultHint;
   }
 
@@ -422,7 +440,7 @@ export class Hangar {
         this._say('Tuning back to stock');
       }
     } else if (it.key === 'aircraft' && this.defs.length < 2) {
-      this._say('The F-22 is the only aircraft so far');
+      this._say('There is only one aircraft so far');
     } else this._move(1);
     this._paint();
   }

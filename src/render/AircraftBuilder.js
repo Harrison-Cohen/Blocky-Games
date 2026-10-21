@@ -33,7 +33,7 @@ const BLACK = 0x23282f;
 const GLASS = 0x1c2c3d;
 
 // A glossy mesh that casts and receives shadows.
-function mesh(geo, mat) {
+export function mesh(geo, mat) {
   const m = new THREE.Mesh(geo, mat);
   m.castShadow = true;
   m.receiveShadow = true;
@@ -42,7 +42,7 @@ function mesh(geo, mat) {
 
 // A flat slab from a planform, thin in y, with a rounded edge. points are
 // [x, z] pairs in the plane of the slab; the slab is centred on y = 0.
-function slab(points, thickness, bevel) {
+export function slab(points, thickness, bevel) {
   const shape = new THREE.Shape();
   points.forEach(([x, z], i) => (i ? shape.lineTo(x, -z) : shape.moveTo(x, -z)));
   shape.closePath();
@@ -62,7 +62,7 @@ function slab(points, thickness, bevel) {
 }
 
 // A slab standing on its edge: points are [z, y] pairs, thin in x.
-function fin(points, thickness, bevel) {
+export function fin(points, thickness, bevel) {
   const shape = new THREE.Shape();
   points.forEach(([z, y], i) => (i ? shape.lineTo(-z, y) : shape.moveTo(-z, y)));
   shape.closePath();
@@ -80,26 +80,26 @@ function fin(points, thickness, bevel) {
   return g;
 }
 
-const mirror = (points) => points.map(([a, b]) => [-a, b]);
+export const mirror = (points) => points.map(([a, b]) => [-a, b]);
 
 // A point on the segment a-b at fraction t.
-const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+export const lerp2 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 
 // Seven segment digits for the tail number, as the car's roundel and the runway's
 // designator have (no textures anywhere): which of a (top), b (upper right),
 // c (lower right), d (bottom), e (lower left), f (upper left), g (middle) are lit.
-const DIGITS = {
+export const DIGITS = {
   0: 'abcdef', 1: 'bc', 2: 'abged', 3: 'abgcd', 4: 'fgbc', 5: 'afgcd', 6: 'afgedc', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg',
 };
 // [across, up, width, height] in a cell one wide and 1.8 tall.
-const DIGIT_BARS = {
+export const DIGIT_BARS = {
   a: [0.50, 1.72, 0.72, 0.16], b: [0.86, 1.30, 0.16, 0.68], c: [0.86, 0.42, 0.16, 0.68],
   d: [0.50, 0.08, 0.72, 0.16], e: [0.14, 0.42, 0.16, 0.68], f: [0.14, 1.30, 0.16, 0.68],
   g: [0.50, 0.86, 0.72, 0.16],
 };
 
 // A colour lightened toward white, for the lighter panels of a repainted body.
-const lighten = (hex, k) => {
+export const lighten = (hex, k) => {
   const c = new THREE.Color(hex);
   return c.lerp(new THREE.Color(0xffffff), k).getHex();
 };

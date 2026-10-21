@@ -28,7 +28,10 @@ const HULL_C = 3.5e5;     // N s/m
 export class Gear {
   // wheels: [{ name, pos:[x,y,z], k, c, travel, steer, brake }]
   // hull:   [{ name, pos:[x,y,z] }]
-  constructor(wheels, hull) {
+  constructor(wheels, hull, F = FLIGHT) {
+    // The feel block this airframe flies with: FLIGHT with the aircraft's own values
+    // laid over it (AircraftPhysics.F).
+    this.F = F;
     this.wheels = wheels.map((w) => ({
       name: w.name,
       x: w.pos[0], y: w.pos[1], z: w.pos[2],
@@ -74,6 +77,7 @@ export class Gear {
   //   brake  0..1
   //   down   how far the gear is down, 0..1; the wheels only touch at 1
   apply(body, ground, dt, steer, brake, down, mass, acc) {
+    const F = this.F;
     const r = body.r;
     const wheels = this.wheels;
     let total = 0;
@@ -87,12 +91,12 @@ export class Gear {
     // side force the tyres can give (atan of the lateral acceleration times the
     // wheelbase over speed squared).
     const speed = Math.sqrt(body.vx * body.vx + body.vz * body.vz);
-    const fade = 1 / (1 + (speed / FLIGHT.noseSteerSpeed) * (speed / FLIGHT.noseSteerSpeed));
-    let lock = FLIGHT.noseSteerMax * fade;
-    if (FLIGHT.groundAssist) {
-      const lat = Math.atan((FLIGHT.noseSteerLatG * 9.81 * this.wheelbase) / Math.max(speed * speed, 1e-3));
+    const fade = 1 / (1 + (speed / F.noseSteerSpeed) * (speed / F.noseSteerSpeed));
+    let lock = F.noseSteerMax * fade;
+    if (F.groundAssist) {
+      const lat = Math.atan((F.noseSteerLatG * 9.81 * this.wheelbase) / Math.max(speed * speed, 1e-3));
       if (lat < lock) lock = lat;
-      const want = -steer * lock, rate = FLIGHT.noseSteerRate * dt;
+      const want = -steer * lock, rate = F.noseSteerRate * dt;
       const d = want - this.steerAngle;
       this.steerAngle += d > rate ? rate : d < -rate ? -rate : d;
     } else {
@@ -149,9 +153,9 @@ export class Gear {
 
         const vLong = vx * fwx + vy * fwy + vz * fwz;
         const vLat = vx * lwx + vy * lwy + vz * lwz;
-        const s = FLIGHT.surfaces[g.surface] || FLIGHT.surfaces.grass;
-        const vs = FLIGHT.slipSpeed;
-        const brk = w.brake ? brake * FLIGHT.brakeFriction : 0;
+        const s = F.surfaces[g.surface] || F.surfaces.grass;
+        const vs = F.slipSpeed;
+        const brk = w.brake ? brake * F.brakeFriction : 0;
         const fLat = -s.lateral * nForce * vLat / (Math.abs(vLat) + vs);
         const fLong = -(s.rolling + brk) * nForce * vLong / (Math.abs(vLong) + vs);
 
@@ -168,7 +172,7 @@ export class Gear {
         acc.tz += w.x * by - w.y * bx;
 
         // Wheel spin for the renderer: rolls with the ground speed.
-        this.rpm[i] = vLong / FLIGHT.wheelRadius;
+        this.rpm[i] = vLong / F.wheelRadius;
       }
     } else {
       this.compression.fill(0);
@@ -205,7 +209,7 @@ export class Gear {
       if (nForce < 0) nForce = 0;
       // Scraping: sliding friction against the skin.
       const vt = Math.sqrt(Math.max(0, vx * vx + vy * vy + vz * vz - vn * vn));
-      const fr = FLIGHT.hullFriction * nForce / (vt + FLIGHT.slipSpeed);
+      const fr = F.hullFriction * nForce / (vt + F.slipSpeed);
       const Fx = nForce * n.x - fr * (vx - vn * n.x);
       const Fy = nForce * n.y - fr * (vy - vn * n.y);
       const Fz = nForce * n.z - fr * (vz - vn * n.z);

@@ -197,7 +197,7 @@ export function taxiPilot(ap, route, { speed = 5, slow = 3, reach = 7 } = {}) {
     inp.yaw = clampv(he * 2.2, -1, 1);
     // Slower for a sharp turn.
     const target = Math.abs(he) > 0.5 ? slow : speed;
-    const lever = Math.max(0.06, target / FLIGHT.taxiSpeedPerLever);
+    const lever = Math.max(0.06, target / (p.F || FLIGHT).taxiSpeedPerLever);
     inp.throttleRate = clampv((lever - p.throttle) * 4, -1, 1);
     st.maxSpeed = Math.max(st.maxSpeed, Math.hypot(p.vx, p.vz));
     // Pavement under the wheels: the mains (2.1 m out) and the nose.

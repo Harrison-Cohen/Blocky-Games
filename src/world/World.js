@@ -39,6 +39,12 @@ export class World {
     this.biomes = new Biomes(cfg, this.areas);
     this._out = { height: 0, normal: { x: 0, y: 1, z: 0 }, surface: 'grass' };
     this._w = new Float64Array(Object.keys(BIOME_INDEX).length);
+    // The wind, m/s in world axes (north +z, east -x), a constant: the compass bearing
+    // it blows from, turned into where it blows to. The physics reads these two numbers.
+    const wd = cfg.wind || { speed: 0, from: 0 };
+    const from = (wd.from * Math.PI) / 180;
+    this.windX = wd.speed * Math.sin(from);
+    this.windZ = -wd.speed * Math.cos(from);
   }
 
   height(x, z) { return this.hf.height(x, z); }

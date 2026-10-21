@@ -27,7 +27,7 @@
 //
 // Each category will get its own switch in the settings (milestone 9).
 
-import { FLIGHT_AUDIO as A } from '../data/tuning.js';
+import { FLIGHT_AUDIO, FLIGHT_AUDIO_PROFILES } from '../data/tuning.js';
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
@@ -71,11 +71,21 @@ export class FlightAudio {
   constructor(sound) {
     this.sound = sound;
     this.built = false;
+    this.A = FLIGHT_AUDIO;
     this._chirp = 0;
     this._abPrev = 0;
   }
 
+  // The sound of the aircraft being flown: the profile laid over the common numbers. The voices are
+  // built once and only steered, so a new aircraft changes what they are steered to.
+  setAircraft(def) {
+    const prof = FLIGHT_AUDIO_PROFILES[def.id];
+    this.A = prof ? { ...FLIGHT_AUDIO, ...prof } : FLIGHT_AUDIO;
+    this._abPrev = 0;
+  }
+
   _build() {
+    const A = this.A;
     const s = this.sound;
     const ctx = s.ctx;
     this.ctx = ctx;
@@ -183,6 +193,7 @@ export class FlightAudio {
   // closing behind. Through the same bus, so the cabin muffles the crack and not
   // the thump.
   _boom(t) {
+    const A = this.A;
     if (A.boomGain <= 0) return;
     const ctx = this.ctx, G = A.boomGain;
     const osc = ctx.createOscillator();
@@ -216,6 +227,7 @@ export class FlightAudio {
   }
 
   _kick(t) {
+    const A = this.A;
     if (A.burnerKick <= 0) return;
     const ctx = this.ctx;
     const osc = ctx.createOscillator();
@@ -231,9 +243,28 @@ export class FlightAudio {
     osc.stop(t + 0.75);
   }
 
+  // The clunk of a flap lever at its detent, now.
+  thump() {
+    if (!this.built || !this.sound.ready) return;
+    const A = this.A, ctx = this.ctx, t = ctx.currentTime;
+    if (A.clunkGain <= 0) return;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(A.clunkFreq, t);
+    osc.frequency.exponentialRampToValueAtTime(A.clunkFreq * 0.45, t + 0.16);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(A.engineGain * A.clunkGain, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    osc.connect(g).connect(this.bus);
+    osc.start(t);
+    osc.stop(t + 0.25);
+  }
+
   // Once per rendered frame. s null is silence (paused, a menu). Otherwise
   // s = { spool 0..1, ab 0..1, speed m/s, stallWarn, gearWarn, cockpit, dt }.
   update(s) {
+    const A = this.A;
     if (!this.sound.ready) return;
     if (!this.built) this._build();
     const t = this.ctx.currentTime;

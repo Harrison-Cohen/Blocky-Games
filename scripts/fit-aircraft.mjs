@@ -3,7 +3,7 @@
 // the engines or the mass, then paste the tables it prints into
 // src/data/aircraft.js.
 //
-//   node scripts/fit-aircraft.mjs [id]
+//   node scripts/fit-aircraft.mjs [id]       (f22, the default, or b737)
 //
 // What it moves, two numbers, both multipliers on the tables already in the
 // data: the wave drag above Mach 1.1, which sets the supercruise Mach (the dry
@@ -21,6 +21,12 @@ const { AIRCRAFT, getAircraft } = await import(H.R + 'data/aircraft.js');
 const def0 = getAircraft(process.argv[2] || AIRCRAFT[0].id);
 const fg = def0.figures;
 const FT = H.FT;
+
+// The other aircraft have their own fits, beside this one's.
+if (def0.id === 'b737') {
+  await (await import('./lib/fit-b737.mjs')).default(def0);
+  process.exit(0);
+}
 
 const apply = (x) => {
   const d = structuredClone(def0);
