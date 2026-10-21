@@ -68,6 +68,11 @@ export class Scene {
     // Dynamic resolution. renderScale multiplies the pixel ratio; see
     // _adaptResolution.
     this.renderScale = 1;
+    // The ceiling the controller may climb to (see applyGraphics). It has to be
+    // set here too: left undefined, the first step of _adaptResolution takes
+    // Math.min(undefined, ...) = NaN, the pixel ratio goes NaN and the canvas
+    // collapses to 0 x 0 a couple of seconds after start.
+    this.maxRenderScale = 1;
     this._rs = { time: 0, frames: 0, sum: 0, good: 0, hold: 2, raisedAt: -1, clock: 0 };
     this.post = GRAPHICS.postFX ? new PostFX(this.renderer, this.scene, this.camera) : null;
 
