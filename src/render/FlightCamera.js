@@ -8,7 +8,11 @@
 //            swings round in a loop. The offset is smoothed in the aircraft's
 //            own frame, never in the world, or the camera would trail a
 //            supersonic aircraft by hundreds of metres.
-//   cockpit  the pilot's eye, welded to the airframe.
+//   first    the pilot's eye, welded to the airframe, with the aircraft's own nose and wings
+//            in view and nothing else of it.
+//   cockpit  the same eye in the cockpit's own seat, with the inside of the cockpit drawn: a
+//            second render pass (Scene.setOverlay) with a near plane of centimetres, so the
+//            instruments are in front of the world however far it reaches.
 //   orbit    far behind, free to be swung round.
 //
 // Free look turns the view: round the aircraft in chase and orbit, in place
@@ -17,7 +21,8 @@
 import * as THREE from 'three';
 import { FLIGHT_CAMERA, SHOCK } from '../data/tuning.js';
 
-export const FLIGHT_CAMERA_MODES = ['Chase', 'Cockpit', 'Far orbit'];
+export const FLIGHT_CAMERA_MODES = ['Chase', 'First person', 'Cockpit', 'Far orbit'];
+export const CAM = { CHASE: 0, FIRST: 1, COCKPIT: 2, ORBIT: 3 };
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _q = new THREE.Quaternion();
@@ -39,6 +44,7 @@ export class FlightCamera {
     this.offset = new THREE.Vector3(0, FLIGHT_CAMERA.height, -FLIGHT_CAMERA.distance);
     this.fov = FLIGHT_CAMERA.fovMin;
     this.punch = 0;                // degrees of jolt on the field of view, easing to 0
+    this.overlay = null;           // the second pass's camera (Scene.overlayCamera), kept level with this one
     this._init = false;
     this.groundFn = null;   // (x, z) in scene coordinates -> ground height, or null
     this._shake = 0;
@@ -51,6 +57,8 @@ export class FlightCamera {
   }
 
   get name() { return FLIGHT_CAMERA_MODES[this.mode]; }
+  // Is the camera at the pilot's eye (either view)?
+  get isEye() { return this.mode === CAM.FIRST || this.mode === CAM.COCKPIT; }
 
   reset() { this._init = false; this._offsetInit = false; }
 
@@ -74,9 +82,9 @@ export class FlightCamera {
     this.fov += (fovT - this.fov) * (1 - Math.exp(-C.fovSpring * dt));
     // A jolt (the sound barrier) widens it for a moment and eases off.
     this.punch -= this.punch * (1 - Math.exp(-SHOCK.kickDecay * dt));
-    cam.fov = (this.mode === 1 ? Math.max(this.fov, 72) : this.fov) + this.punch;
+    cam.fov = (this.mode === CAM.FIRST ? Math.max(this.fov, C.firstFov) : this.mode === CAM.COCKPIT ? C.cockpitFov : this.fov) + this.punch;
 
-    if (this.mode === 1) {
+    if (this.isEye) {
       // The pilot's eye. Free look turns the head.
       _v.set(eye[0], eye[1], eye[2]).applyQuaternion(_q);
       cam.position.set(state.x + _v.x, state.y + _v.y, state.z + _v.z);
@@ -87,15 +95,15 @@ export class FlightCamera {
     } else {
       // Smooth the heading toward the aircraft's. Faster when the camera is
       // far behind (the orbit), slower and lagging in the chase.
-      const k = 1 - Math.exp(-(this.mode === 2 ? C.orientSpring * 2 : C.orientSpring) * dt);
+      const k = 1 - Math.exp(-(this.mode === CAM.ORBIT ? C.orientSpring * 2 : C.orientSpring) * dt);
       this.qs.slerp(_q, k);
       _f.set(0, 0, 1).applyQuaternion(this.qs);
       _u.set(0, 1, 0).applyQuaternion(this.qs);
       // Lean the camera's up toward the world's, so a roll does not whip the horizon.
       _u.lerp(UP, C.upBlend).normalize();
 
-      const dist = this.mode === 2 ? C.orbitDistance : C.distance + C.speedPullback * Math.min(1, speed / 340);
-      const hgt = this.mode === 2 ? C.height * 1.6 : C.height;
+      const dist = this.mode === CAM.ORBIT ? C.orbitDistance : C.distance + C.speedPullback * Math.min(1, speed / 340);
+      const hgt = this.mode === CAM.ORBIT ? C.height * 1.6 : C.height;
       // Target offset, in the smoothed frame, with free look swinging it round.
       _r.crossVectors(_u, _f).normalize();         // left
       _v.copy(_f).multiplyScalar(-dist).addScaledVector(_u, hgt);
@@ -114,7 +122,7 @@ export class FlightCamera {
       // swung round it with free look, look at the aircraft itself.
       const swung = Math.min(1, (Math.abs(look.x) + Math.abs(look.y)) / 0.5);
       _target.set(state.x, state.y, state.z)
-        .addScaledVector(_f, this.mode === 2 ? 0 : 14 * (1 - swung))
+        .addScaledVector(_f, this.mode === CAM.ORBIT ? 0 : 14 * (1 - swung))
         .addScaledVector(_u, 1.5);
     }
 
@@ -134,12 +142,32 @@ export class FlightCamera {
     // The near plane grows with height above the ground so depth holds over a
     // long view, but never past just in front of the aircraft: a camera that
     // sits 20 m behind it must not slice its tail off.
-    const away = this.mode === 1 ? 0 : this.offset.length();
-    cam.near = this.mode === 1 ? 0.1
-      : Math.max(0.1, Math.min(C.nearMax, C.nearMin + C.nearPerMetre * Math.max(0, agl), away * 0.45));
+    //
+    // From the pilot's eye the near plane used to be a fixed 0.1 m over a view 27 km deep, which is
+    // a depth buffer with no precision left at distance: terrain that overlaps itself flickered as
+    // black lines across the whole map. The world is now drawn with the same growing near plane
+    // as the chase view (capped at `firstNearMax` in the first person view, so the aircraft's own
+    // nose is not cut off), and in the cockpit view the inside of the cockpit is a second pass
+    // with its own near plane (the overlay camera, below).
+    const grow = Math.max(C.nearMin, Math.min(C.nearMax, C.nearMin + C.nearPerMetre * Math.max(0, agl)));
+    if (this.mode === CAM.FIRST) cam.near = Math.min(C.firstNearMax, grow);
+    else if (this.mode === CAM.COCKPIT) cam.near = grow;
+    else cam.near = Math.max(0.1, Math.min(C.nearMax, C.nearMin + C.nearPerMetre * Math.max(0, agl), this.offset.length() * 0.45));
     cam.updateProjectionMatrix();
 
     cam.lookAt(_target);
+
+    // The second pass looks exactly where this one does, with a near plane of centimetres.
+    if (this.overlay) {
+      const o = this.overlay;
+      o.position.copy(cam.position);
+      o.quaternion.copy(cam.quaternion);
+      o.fov = cam.fov;
+      o.aspect = cam.aspect;
+      o.near = C.cockpitNear;
+      o.far = C.cockpitFar;
+      o.updateProjectionMatrix();
+    }
   }
 
   // Turn a forward vector by the free-look offsets about the camera's up and right.

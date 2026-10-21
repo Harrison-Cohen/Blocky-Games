@@ -22,7 +22,7 @@ import { AIRCRAFT } from '../data/aircraft.js';
 import { World } from '../world/World.js';
 import { WorldMesh, worldEnvironment } from '../render/WorldMesh.js';
 import { TRACKS } from '../data/tracks/index.js';
-import { FlightCamera } from '../render/FlightCamera.js';
+import { FlightCamera, CAM } from '../render/FlightCamera.js';
 import { ShockWave } from '../render/ShockWave.js';
 import { FlightInput } from './FlightInput.js';
 import { FlightPlaces } from './FlightPlaces.js';
@@ -33,7 +33,7 @@ import { FlightScreens } from '../ui/FlightScreens.js';
 import { Hangar } from '../ui/Hangar.js';
 import { loadSetup, saveSetup } from './HangarStore.js';
 import { payloadMass } from '../data/loadouts.js';
-import { UNIT_SYSTEMS, normalizeUnits } from '../flight/Units.js';
+import { UNIT_SYSTEMS, normalizeUnits, distanceIn } from '../flight/Units.js';
 import { OPEN_WORLD, FLIGHT_CAMERA as FC, SHOCK, HANGAR, DEFAULT_GRAPHICS_LEVEL } from '../data/tuning.js';
 import { isUnlocked } from '../data/unlocks.js';
 import * as Storage from './Storage.js';
@@ -120,6 +120,7 @@ export class FlightGame {
   _configure() {
     const d = this.def;
     this.camera.cfg = { ...FC, ...(d.camera || null) };
+    this.camera.overlay = this.scene.overlayCamera;
     this.camera.reset();
     this.hud.configure(d);
     this.audio.setAircraft(d);
@@ -194,6 +195,32 @@ export class FlightGame {
     return ap;
   }
 
+  // After a crash: choose where to start again, the hangar of the airport last used or the runway of
+  // the nearest airport that can take the aircraft (a 737 is not sent to an airstrip).
+  openCrash() {
+    const p = this.physics;
+    this.paused = true;
+    this.input.suspended = true;
+    this.input.setMouseFlight(false);
+    this.hud.hide();
+    this.uiRoot.classList.add('menu-open');
+    const near = this.places.nearestEligible(p.x, p.z, 'runway');
+    const far = near ? distanceIn(Math.hypot(near.px - p.x, near.pz - p.z), this.units) : null;
+    const rows = [
+      { label: `Respawn at the hangar, ${this.places.last.name}`, action: () => this.toHangar(false) },
+      near
+        ? { label: `Respawn on the nearest runway, ${near.name} (${Math.round(far.value)} ${far.unit})`, action: () => this.start('runway', near) }
+        : { label: 'No runway can take it', cls: 'row-off', action: () => {} },
+      { label: 'Open the map', action: () => { this.screens.crash.hide(); this.openMap('crash'); } },
+      { label: 'Back to the title', action: () => this.exit() },
+    ];
+    this.screens.crash.open(rows, {
+      sub: `The ${this.def.name} ${p.crashReason}. Where do you want to start again?`,
+      onBack: () => this.toHangar(false),
+      onPadStart: () => this.screens.crash.menu._activate(),
+    });
+  }
+
   // --- entering and leaving ---------------------------------------------------
   // Called from the title's Fly row.
   enter() {
@@ -263,6 +290,8 @@ export class FlightGame {
     g.loop.accumulator = 0;
 
     sc.scene.remove(this.aircraft.root);
+    sc.setOverlay(false);
+    this.aircraft.setInterior(false);
     // The car world is drawn at the screen's resolution with its own shadow.
     sc.setRenderScaleCeiling(1);
     sc.setShadowReach(1);
@@ -633,6 +662,7 @@ export class FlightGame {
       onClose: () => {
         if (this._mapFrom === 'fly') this.showFlyMenu();
         else if (this._mapFrom === 'pause') this.openPause();
+        else if (this._mapFrom === 'crash') this.openCrash();
         else this.resume();
       },
       onTeleport: (ap, mode) => this.start(mode, ap),
@@ -692,14 +722,15 @@ export class FlightGame {
       inp.clearActions();
     }
 
-    // A crash, until there are real ones (milestone 5): note it, then start over.
+    // A crash, until there are real ones (milestone 5): let the wreck sit for a moment, then ask
+    // where to start again.
     if (p.crashed && this._crashT < 0 && !this.paused) {
       this._crashT = 0;
-      this.hud.note(`The ${this.def.name} ${p.crashReason}. Back at the hangar in a moment.`, 3);
+      this.hud.note(`The ${this.def.name} ${p.crashReason}.`, 3);
     }
     if (this._crashT >= 0 && !this.paused) {
       this._crashT += dt;
-      if (this._crashT > 2.6) this.toHangar(false);
+      if (this._crashT > FC.crashMenuDelay) this.openCrash();
     }
 
     // Airports: the hangar bay, and where the aircraft has landed.
@@ -738,10 +769,10 @@ export class FlightGame {
     let look = inp.look;
     if (this.screens.fly.visible) {
       this._menuSpin += dt * 0.25;
-      if (this.camera.mode !== 2) this.camera.mode = 2;
+      if (this.camera.mode !== CAM.ORBIT) this.camera.mode = CAM.ORBIT;
       look = this._spinLook || (this._spinLook = { x: 0, y: 0.12 });
       look.x = this._menuSpin;
-    } else if (this.camera.mode === 2 && this._savedCamMode !== 2 && !this.paused) {
+    } else if (this.camera.mode === CAM.ORBIT && this._savedCamMode !== CAM.ORBIT && !this.paused) {
       this.camera.mode = this._savedCamMode;
     }
 
@@ -749,12 +780,18 @@ export class FlightGame {
     let shake = 0;
     let boom = false;
     if (!this.paused) {
-      if (this.shock) boom = this.shock.update(dt, p.mach, !p.crashed && !p.onGround, this.camera.mode === 1);
+      if (this.shock) boom = this.shock.update(dt, p.mach, !p.crashed && !p.onGround, this.camera.isEye);
       if (boom) this.camera.punch = SHOCK.kickFov;
       shake = p.engines[0].abLevel * FC.shakeBurner + (p.stalled ? FC.shakeStall : p.stallWarn ? FC.shakeStall * 0.4 : 0) +
         (this.shock ? this.shock.envelope * SHOCK.shake : 0);
     }
-    this.camera.update(cs, p.tas, agl, look, shake, this.def.cockpitEye, 0, dt);
+    // The eye: the first person view looks from where the pilot's head is, the cockpit view from the
+    // seat (a little back and to the side where the aircraft has one), with the inside drawn.
+    const view = this.def.cockpitView;
+    const inside = this.camera.mode === CAM.COCKPIT && !!this.aircraft.interior;
+    this.camera.update(cs, p.tas, agl, look, shake, inside && view ? view.eye : this.def.cockpitEye, 0, dt);
+    sc.setOverlay(inside);
+    this.aircraft.setInterior(inside);
 
     sc.frame(cs.x, cs.y, cs.z, dt);
     sc.render(dt);
@@ -771,7 +808,7 @@ export class FlightGame {
         ap: this.autopilot,
         fuel: p.fuel / this.def.fuelCapacity, gear: p.gearDown, onGround: p.onGround,
         stallWarn: p.stallWarn, stalled: p.stalled, resetProgress: inp.resetProgress,
-        cockpit: this.camera.mode === 1,
+        cockpit: this.camera.mode === CAM.FIRST,
         x: p.x, z: p.z,
         brake: p.brake, parked: p.parked, steer: p.gear.steerAngle, weightOnWheels: p.gear.weightOnWheels,
         gearWarn: !p.onGround && p.gearDown < 0.5 && agl < p.F.gearWarnAgl && p.cas < p.F.gearWarnCas && p.climb < 3,
@@ -789,7 +826,7 @@ export class FlightGame {
         speed: p.tas,
         stallWarn: p.stallWarn && !p.onGround,
         gearWarn: !p.onGround && p.gearDown < 0.5 && agl < p.F.gearWarnAgl && p.cas < p.F.gearWarnCas && p.climb < 3,
-        cockpit: this.camera.mode === 1,
+        cockpit: this.camera.isEye,
         boom,
         dt,
       });

@@ -104,6 +104,83 @@ export const lighten = (hex, k) => {
   return c.lerp(new THREE.Color(0xffffff), k).getHex();
 };
 
+// The canopy's sections (the bubble over the cockpit), shared with the Cockpit view's frame
+// (render/aircraft/cockpits.js), whose arches follow them.
+export const CANOPY_STATIONS = [
+  { z: 0.7, y0: 0.66, y1: 0.9, hw: 0.3, xc: 0, top: 0.8 },
+  { z: 1.8, y0: 0.62, y1: 1.5, hw: 0.66, xc: 0, top: 0.55 },
+  { z: 3.1, y0: 0.6, y1: 1.4, hw: 0.62, xc: 0, top: 0.55 },
+  { z: 4.5, y0: 0.56, y1: 0.98, hw: 0.4, xc: 0, top: 0.65 },
+  { z: 5.1, y0: 0.54, y1: 0.76, hw: 0.16, xc: 0, top: 0.8 },
+];
+
+// An intake's sections, front first, outboard positive (mirrored per side): z, the centre
+// of the section across (cx) and up (cy), its half width and height, the shear that leans the
+// top edge outboard (metres of lean per metre of half height), and the rake that sweeps the
+// front ring's upper and outer edges back (metres).
+const INTAKE = [
+  { z: 3.4, cx: 1.26, cy: -0.43, hw: 0.4, hh: 0.44, shear: 0.14, rake: 0.6 },
+  { z: 2.7, cx: 1.3, cy: -0.45, hw: 0.44, hh: 0.48, shear: 0.12, rake: 0 },
+  { z: 1.0, cx: 1.42, cy: -0.48, hw: 0.52, hh: 0.5, shear: 0.08, rake: 0 },
+  { z: -1.2, cx: 1.5, cy: -0.5, hw: 0.56, hh: 0.5, shear: 0, rake: 0 },
+];
+const INTAKE_N = 5; // how square the section is (2 is an ellipse)
+const INTAKE_SEG = 28;
+
+// The point of section s at angle a round it: `out` is 0 at its inboard edge to 1 at its outboard
+// edge, `up` 0 at the bottom to 1 at the top.
+function intakePoint(s, a, side) {
+  const c = Math.cos(a), sn = Math.sin(a);
+  const px = Math.sign(c) * Math.pow(Math.abs(c), 2 / INTAKE_N);
+  const py = Math.sign(sn) * Math.pow(Math.abs(sn), 2 / INTAKE_N);
+  const up = (py + 1) / 2, out = (px + 1) / 2;
+  return [side * (s.cx + px * s.hw + s.shear * py * s.hh), s.cy + py * s.hh, s.z - s.rake * (0.75 * up + 0.25 * out)];
+}
+
+function intakeDuct(side, sections) {
+  const pos = [], idx = [];
+  for (const s of sections) {
+    for (let k = 0; k < INTAKE_SEG; k++) pos.push(...intakePoint(s, (k / INTAKE_SEG) * Math.PI * 2, side));
+  }
+  for (let r = 0; r < sections.length - 1; r++) {
+    for (let k = 0; k < INTAKE_SEG; k++) {
+      const a = r * INTAKE_SEG + k, b = r * INTAKE_SEG + ((k + 1) % INTAKE_SEG), c = a + INTAKE_SEG, d = b + INTAKE_SEG;
+      if (side > 0) idx.push(a, c, b, b, c, d); else idx.push(a, b, c, b, d, c);
+    }
+  }
+  // The rear end, closed: a fan on vertices of its own.
+  const last = sections[sections.length - 1], base = pos.length / 3;
+  pos.push(side * last.cx, last.cy, last.z);
+  for (let k = 0; k < INTAKE_SEG; k++) pos.push(...intakePoint(last, (k / INTAKE_SEG) * Math.PI * 2, side));
+  for (let k = 0; k < INTAKE_SEG; k++) {
+    const a = base + 1 + k, b = base + 1 + ((k + 1) % INTAKE_SEG);
+    if (side > 0) idx.push(base, a, b); else idx.push(base, b, a);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+// The throat: the section's shape, filled, `depth` metres behind the mouth, looking forward.
+function intakeThroat(side, s, depth) {
+  const pos = [side * s.cx, s.cy, s.z - depth - 0.3 * s.rake], idx = [];
+  for (let k = 0; k < INTAKE_SEG; k++) {
+    const p = intakePoint({ ...s, rake: 0 }, (k / INTAKE_SEG) * Math.PI * 2, side);
+    pos.push(p[0] * 0.97, p[1], s.z - depth - 0.3 * s.rake);
+  }
+  for (let k = 0; k < INTAKE_SEG; k++) {
+    const a = 1 + k, b = 1 + ((k + 1) % INTAKE_SEG);
+    if (side > 0) idx.push(0, a, b); else idx.push(0, b, a);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
 export function buildAircraft(def, livery = null) {
   const L = normalizeLivery(livery);
   const root = new THREE.Group();
@@ -152,30 +229,18 @@ export function buildAircraft(def, livery = null) {
   ], 3, 36);
   body.add(mesh(own(fuselage.geometry()), hull));
 
-  // Intakes: a squared duct under each wing root, mirrored.
+  // Intakes: on each side of the forebody, under the wing's root, with a mouth that is a
+  // parallelogram (the top edge leaning outboard) and a lip swept back along its top and outer
+  // edges, the cheek the colour of the hull and the throat black. Modelled on photographs of the
+  // aircraft from above and ahead: the duct starts under the rear of the canopy and swells into
+  // the fuselage's side, it is not a separate pod.
   for (const side of [1, -1]) {
-    const duct = new Loft([
-      { z: -0.9, y0: -0.98, y1: 0.0, hw: 0.56, xc: side * 1.5, top: 1 },
-      { z: 1.4, y0: -1.02, y1: 0.06, hw: 0.62, xc: side * 1.54, top: 1 },
-      { z: 3.6, y0: -0.84, y1: -0.04, hw: 0.44, xc: side * 1.22, top: 1 },
-    ], 4.5, 24);
-    body.add(mesh(own(duct.geometry()), dark));
-    // The dark mouth of the intake.
-    const mouth = new THREE.Mesh(new THREE.PlaneGeometry(0.78, 0.86), black);
-    own(mouth.geometry);
-    mouth.position.set(side * 1.22, -0.45, 3.65);
-    mouth.rotation.y = Math.PI;
-    body.add(mouth);
+    body.add(mesh(own(intakeDuct(side, INTAKE)), sideHull(side)));
+    body.add(mesh(own(intakeThroat(side, INTAKE[0], 0.5)), black));
   }
 
   // --- canopy -------------------------------------------------------------
-  const canopy = new Loft([
-    { z: 0.7, y0: 0.66, y1: 0.9, hw: 0.3, xc: 0, top: 0.8 },
-    { z: 1.8, y0: 0.62, y1: 1.5, hw: 0.66, xc: 0, top: 0.55 },
-    { z: 3.1, y0: 0.6, y1: 1.4, hw: 0.62, xc: 0, top: 0.55 },
-    { z: 4.5, y0: 0.56, y1: 0.98, hw: 0.4, xc: 0, top: 0.65 },
-    { z: 5.1, y0: 0.54, y1: 0.76, hw: 0.16, xc: 0, top: 0.8 },
-  ], 2.6, 24);
+  const canopy = new Loft(CANOPY_STATIONS, 2.6, 24);
   body.add(mesh(own(canopy.geometry()), glass));
 
   // The spine pattern: a narrow stripe of the accent standing a little proud of

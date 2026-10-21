@@ -192,6 +192,8 @@ export const F22 = {
 
   // --- where the pilot sits and the camera looks --------------------------
   cockpitEye: [0, 1.36, 3.1],
+  // The pilot's eye in the Cockpit camera view, in the seat (the first person view uses cockpitEye).
+  cockpitView: { eye: [0, 1.3, 2.9] },
   camTarget: [0, 0.5, 0],
 
   // --- the figures it is held to ------------------------------------------
@@ -310,8 +312,9 @@ export const B737 = {
   bodyCdA: 0.95,           // m2: the fuselage and nacelles (the wings and tails carry their own; a clean airliner's CD0 is about 0.021)
   gearCdA: 2.4,            // m2 added with the gear down
   airbrakeName: 'Spoilers', // what the HUD calls the airbrake
-  airbrakeCdA: 5.0,        // m2 added with the spoilers out
-  airbrakeLiftDump: 0.8,   // the share of the wings' lift the spoilers kill, fully out
+  airbrakeCdA: 7.0,        // m2 added with the spoilers out: at 250 kt, 3,000 m it slows the aircraft by about 1.2 kt a second (a person said they did not slow it)
+  airbrakeLiftDump: 0.8,   // the share of the wings' lift the spoilers kill, fully out, with the wheels on the ground
+  airbrakeLiftDumpAir: 0.1, // the same in the air, where they are a speed brake (at 0.8 it dropped out of the sky and gained speed)
   // Ground effect: 10% more lift at the ground, nothing a wingspan up. `wingY` is where the
   // wings are against the centre of mass (m). It cushions the flare, as it does in life.
   groundEffect: { gain: 0.1, height: 36, wingY: -1.3 },
@@ -388,6 +391,8 @@ export const B737 = {
 
   // --- where the pilot sits and the camera looks --------------------------
   cockpitEye: [-0.5, 1.5, 14.0],
+  // The captain's eye in the Cockpit camera view: the left seat (+x is left).
+  cockpitView: { eye: [0.55, 0.82, 14.1] },
   camTarget: [0, 0.5, 0],
 
   // --- the figures it is held to ------------------------------------------

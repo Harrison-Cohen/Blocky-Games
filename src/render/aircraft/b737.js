@@ -28,6 +28,9 @@ const GLASS = 0x1b2b3b;
 const TYRE = 0x16191d;
 const HUB = 0xb8bec6;
 
+// How far the gear folds: the mains a quarter turn inboard and 0.7 m toward the middle, the nose leg a
+// quarter turn aft (radians, metres).
+const FOLD_MAIN = Math.PI / 2, FOLD_NOSE = Math.PI / 2, FOLD_SLIDE = 0.7;
 const rad = (d) => (d * Math.PI) / 180;
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -39,11 +42,19 @@ const FUSELAGE = [
   { z: -18.0, y0: -0.85, y1: 1.7, hw: 1.15, xc: 0, top: 1 },
   { z: -14.0, y0: -1.45, y1: 1.95, hw: 1.62, xc: 0, top: 1 },
   { z: -10.0, y0: -1.75, y1: 2.01, hw: 1.88, xc: 0, top: 1 },
-  { z: 10.5, y0: -1.75, y1: 2.01, hw: 1.88, xc: 0, top: 1 },
-  { z: 13.5, y0: -1.7, y1: 1.97, hw: 1.84, xc: 0, top: 1 },
-  { z: 15.5, y0: -1.45, y1: 1.78, hw: 1.58, xc: 0, top: 1 },
-  { z: 16.9, y0: -1.0, y1: 1.4, hw: 1.05, xc: 0, top: 1 },
-  { z: 17.57, y0: -0.4, y1: 0.7, hw: 0.4, xc: 0, top: 1 },
+  { z: 8.4, y0: -1.75, y1: 2.01, hw: 1.88, xc: 0, top: 1 },
+  // The nose: a taper from the full tube to a small tip over about 9 m, as a 737's is (measured off
+  // photographs of the side: the height is about 56 percent of the tube's at 1.4 m from the tip, 77
+  // at 3.1 m, 88 at 4.8 m, and the tip is a blunt 0.7 m), the axis staying where it was. The first
+  // version closed over the last 4 m into a blunt dome.
+  { z: 10.57, y0: -1.705, y1: 1.965, hw: 1.835, xc: 0, top: 1 },
+  { z: 12.17, y0: -1.615, y1: 1.875, hw: 1.745, xc: 0, top: 1 },
+  { z: 13.57, y0: -1.48, y1: 1.74, hw: 1.61, xc: 0, top: 1 },
+  { z: 14.77, y0: -1.32, y1: 1.58, hw: 1.45, xc: 0, top: 1 },
+  { z: 15.77, y0: -1.13, y1: 1.39, hw: 1.26, xc: 0, top: 1 },
+  { z: 16.57, y0: -0.915, y1: 1.175, hw: 1.045, xc: 0, top: 1 },
+  { z: 17.17, y0: -0.665, y1: 0.925, hw: 0.795, xc: 0, top: 1 },
+  { z: 17.57, y0: -0.22, y1: 0.48, hw: 0.35, xc: 0, top: 1 },
 ];
 const FUS_N = 2.2;
 
@@ -57,7 +68,7 @@ const zTE = (x) => (x < 4.6 ? -5.4 - (0.6 / 4.6) * x : -6.0 - (1.4 / (SEMI - 4.6
 // the section's own terms), pushed `grow` metres out; returns [x, y, nx, ny] with the outward
 // normal. The superellipse Loft draws.
 const SKIN = new Loft(FUSELAGE, FUS_N, 8);
-function skin(z, py, grow = 0) {
+export function skin(z, py, grow = 0) {
   const s = SKIN.at(z);
   const b = (s.y1 - s.y0) / 2, yc = (s.y0 + s.y1) / 2;
   const t = Math.pow(Math.max(0, 1 - Math.pow(Math.abs(py), FUS_N)), 1 / FUS_N);
@@ -116,6 +127,44 @@ function windows(z0, z1, py, side, pitch = 0.51, w = 0.3, h = 0.38) {
   return g;
 }
 
+// A curved patch of the skin, one side: z0 to z1 along the aircraft and heights py0 to py1 of the
+// section, standing `grow` proud of it, as a grid so it follows the curve. Windows are made of
+// these: glass, and a frame a little larger underneath it.
+function patch(z0, z1, py0, py1, side, grow = 0.02, nz = 4, np = 5) {
+  const pos = [], idx = [];
+  for (let i = 0; i <= nz; i++) {
+    const z = z0 + ((z1 - z0) * i) / nz;
+    for (let j = 0; j <= np; j++) {
+      const [x, y] = skin(z, py0 + ((py1 - py0) * j) / np, grow);
+      pos.push(side * x, y, z);
+    }
+  }
+  for (let i = 0; i < nz; i++) {
+    for (let j = 0; j < np; j++) {
+      const a = i * (np + 1) + j, b = a + 1, c = (i + 1) * (np + 1) + j, d = c + 1;
+      if (side > 0) idx.push(a, b, c, b, d, c);
+      else idx.push(a, c, b, b, c, d);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+// The flight deck's glass, per side, as a 737's is: the forward windshield (high on the nose's
+// slope, so it faces forward over the top as well as out to the side), the front side window and
+// the sliding window, with the small fixed one behind (z0, z1, py0, py1 of each, py being the
+// height across the section, -1 under the belly to 1 on the crown). From the photos the glass
+// starts about 1.4 m behind the nose tip and runs to about 4 m behind it, high on the shoulder.
+export const COCKPIT_GLASS = [
+  [15.5, 16.5, 0.4, 0.985],
+  [14.78, 15.44, 0.28, 0.86],
+  [14.0, 14.72, 0.28, 0.8],
+  [13.5, 13.94, 0.3, 0.74],
+];
+
 // A panel hung on a hinge line: a group at the start of the line, an axis along it that points
 // toward the left on both wings (so the same turn lowers the trailing edge on both), and the
 // slab, given in the wing's frame, moved so the hinge is the group's origin.
@@ -173,25 +222,21 @@ export function buildB737(def, livery = null) {
   if (cheat) {
     for (const side of [1, -1]) body.add(mesh(own(band(-18, 15.2, 0.18, 0.4, side, 0.012, 0.8)), accent));
   }
-  // The windscreen and the passenger windows.
-  for (const [x, ry] of [[-0.42, 0.34], [0.42, -0.34], [0, 0]]) {
-    // One face only, turned outward: seen from the flight deck it is not there, so the
-    // cockpit camera looks through the windscreen and not at the back of it.
-    const pane = mesh(own(new THREE.PlaneGeometry(0.62, 0.62).rotateX(-Math.PI / 2)), glass);
-    pane.castShadow = false;
-    const [, y] = skin(15.55, 0.93, 0.0);
-    pane.position.set(x, y + 0.02, 15.75);
-    // Raked back: the front edge low, as the nose falls away ahead of it.
-    pane.rotation.set(rad(17), ry * 0.5, 0);
-    body.add(pane);
+  // The flight deck's glass and the passenger windows.
+  for (const side of [1, -1]) {
+    for (const [z0, z1, p0, p1] of COCKPIT_GLASS) {
+      const frame = mesh(own(patch(z0 - 0.07, z1 + 0.07, p0 - 0.06, p1 + 0.05, side, 0.012, 4, 5)), dark);
+      frame.castShadow = false;
+      body.add(frame);
+      const pane = mesh(own(patch(z0, z1, p0, p1, side, 0.02, 4, 5)), glass);
+      pane.castShadow = false;
+      body.add(pane);
+    }
   }
   for (const side of [1, -1]) {
     const w = mesh(own(windows(-11.8, 12.4, 0.36, side)), glass);
     w.castShadow = false;
     body.add(w);
-    const cw = mesh(own(windows(14.6, 15.4, 0.36, side, 0.5, 0.42, 0.34)), glass);
-    cw.castShadow = false;
-    body.add(cw);
   }
   // The registration, on the rear fuselage, readable from outside each side.
   if (L.number != null) {
@@ -430,7 +475,9 @@ export function buildB737(def, livery = null) {
       g.add(brace);
     }
     body.add(g);
-    gear.push({ group: g, strut, wheel, y0: w.pos[1] + r, belly: bellyY, name: w.name, steer: !!w.steer, radius: r });
+    // `x0` and `side` are for the fold: a main gear swings inboard (toward the middle) and its
+    // wheels lie flat inside the belly; the nose gear swings aft into the nose well.
+    gear.push({ group: g, strut, wheel, y0: w.pos[1] + r, belly: bellyY, name: w.name, steer: !!w.steer, radius: r, x0: w.pos[0], side: Math.sign(w.pos[0]) });
   }
 
   // --- movement ------------------------------------------------------------------------------------------------------------------------------
@@ -468,21 +515,32 @@ export function buildB737(def, livery = null) {
     // The fans turn with the engines.
     const spin = 0.4 + 3.2 * s.spool;
     fans.forEach((f, i) => { f.rotation.z += dt * spin * 6 * (i ? -1 : 1); });
-    // The gear: lifted into the body as it retracts, the strut shortening as it compresses, the
-    // wheels turning, the nose wheel steering.
-    const gd = s.gear;
+    // The gear folds into the body, as a real one does (the first version lifted the legs straight
+    // up and they showed through the wing and the skin, then vanished): a main leg swings inboard
+    // through a quarter turn, which lays its wheels flat, while it slides toward the middle and up so
+    // they end inside the belly; the nose leg swings aft into the nose well. Whatever is inside the
+    // body is hidden by it, so a leg is only drawn while some of it is out, and the strut shortens
+    // as it compresses and the wheels turn as before.
+    const fold = 1 - s.gear;
     for (let i = 0; i < gear.length; i++) {
       const part = gear[i];
-      part.group.visible = gd > 0.03;
+      part.group.visible = fold < 0.995;
       if (!part.group.visible) continue;
       const comp = i < s.compression.length ? s.compression[i] : 0;
-      const centreY = part.y0 + comp + (1 - gd) * 1.8;
+      const centreY = part.y0 + comp;
       const len = Math.max(0.1, part.belly - centreY);
       part.strut.scale.set(1, len, 1);
       part.strut.position.y = -len / 2;
       part.wheel.position.y = centreY - part.belly;
       part.wheel.rotation.x = physics.gear.spin[i] || 0;
-      if (part.steer) part.group.rotation.y = s.steer;
+      const g = part.group;
+      if (part.steer) {
+        g.rotation.set(fold * FOLD_NOSE, s.steer * (1 - fold), 0);
+        g.position.set(part.x0, part.belly + 0.35 * fold, g.position.z);
+      } else {
+        g.rotation.set(0, 0, part.side * -fold * FOLD_MAIN);
+        g.position.set(part.x0 - part.side * FOLD_SLIDE * fold, part.belly + 0.4 * fold, g.position.z);
+      }
     }
   }
 

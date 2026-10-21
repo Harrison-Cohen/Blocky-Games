@@ -115,7 +115,8 @@ export class AircraftPhysics {
     this.flapAutoRetract = !!fl.autoRetract;
     // The spoilers' loss of the wings' lift at full extension, and whether the
     // afterburner exists at all (a turbofan's `ab` is its `dry`).
-    this.liftDump = def.airbrakeLiftDump || 0;
+    this.liftDump = def.airbrakeLiftDump || 0;                    // on the ground: the wheels carrying weight
+    this.liftDumpAir = def.airbrakeLiftDumpAir ?? this.liftDump;  // in the air
     this.hasAb = def.engines.some((e) => e.ab > e.dry);
     // Ground effect: within a wingspan of the ground the wings lift more (the air under them
     // is held), by `gain` at the ground, falling off as the square of how high the wings
@@ -442,7 +443,11 @@ export class AircraftPhysics {
       const k = 1 - (this.agl + this.geWing) / this.geHeight;
       if (k > 0) geLift = this.geGain * k * k;
     }
-    const wingLift = (1 + this.flapG) * (1 - this.liftDump * this.airbrake) * (1 + geLift);
+    // Spoilers: on the ground they dump most of the wing's lift so the brakes bite; in the air they
+    // are a speed brake (mostly drag, a little lift lost), or the aircraft would drop out of the
+    // sky instead of slowing. The two blend with the weight on the wheels.
+    const dump = this.liftDumpAir + (this.liftDump - this.liftDumpAir) * clamp(this.gear.weightOnWheels / F.autoSpoilerWow, 0, 1);
+    const wingLift = (1 + this.flapG) * (1 - dump * this.airbrake) * (1 + geLift);
     const surfaces = this.surfaces;
     for (let i = 0; i < surfaces.length; i++) {
       const s = surfaces[i];
@@ -598,7 +603,7 @@ export class AircraftPhysics {
         this.crashed = true; this.crashReason = 'hit the ground';
       } else if (this.gear.touchdownSink > F.maxSink) {
         this.crashed = true; this.crashReason = 'landed too hard';
-      } else if (this.gear.hullHit > 0.35) {
+      } else if (this.gear.hullHit > F.hullCrashDepth) {
         this.crashed = true; this.crashReason = 'hit the ground';
       } else if (this.gear.skidImpact > F.skidCrashSpeed || this.gear.skidHit > F.skidCrashDepth) {
         this.crashed = true; this.crashReason = 'struck its tail on the ground';

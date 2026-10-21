@@ -1724,9 +1724,11 @@ export const FLIGHT = {
 
   // Until crashes exist (milestone 5), a hit this hard (m/s into the ground
   // for the skin, m/s of sink for the gear) resets you to the runway.
-  // Range: crashSpeed 2-10, maxSink 3-9.
+  // Range: crashSpeed 2-10, maxSink 3-9. `hullCrashDepth` is how far (m) a point of the
+  // skin may be pushed into the ground before it is a crash (range 0.1-1).
   crashSpeed: 4,
   maxSink: 5.5,
+  hullCrashDepth: 0.35,
 };
 
 // The flat test field of milestone 1: a plain with a runway on it, to learn
@@ -1805,11 +1807,24 @@ export const FLIGHT_CAMERA = {
   nearPerMetre: 0.004,
   nearMax: 20,
   farMargin: 3000,
+  // The pilot's eye. First person view: the field of view (degrees, at least) and the most the
+  // near plane may grow to (m; the nose of the aircraft is a few metres off). Range: 60-95,
+  // 0.5-5. Cockpit view: the field of view, and the near and far planes of the second pass that
+  // draws the inside of the cockpit (m). Range: 60-100, 0.02-0.2, 30-300.
+  firstFov: 72,
+  firstNearMax: 2,
+  cockpitFov: 78,
+  cockpitNear: 0.04,
+  cockpitFar: 120,
 
   // Shake from the afterburner and from the airframe in the stall, metres.
   // Range 0-0.3.
   shakeBurner: 0.04,
   shakeStall: 0.12,
+
+  // After a crash the wreck is shown this many seconds before the respawn menu opens.
+  // Range 0.5-4.
+  crashMenuDelay: 1.6,
 };
 
 // ============================================================================
@@ -2529,12 +2544,17 @@ export const FLIGHT_OVERRIDES = {
     tailMargin: 0.05,
     tailBand: 0.03,
     tailLead: 0.15,
-    // A tail that scrapes is a tail strike, and a hard touchdown over 4 m/s of sink is a
-    // hard landing (the gear is certified for about 3 m/s).
-    skidCrashSpeed: 5,
-    skidCrashDepth: 0.5,
-    crashSpeed: 3,
-    maxSink: 4,
+    // What counts as a crash, kinder than the first version (a person flew it and said even a soft
+    // landing was a crash: a touchdown at 4.1 m/s, 800 feet a minute, was). The gear is certified for
+    // 3 m/s and a real one survives a good deal more, so the limit is 6.5 m/s (1,280 ft/min, about
+    // what a flare that came too late gives); an unflared 3 degree approach is 7.6 m/s and still a
+    // crash. The nacelles hang 0.65 m above the tyres, so the skin may be pushed 0.6 m into the
+    // ground (not 0.35) and hit it at 5 m/s before it is a crash, and a tail may scrape 0.8 m.
+    skidCrashSpeed: 7,
+    skidCrashDepth: 0.8,
+    crashSpeed: 5,
+    maxSink: 6.5,
+    hullCrashDepth: 0.6,
   },
 };
 

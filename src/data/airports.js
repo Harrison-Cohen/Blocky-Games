@@ -14,10 +14,17 @@
 // across v; sizes are metres. Fractions may run outside 0 to 1 (a heliport's
 // pad is 40 m long, so its apron is 1.75 of it).
 //
-// Dimensions follow published practice, scaled to a game: ICAO Annex 14 gives a
-// 45 m runway for code 4E and 60 m for code F, a taxiway of 23 m for code E;
-// the runway keeps a flat strip either side and the lights are white along the
-// edge, green at the threshold, red at the end and blue along a taxiway.
+// Dimensions follow published practice, scaled UP for a game: ICAO Annex 14 gives a
+// 45 m runway for code 4E and 60 m for code F, a taxiway of 23 m for code E. A 737 is 36 m
+// across the wings and is flown by a person looking at it from behind, so the pavement is
+// made wide enough to be landed on and taxied on without effort: every runway is at least
+// 1.25 wingspans of it (the major's is two and a half), and the taxiways are as wide as the
+// wingspan or nearly. (The first version was the published figures, and a 737 on a 30 m
+// regional runway was wider than the runway.) The rule that keeps the world as it was: a
+// tier's flat platform is the same rectangle it always was, so what a runway gains in width
+// comes out of its `right` margin, the parallel taxiway grows inward (its outer edge, and so
+// the apron and the buildings, stay where they were) and a stub's gap shrinks. The lights
+// are white along the edge, green at the threshold, red at the end and blue along a taxiway.
 // Estimates (a heliport's pad and apron, a regional's hangars) are marked.
 // ============================================================================
 
@@ -26,8 +33,8 @@ export const TIERS = {
   // take off), a parallel taxiway with four exits, a deep apron, a terminal.
   major: {
     label: 'Major airport',
-    runway: { length: 3500, width: 60, surface: 'runway' },
-    taxiway: { kind: 'parallel', width: 23, offset: 115, exits: [0.03, 0.27, 0.66, 0.97], exitWidth: 23 },
+    runway: { length: 3500, width: 90, surface: 'runway' },
+    taxiway: { kind: 'parallel', width: 45, offset: 104, exits: [0.03, 0.27, 0.66, 0.97], exitWidth: 45 },
     apron: { from: 0.28, to: 0.72, depth: 150 },
     // The row along the back of the apron. `zone` gives a hangar a marked bay in
     // front of its door, where stopping opens the Hangar.
@@ -44,8 +51,8 @@ export const TIERS = {
     // runway's right edge, out to `leftTo` metres on the left, blending into the
     // land over `blend`. These are exactly the flat rectangle the home runway of
     // milestone 2 had (420 either side, 500 past each end, 1,100 of blend), so
-    // the land round it is unchanged.
-    platform: { end: 500, right: 390, leftTo: 420, blend: 1100 },
+    // the land round it is unchanged (the 90 m runway's extra 30 m is taken off `right`).
+    platform: { end: 500, right: 375, leftTo: 420, blend: 1100 },
     relief: 40,
     range: [0, 0],
   },
@@ -54,8 +61,8 @@ export const TIERS = {
   // shelters in a row, a plain tower.
   military: {
     label: 'Air base',
-    runway: { length: 3000, width: 46, surface: 'runway', blast: 60 },
-    taxiway: { kind: 'parallel', width: 18, offset: 95, exits: [0.04, 0.3, 0.7, 0.96], exitWidth: 18 },
+    runway: { length: 3000, width: 70, surface: 'runway', blast: 60 },
+    taxiway: { kind: 'parallel', width: 35, offset: 86.5, exits: [0.04, 0.3, 0.7, 0.96], exitWidth: 35 },
     apron: { from: 0.25, to: 0.75, depth: 120 },
     back: [
       { kind: 'hangar', at: 0.30, w: 34, d: 42, h: 9, zone: true, shelter: true },
@@ -68,7 +75,7 @@ export const TIERS = {
     stands: 8,
     lights: { edge: true, center: true, threshold: true, taxi: true, apron: true, papi: true, beacon: true },
     marks: { designators: true, touchdown: false },
-    platform: { end: 300, right: 160, left: 70, blend: 900 },
+    platform: { end: 300, right: 148, left: 70, blend: 900 },
     relief: 30,
     range: [22000, 46000],
   },
@@ -76,8 +83,8 @@ export const TIERS = {
   // Regional airports: 1,500 to 2,000 m, a parallel taxiway, a small apron.
   regional: {
     label: 'Regional airport',
-    runway: { length: 1800, width: 30, surface: 'runway' },
-    taxiway: { kind: 'parallel', width: 15, offset: 75, exits: [0.05, 0.5, 0.95], exitWidth: 15 },
+    runway: { length: 1800, width: 60, surface: 'runway' },
+    taxiway: { kind: 'parallel', width: 30, offset: 67.5, exits: [0.05, 0.5, 0.95], exitWidth: 30 },
     apron: { from: 0.34, to: 0.66, depth: 90 },
     back: [
       { kind: 'hangar', at: 0.40, w: 36, d: 30, h: 11, zone: true },
@@ -87,7 +94,7 @@ export const TIERS = {
     stands: 5,
     lights: { edge: true, center: false, threshold: true, taxi: true, apron: true, papi: true, beacon: true },
     marks: { designators: true, touchdown: false },
-    platform: { end: 180, right: 130, left: 50, blend: 700 },
+    platform: { end: 180, right: 115, left: 50, blend: 700 },
     relief: 30,
     range: [10000, 50000],
   },
@@ -96,8 +103,8 @@ export const TIERS = {
   // track in the registry (see `stripFor`).
   strip: {
     label: 'Airstrip',
-    runway: { length: 1200, width: 25, surface: 'runway' },
-    taxiway: { kind: 'stub', width: 12, at: 0.5, gap: 28 },
+    runway: { length: 1200, width: 45, surface: 'runway' },
+    taxiway: { kind: 'stub', width: 25, at: 0.5, gap: 18 },
     apron: { from: 0.4, to: 0.62, depth: 70 },
     back: [
       { kind: 'hangar', at: 0.46, w: 30, d: 26, h: 9, zone: true },
@@ -106,7 +113,7 @@ export const TIERS = {
     stands: 3,
     lights: { edge: true, center: false, threshold: true, taxi: false, apron: false, papi: false, beacon: true },
     marks: { designators: true, touchdown: false },
-    platform: { end: 150, right: 100, left: 50, blend: 500 },
+    platform: { end: 150, right: 90, left: 50, blend: 500 },
     relief: 50,
     range: [0, 0],
   },
@@ -117,7 +124,7 @@ export const TIERS = {
   heliport: {
     label: 'Heliport',
     runway: { length: 40, width: 40, surface: 'tarmac', pad: true },
-    taxiway: { kind: 'stub', width: 14, at: 0.5, gap: 20 },
+    taxiway: { kind: 'stub', width: 20, at: 0.5, gap: 20 },
     apron: { from: -0.4, to: 1.4, depth: 70 },
     back: [
       { kind: 'hangar', at: 0.5, w: 30, d: 24, h: 8, zone: true },

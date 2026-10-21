@@ -25,7 +25,11 @@ const { OPEN_WORLD } = await import(H.R + 'data/tuning.js');
 const { buildAircraft } = await import(H.R + 'render/AircraftBuilder.js');
 const { AircraftPhysics, makeInput, field, DT } = H;
 
-// Recorded on the tree as it stood before milestone 4 (commit f00427b).
+// The physics hashes were recorded on the tree as it stood before milestone 4 (commit f00427b) and
+// have not moved. The three mesh hashes were re-recorded once, deliberately, when the F-22's side
+// intakes were remodelled from photographs (swept parallelogram mouths faired into the fuselage
+// instead of pods under the wing roots); the recorded values before that were c62a6dc3, 468e0c98
+// and 3f01b48b. Nothing else about the mesh changed.
 export const GOLDEN = {
   takeoff: '3f2cfbfe',
   scripted: '09bf0cef',
@@ -33,9 +37,9 @@ export const GOLDEN = {
   landing: '0245d3c6',
   taxi: 'c28ddd66',
   parked: 'dc711af3',
-  meshDefault: 'c62a6dc3',
-  meshTips: '468e0c98',
-  meshSplit: '3f01b48b',
+  meshDefault: 'c55516da',
+  meshTips: '628e730d',
+  meshSplit: 'f8b23a12',
 };
 
 const STATE = ['x', 'y', 'z', 'vx', 'vy', 'vz', 'qx', 'qy', 'qz', 'qw', 'wx', 'wy', 'wz', 'fuel', 'mass',

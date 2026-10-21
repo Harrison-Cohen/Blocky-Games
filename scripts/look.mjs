@@ -7,9 +7,9 @@
 //   node scripts/look.mjs [out-dir] [url]
 //
 // Writes title.png, fly-menu.png, apron.png, runway.png, air-chase.png,
-// air-cockpit.png, air-orbit.png, close-up.png, map.png, hangar.png, pause.png, then the
+// air-first-person.png, air-cockpit.png, air-orbit.png, close-up.png, map.png, hangar.png, pause.png, then the
 // Boeing 737 chosen in the Hangar (hangar-737-*.png, apron-737.png, runway-737.png,
-// approach-737.png, spoilers-737.png, cockpit-737.png, map-737.png) and back-on-title.png
+// approach-737.png, spoilers-737.png, first-person-737.png, cockpit-737.png, map-737.png) and back-on-title.png
 // into out-dir (default /tmp/look). The page's physics barely runs in a software-rendered
 // browser, so the 737 is flown by stepping the aircraft here (flight.step).
 
@@ -40,8 +40,11 @@ try {
   await shot('air-chase');
   await b.eval('flight.camera.mode = 1; flight._savedCamMode = 1;');
   await b.sleep(700);
-  await shot('air-cockpit');
+  await shot('air-first-person');
   await b.eval('flight.camera.mode = 2; flight._savedCamMode = 2;');
+  await b.sleep(900);
+  await shot('air-cockpit');
+  await b.eval('flight.camera.mode = 3; flight._savedCamMode = 3;');
   await b.sleep(700);
   await shot('air-orbit');
   await b.eval('flight.camera.mode = 0; flight._savedCamMode = 0; flight.camera.cfg = { ...flight.camera.cfg, distance: 21, height: 4.2, speedPullback: 0 };');
@@ -92,6 +95,9 @@ try {
   await b.sleep(150);
   await shot('spoilers-737');
   await b.eval('flight.input.state.airbrake = false; flight.camera.cfg = { ...flight.camera.cfg, distance: 78, height: 19, speedPullback: 30 }; flight.camera.mode = 1; flight._savedCamMode = 1; flight.camera.reset();');
+  await b.sleep(900);
+  await shot('first-person-737');
+  await b.eval('flight.camera.mode = 2; flight._savedCamMode = 2; flight.camera.reset();');
   await b.sleep(900);
   await shot('cockpit-737');
   await b.eval('flight.camera.mode = 0; flight._savedCamMode = 0; flight.camera.reset(); flight.autopilot.engage(flight.physics)');

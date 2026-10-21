@@ -133,13 +133,31 @@ export default async function run(kit) {
     const al = [angle(1), angle(2), angle(3)];
     check(al[0] > al[1] && al[1] > al[2], `and so does the body's angle of attack at 160 kt (5, 15, 30: ${al.map((a) => f1(deg(a))).join(', ')} deg)`);
 
-    // Spoilers: full out at 250 kt, the stick centred, it sinks and slows.
+    // Spoilers in the air are a speed brake: full out at 250 kt with the stick untouched it slows down
+    // (it used to drop out of the sky at 60 m/s and GAIN speed: a person flew it), sinks a little, and
+    // is nowhere near the stall.
     const base = A.trimmedAirliner(D, 3000, 250), spo = A.trimmedAirliner(D, 3000, 250);
-    let vyB = 0, vyS = 0;
-    H.run(base.p, base.inp, 6, () => { vyB = base.p.vy; });
+    const v0 = base.p.cas;
+    let vyB = 0, vyS = 0, aoaS = 0, warned = false;
+    H.run(base.p, base.inp, 8, () => { vyB = base.p.vy; });
     spo.inp.airbrake = true;
-    H.run(spo.p, spo.inp, 6, () => { vyS = spo.p.vy; });
-    check(spo.p.airbrake > 0.99 && vyS < vyB - 1.5 && spo.p.nz < 0.96, `spoilers fully out at 250 kt: the lift is dumped, ${f1(vyS - vyB)} m/s more sink in six seconds (load ${f2(spo.p.nz)} g)`);
+    H.run(spo.p, spo.inp, 8, () => { vyS = spo.p.vy; aoaS = Math.max(aoaS, spo.p.alpha); if (spo.p.stallWarn) warned = true; });
+    const slower = (base.p.cas - spo.p.cas) / KT;
+    check(spo.p.airbrake > 0.99 && slower > 6 && slower < 30 && vyS - vyB > -9 && vyS < vyB && !warned && !spo.p.stalled && deg(aoaS) < 6,
+      `spoilers fully out at 250 kt are a speed brake: ${f1(slower)} kt slower than without after 8 s (${f2(slower / 8)} kt a second), ${f1(vyS - vyB)} m/s more sink, never above ${f1(deg(aoaS))} deg of angle of attack and no stall warning`);
+    // On the ground they dump the wings' lift: rolling at 70 m/s on its wheels with the flaps at 30, the
+    // wheels carry more of the weight with the spoilers out.
+    const wheelLoad = (out) => {
+      const q = new AircraftPhysics(D);
+      q.setup({ payload: A.payloadFor(D, 62000, 0.3) });
+      q.reset({ x: 0, y: 3.6, z: 0, heading: 0, speed: 70, fuel: 0.3, gear: 1, throttle: 0.5, flaps: 3 });
+      q.flapPos = 3;
+      const i = makeInput({ gearDown: true, analog: false, flaps: 3, airbrake: out });
+      H.run(q, i, 1.5, () => { i.throttleRate = 0; q.throttle = 0.5; });
+      return q.gear.load.reduce((a, b) => a + b, 0);
+    };
+    const wOff = wheelLoad(false), wOn = wheelLoad(true);
+    check(wOn > wOff * 1.15, `on the ground the spoilers dump the lift: at 70 m/s the wheels carry ${f1(wOn / 1000)} kN with them out against ${f1(wOff / 1000)} kN without`);
     // On the ground they come out by themselves at touchdown, and in the air they do not.
     const air = A.trimmedAirliner(D, 3000, 250);
     H.run(air.p, air.inp, 10);
@@ -225,6 +243,18 @@ export default async function run(kit) {
       rows.push(`${name}: down at ${s.tdU.toFixed(0)} m at ${f1(s.tdSink)} m/s, stopped at ${s.stopU.toFixed(0)} m of ${ap.length}${r.p.crashed ? ', CRASHED: ' + r.p.crashReason : ''}`);
     }
     check(ok, `lands at the major from both ends, 3 degrees from 4.5 km, and stops with 600 m to spare: ${rows.join('; ')}`);
+  }
+  {
+    // A firm landing is not a crash. A person flew the first version and said even a soft landing was
+    // one (a touchdown at 4.1 m/s was); a flare that comes late, or a wing low by 10 degrees, is now
+    // survived, and flying it into the runway unflared on a steep path still is one.
+    const { FLIGHT_OVERRIDES } = await import(H.R + 'data/tuning.js');
+    const limit = FLIGHT_OVERRIDES.b737.maxSink;
+    const ap = AP.byId.get('fort-falcon');
+    const run = (opts) => A.landingRun(D, world, ap, threshold(ap), { flaps: 3, dist: 4500, seconds: 120, ...opts });
+    const late = run({ flareAgl: 6, flarePitch: 2 }), hard = run({ flarePitch: 9, flareRate: 3 }), slam = run({ glide: 6, flareAgl: 0.1 });
+    check(late.st.tdSink > 3 && late.st.tdSink < 5 && !late.p.crashed && hard.st.tdSink > 4 && !hard.p.crashed && limit >= 6 && slam.p.crashed,
+      `a late flare (${f1(late.st.tdSink)} m/s down) and a firm one (${f1(hard.st.tdSink)} m/s, 1,000 ft/min) are landings, not crashes (the limit is ${limit} m/s); an unflared 6 degree path is one (${slam.p.crashed ? slam.p.crashReason : 'not'})`);
   }
   {
     // Taxi from the first stand to the runway: wide turns, on pavement the whole way.

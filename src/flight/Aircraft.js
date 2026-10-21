@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { AircraftPhysics, createRenderState } from './AircraftPhysics.js';
 import { buildAircraft } from '../render/AircraftBuilder.js';
 import { buildB737 } from '../render/aircraft/b737.js';
+import { buildInterior } from '../render/aircraft/cockpits.js';
 import { FLIGHT } from '../data/tuning.js';
 
 // The mesh of each aircraft, by `def.model` (data/aircraft.js). The F-22's is the first, and
@@ -29,7 +30,17 @@ export class Aircraft {
     this.parts = built.parts;
     this._dispose = built.dispose;
     this._flame = 0;
+    // The inside of the cockpit, for the Cockpit camera (hidden otherwise), and the body on the
+    // layer that view's second pass draws, so it is in front of the world at any distance.
+    this.interior = buildInterior(def);
+    if (this.interior) this.root.add(this.interior.group);
+    this._bodyLayers();
   }
+
+  _bodyLayers() { this.built.body.traverse((o) => o.layers.enable(1)); }
+
+  // Show the inside of the cockpit (the Cockpit camera) or not.
+  setInterior(on) { if (this.interior) this.interior.group.visible = on; }
 
   // Repaint: build the body again and put it in the same root, so everything that
   // holds the root (the shock wave, the camera, the scene) keeps holding it.
@@ -41,6 +52,7 @@ export class Aircraft {
     this.parts = next.parts;
     this._dispose = next.dispose;
     this.root.add(next.body);
+    this._bodyLayers();
   }
 
   // Place the mesh from the physics, `alpha` of the way between its last two
@@ -50,6 +62,7 @@ export class Aircraft {
     const s = this.physics.interpolate(alpha, this.render);
     this.root.position.set(s.x - ox, s.y, s.z - oz);
     this.root.quaternion.set(s.qx, s.qy, s.qz, s.qw);
+    if (this.interior && this.interior.group.visible) this.interior.update(s, this.physics, dt);
 
     // An aircraft with its own animation moves its own parts (the 737); the F-22's are
     // moved below.
@@ -96,25 +109,39 @@ export class Aircraft {
       }
     }
 
-    // Landing gear: lifted into the body as it retracts, the strut shortening
-    // as it compresses, the wheels turning.
-    const g = s.gear;
+    // Landing gear, folded into the body as it retracts (the first version lifted the legs straight up,
+    // and a wheel showed on the outside of the intake before it vanished): a main leg swings inboard
+    // through a quarter turn, which lays its wheel flat, while it slides toward the middle and up so it
+    // ends inside the fuselage; the nose leg swings aft. A leg is only drawn while some of it is out.
+    // The strut shortens as it compresses and the wheels turn.
+    const g = s.gear, fold = 1 - g;
     const wheels = this.def.gear.wheels;
     for (let i = 0; i < p.gear.length; i++) {
       const part = p.gear[i];
-      part.group.visible = g > 0.03;
+      part.group.visible = fold < 0.995;
       if (!part.group.visible) continue;
       const comp = i < s.compression.length ? s.compression[i] : 0;
-      const centreY = part.y0 + comp + (1 - g) * 1.3;
+      const centreY = part.y0 + comp;
       const len = Math.max(0.1, part.belly - centreY);
       part.strut.scale.set(1, len, 1);
       part.strut.position.y = -len / 2;
       part.wheel.position.y = centreY - part.belly;
       part.wheel.rotation.x = this.physics.gear.spin[i] || 0;
-      // Nose wheel turns with the steering.
-      if (wheels[i].steer) part.group.rotation.y = s.steer;
+      const w = wheels[i], grp = part.group;
+      if (w.steer) {
+        grp.rotation.set(fold * Math.PI / 2, s.steer * (1 - fold), 0);
+        grp.position.y = part.belly + 0.35 * fold;
+      } else {
+        const side = Math.sign(w.pos[0]);
+        grp.rotation.set(0, 0, -side * fold * Math.PI / 2);
+        grp.position.x = w.pos[0] - side * 1.0 * fold;
+        grp.position.y = part.belly + 0.3 * fold;
+      }
     }
   }
 
-  dispose() { this._dispose(); }
+  dispose() {
+    this._dispose();
+    if (this.interior) this.interior.dispose();
+  }
 }

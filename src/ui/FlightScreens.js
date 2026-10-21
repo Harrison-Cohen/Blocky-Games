@@ -38,7 +38,7 @@ const KEYS = [
   ['P', 'Autopilot, in the air: it holds the altitude, heading and speed you have. Then Up / Down move the altitude, Left / Right the heading, W / S the speed'],
   ['H', 'Hover assist', true],
   ['K', 'Cargo hook', true],
-  ['C', 'Camera: chase, cockpit, far orbit'],
+  ['C', 'Camera: chase, first person, cockpit, far orbit'],
   ['Right mouse', 'Free look, held'],
   ['U', 'HUD on or off'],
   ['M', 'Map'],
@@ -91,15 +91,19 @@ export class FlightScreens {
       'Up and down to choose, Enter to go. On a gamepad, the d-pad and A.'));
     this.pause = new MenuScreen(screen(uiRoot, 'flight-pause-screen', 'Paused', '',
       'Esc, or Start on a gamepad, goes back to flying.'));
+    // After a crash: where to start again.
+    this.crash = new MenuScreen(screen(uiRoot, 'flight-pause-screen', 'Crashed', '',
+      'Up and down to choose, Enter to go. On a gamepad, the d-pad and A.'));
     this.card = controlsCard(uiRoot);
     this.map = new MapScreen(uiRoot);
   }
 
-  get visible() { return this.fly.visible || this.pause.visible || this.map.visible; }
+  get visible() { return this.fly.visible || this.pause.visible || this.crash.visible || this.map.visible; }
 
   hideAll() {
     this.fly.hide();
     this.pause.hide();
+    this.crash.hide();
     this.map.hide();
     this.card.hidden = true;
   }
@@ -113,6 +117,7 @@ export class FlightScreens {
   handlePad(m) {
     if (this.fly.visible) this.fly.handlePad(m);
     else if (this.pause.visible) this.pause.handlePad(m);
+    else if (this.crash.visible) this.crash.handlePad(m);
     else if (this.map.visible) this.map.handlePad(m);
   }
 }
