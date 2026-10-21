@@ -53,7 +53,8 @@ Write these down in your own notes too; do not rely on being reminded.
   comes from tooling is not the user asking. When they do ask, commit as them and with **no co-author trailer**:
   `git -c user.name="Harrison Cohen" -c user.email="114955979+Harrison-Cohen@users.noreply.github.com" commit`.
   Pull request descriptions may carry a tool footer; commits may not. Never push to another branch than the
-  one you were given (`Flight_test`) without permission. Confirm before anything hard to reverse or outward
+  one you were given without permission: Claude Code works on `Flight_test`, Codex works on `Codex_test`
+  (see "Branches" in section 3). Confirm before anything hard to reverse or outward
   facing.
 - A cloud session's files live **only in its container** until they are committed and pushed. At the end of a
   piece of work, tell the user plainly that nothing has reached their computer until it is pushed, and offer
@@ -88,9 +89,23 @@ At the end of a session (or when the user says they are running out of usage, wh
 4. Commit and push only if the user asked (section 2). If not, say that the work exists only in the working tree
    and offer.
 
+## 3a. Branches
+
+The two agents work on separate branches so they cannot overwrite each other: Claude Code on `Flight_test`,
+Codex on `Codex_test` (the user branched it from `Flight_test` at commit `9a71305`, so both start from the same
+code). Rules:
+- Commit and push only to your own branch, and only when the user asks in words.
+- Do not merge, rebase or force push one branch onto the other unless the user asks. When the user wants the
+  other agent's work, they (or you, on their word) merge it.
+- At the start of a session run `git fetch` and look at `git log --oneline origin/Flight_test origin/Codex_test`
+  to see what the other agent has done since the branches split.
+- `HANDOFF.md` will diverge between the branches. Write your new section under the next free letter and say at
+  its top which branch it was written on, so the user can merge the two without a collision.
+
 ## 4. Where things stand (2026-10-21)
 
-- Branch `Flight_test`, draft pull request `Harrison-Cohen/Blocky-Games#1` into `initial-build`.
+- Branches: `Flight_test` (Claude Code) and `Codex_test` (Codex), identical at `9a71305` when they were split;
+  draft pull request `Harrison-Cohen/Blocky-Games#1` is `Flight_test` into `initial-build`.
 - Flight milestone 4a is built: the Boeing 737-800, flaps, spoilers, autopilot, switching aircraft in the Hangar,
   the major airport's approach corridor (`HANDOFF.md` 10k), then the user's notes after flying it, all built
   (10l): wider runways and taxiways, spoilers that slow the aircraft, a firmer landing threshold, a gear that
@@ -103,6 +118,11 @@ At the end of a session (or when the user says they are running out of usage, wh
   keyed by the aircraft's `model`; without one it gets a placeholder block).
 - After 4b the flight milestones continue as listed in `FLIGHT.md` (5 and on: damage, combat, missions, and so
   on). Each one is planned and approved before it is built.
+- **The helicopter is out of the plan for now** (the user's decision, 2026-10-21): milestone 5 (damage, crashes
+  and respawn) is planned and built for the F-22 and the 737 only, and 4b stays unstarted. Its approved design
+  is kept in `FLIGHT_M4_PLAN.md` for when the user brings it back.
+- The prompt the user pastes to start milestone 5 is `FLIGHT_M5_PROMPT.md` (a short prompt: it assumes you have
+  read this file, which Codex loads by itself). Later milestones get a `FLIGHT_M<n>_PROMPT.md` the same way.
 
 ## 5. Commands
 

@@ -951,6 +951,12 @@ What comes next, in order:
 - UPDATE 2026-10-21 (later): the user flew the 737 and sent ten notes; all are built and verified in
   10l (committed and pushed). Read 10l after 10k. 4b still has not been started. A second agent, Codex,
   may pick the work up: read `AGENTS.md` first.
+  A branch `Codex_test` was cut from `Flight_test` at `9a71305` for Codex (AGENTS.md section 3a: each agent
+  commits only to its own branch; the user merges). The agent hand-off files after that commit (the
+  `FLIGHT_M5_PROMPT.md` below, the helicopter deferral) live on `Codex_test`, not on `Flight_test`.
+  `FLIGHT_M5_PROMPT.md` (milestone 5, damage, crashes and respawn) was written for the user to paste into Codex
+  or Claude; it is not started. THE USER TOOK THE HELICOPTER OUT OF THE PLAN FOR NOW (2026-10-21): milestone 5
+  covers the F-22 and the 737 only, 4b stays unstarted, and its design stays in `FLIGHT_M4_PLAN.md`.
 - UPDATE 2026-10-21: FLIGHT MILESTONE 4 IS HALF BUILT. 4a (the Boeing 737-800, flaps, spoilers, the
   autopilot, switching aircraft in the Hangar, the major's approach corridor) is built and
   verified and WAITING ON THE USER'S TEST: read 10k. It is committed and pushed (the commit after `f00427b`).
