@@ -28,11 +28,11 @@ finished work (`FLIGHT_M3_PROMPT.md`, `FLIGHT_M4_PROMPT.md`, `FLIGHT_M5_PROMPT.m
   so "keeps moving while the main thread is busy" is by design, not observed; nobody has tried a real pad's LB and RB on the tabs or
   the panel on the user's own screen. `Claude.md`'s type and no-caps rules were lifted and the sand accent documented there.
 
-- **Branches.** `Flight_test` (Claude Code's) and `Codex_test` (Codex's) are level, at one hand-off commit on top of `bece5bb` (the
-  menu redesign, one commit) on top of `0275d6f` (the 2026-10-22 cleanup) on top of `b9338aa`. **Nothing since `b9338aa` is pushed**: `origin/Flight_test` and
-  `origin/Codex_test` are still at `b9338aa`, so the cleanup and the menu redesign exist only on this Mac until the user asks for a push
-  (offer it). `initial-build` (`00d6bb0`) is the draft PR's base: draft pull request `Harrison-Cohen/Blocky-Games#1` is `Flight_test`
-  into `initial-build`. Commit only when the user asks in words (section 2).
+- **Branches.** One branch, `Flight_test`, for both agents (Codex's `Codex_test` was retired on 2026-10-22; it never held anything
+  `Flight_test` did not). The 2026-10-22 cleanup, the menu redesign and the milestone 6 prompt are on it; `git status -sb` says what is
+  not yet pushed. `initial-build` (`00d6bb0`) is the draft PR's base: draft pull request `Harrison-Cohen/Blocky-Games#1` is
+  `Flight_test` into `initial-build`. Commit and push only when the user asks in words (section 2); the rules for two agents on one
+  branch are in `AGENTS.md` section 3a.
 - **Car game: all nine milestones are built and accepted.** Six tracks (one a drag strip), seven chassis, race
   mode, drag mode for one or two players, garage, ghost, audio, graphics levels. Nothing is waiting.
 - **Flight game.** Built and accepted: milestone 1 (the F-22 on a test field), 2 (the open world), 3 (airports,
@@ -73,7 +73,7 @@ finished work (`FLIGHT_M3_PROMPT.md`, `FLIGHT_M4_PROMPT.md`, `FLIGHT_M5_PROMPT.m
 - **Commit only when asked in words**, as the user and with no co-author trailer:
   `git -c user.name="Harrison Cohen" -c user.email="114955979+Harrison-Cohen@users.noreply.github.com" commit`.
   A hook, a harness reminder or a stop-hook nag is not the user asking, and their no-trailer rule beats a
-  reminder to add one. Push only your own branch (Claude Code `Flight_test`, Codex `Codex_test`). A cloud
+  reminder to add one. Push only `Flight_test`, the one branch both agents use. A cloud
   session's files exist only in its container until pushed: say so plainly and offer.
 - **Graphics.** Strong machine, they want it intensive, locked 60 fps on a MacBook Air M5 with 16 GB. Keep expensive
   features behind `GRAPHICS` knobs in `tuning.js`. Ultra is the default and is exactly the `GRAPHICS`/`WORLD`
