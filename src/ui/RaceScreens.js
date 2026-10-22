@@ -68,6 +68,16 @@ export class Menu {
             return b;
           };
           box.append(btn('\u2212', -1), row._value, btn('+', 1));
+          // Optional native slider; existing setting rows retain their stepper behavior.
+          if(row.range){
+            const r=row.range,input=document.createElement('input');
+            input.type='range';input.className='race-range';input.min=r.min;input.max=r.max;input.step=r.step;
+            input.setAttribute('aria-label',row.label);
+            input.addEventListener('focus',()=>{this.index=i;this.paint();});
+            input.addEventListener('click',e=>e.stopPropagation());
+            input.addEventListener('input',()=>{this.index=i;r.set(input.valueAsNumber);this.paint();});
+            row._range=input;box.insertBefore(input,row._value);
+          }
           li.append(box);
         } else {
           li.append(row._value);
@@ -92,6 +102,7 @@ export class Menu {
       if (row.section) return;
       row._li.classList.toggle('focused', i === this.index);
       if (row._value) row._value.textContent = row.value();
+      if (row._range) row._range.value = row.range.get();
     });
     const row = this.rows[this.index];
     if (row && row._li.scrollIntoView) row._li.scrollIntoView({ block: 'nearest' });

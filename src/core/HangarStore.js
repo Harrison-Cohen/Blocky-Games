@@ -28,5 +28,7 @@ export function loadSetup(aircraftId) {
 
 // Write the parts named (all four by default), each to its own key.
 export function saveSetup(aircraftId, setup, parts = PARTS) {
-  for (const part of parts) Storage.save(storageKey(part, aircraftId), NORMALIZE[part](aircraftId, setup[part]));
+  let saved = true;
+  for (const part of parts) if (!Storage.save(storageKey(part, aircraftId), NORMALIZE[part](aircraftId, setup[part]))) saved = false;
+  return saved;
 }

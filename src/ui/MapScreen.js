@@ -12,12 +12,14 @@
 // (the flight game calls `tick`), then kept.
 
 import { MAP } from '../data/tuning.js';
-import { createRaster, renderRaster } from '../world/MapData.js';
+import {flightMapCache} from '../world/FlightMapCache.js';
+import {mapX,mapY,mapLine} from './FlightMapView.js';
+import {FLIGHT_NAV as NAV} from '../data/tuning.js';
 import { distanceIn, altitudeIn } from '../flight/Units.js';
 
 const css = (hex) => `#${hex.toString(16).padStart(6, '0')}`;
 const KIND = { major: 'Major airport', military: 'Air base', regional: 'Regional airport', strip: 'Airstrip', heliport: 'Heliport' };
-const MODES = [['apron', 'On the apron'], ['runway', 'On the runway'], ['air', 'In the air']];
+const MODES = [['apron', 'On the apron'], ['runway', 'On the runway'], ['air', 'In the air'], ['hangar', 'At the hangar']];
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const fmt = (v) => Math.round(v).toLocaleString('en-US');
 
@@ -31,6 +33,8 @@ export class MapScreen {
       <aside class="map-side">
         <h1>Map</h1>
         <p class="map-sub"></p>
+        <button type="button" class="map-plan-toggle">Plan a trip</button>
+        <div class="map-planner" hidden></div>
         <ul class="map-list"></ul>
         <div class="map-detail"></div>
         <div class="map-modes"></div>
@@ -48,6 +52,10 @@ export class MapScreen {
     this.canvas = this.el.querySelector('.map-canvas');
     this.statusEl = this.el.querySelector('.map-status');
     this.ctx = this.canvas.getContext('2d');
+    this.plannerEl=this.el.querySelector('.map-planner');
+    this.planToggle=this.el.querySelector('.map-plan-toggle');
+    this.planToggle.onclick=()=>this._planning(!this.planning);
+    this.canvas.tabIndex=0;this.canvas.setAttribute('aria-label','World map');
     this.visible = false;
 
     this.raster = null;
@@ -69,7 +77,7 @@ export class MapScreen {
       return b;
     });
     this.goEl.addEventListener('click', () => this._teleport());
-    this.el.querySelector('.map-close').addEventListener('click', () => this.close());
+    this.el.querySelector('.map-close').addEventListener('click', () => { if (this.respawn) { this.hide(); this.ctx0.onExit(); } else this.close(); });
     this.canvas.addEventListener('wheel', (e) => { e.preventDefault(); this._zoomAt(e, e.deltaY < 0 ? 1 : -1); }, { passive: false });
     this.canvas.addEventListener('pointerdown', (e) => this._down(e));
     this.canvas.addEventListener('pointermove', (e) => this._move(e));
@@ -84,19 +92,23 @@ export class MapScreen {
     this.ctx0 = ctx;
     const w = ctx.world;
     this.world = w;
-    if (!this.raster) {
-      this.raster = createRaster(MAP.resolution, w.cfg);
-      this.off = document.createElement('canvas');
-      this.off.width = this.off.height = this.raster.n;
-      this.offCtx = this.off.getContext('2d');
-      this.image = this.offCtx.createImageData(this.raster.n, this.raster.n);
-      this._built = false;
-    }
-    this.mode = ctx.places.teleportMode;
+    this.cache=flightMapCache(w);this.raster=this.cache.raster;this.off=this.cache.canvas;
+    this._built=this.raster.row>0;this._revision=-1;
+    this.respawn = !!ctx.respawn;
+    this.mode = this.respawn ? 'hangar' : ctx.places.teleportMode;
+    this.planToggle.hidden=this.respawn||!ctx.route;this.planning=false;this.plannerEl.hidden=true;this.planToggle.textContent='Plan a trip';this.listEl.hidden=false;this.detailEl.hidden=false;this.goEl.hidden=false;
+    this.candidate={x:ctx.state().x,z:ctx.state().z,label:'Map point'};this.stopIndex=0;this.planFocus=0;
+    this.el.querySelector('h1').textContent = this.respawn ? 'Choose a respawn airport' : 'Map';
+    this.modesEl.hidden = this.respawn;
+    this.el.querySelector('.map-close').textContent = this.respawn ? 'Back to the title' : 'Close the map';
+    this.el.querySelector('.map-hint').textContent = this.respawn
+      ? 'Up/down choose an airport. Enter or pad A/Start respawns at its hangar apron. Esc/B opens the exit choices. Wheel zooms, drag pans.'
+      : 'Up and down choose an airport, left and right the start, Enter teleports, Esc closes. Wheel zooms, drag pans.';
     const me = ctx.state();
     // The airports, nearest first.
     this.items = [...w.airports.list].sort((a, b) => Math.hypot(a.px - me.x, a.pz - me.z) - Math.hypot(b.px - me.x, b.pz - me.z));
-    this.sel = Math.max(0, this.items.indexOf(ctx.places.last));
+    const selected = this.respawn ? ctx.places.nearestEligible(me.x, me.z, 'hangar') : ctx.places.last;
+    this.sel = Math.max(0, this.items.indexOf(selected));
     this.view.x = me.x; this.view.z = me.z; this.view.zoom = 2;
     this._buildList();
     this._select(this.sel, false);
@@ -124,29 +136,85 @@ export class MapScreen {
   // Once a frame while open: build the picture a little at a time, draw what changed.
   tick() {
     if (!this.visible) return;
-    if (this.raster && this.raster.row < this.raster.n) {
-      const done = renderRaster(this.world, this.raster, MAP.buildMs);
-      if (done) {
-        this.image.data.set(this.raster.rgba);
-        this.offCtx.putImageData(this.image, 0, 0);
-        this._built = true;
-      } else {
-        this.statusEl.textContent = `Drawing the map ${Math.round((100 * this.raster.row) / this.raster.n)}%`;
-      }
-      this.statusEl.hidden = this._built;
-      this._dirty = true;
-    } else if (this.statusEl && !this.statusEl.hidden) this.statusEl.hidden = true;
+    if(this._revision!==this.cache.revision){this.off=this.cache.canvas;this._revision=this.cache.revision;this._built=this.raster.row>0;this._dirty=true;}
+    this.statusEl.hidden=this.raster.row===this.raster.n;
+    this.statusEl.textContent=`Drawing the map ${Math.round(100*this.raster.row/this.raster.n)}%`;
     if (this._dirty) { this._dirty = false; this._draw(); }
   }
 
   handlePad(m) {
     if (!this.visible) return;
+    if (this.planning) {
+      if(m.back&&this._cursorFocus()){this.cursorMode=false;this._planFocus(0);return;}
+      if(m.back||m.start){this.close();return;}
+      if(this._cursorFocus()){
+        if(m.left)this._cursorMove(-1,0);if(m.right)this._cursorMove(1,0);
+        if(m.up)this._cursorMove(0,-1);if(m.down)this._cursorMove(0,1);
+        if(m.confirm)this._addCandidate();
+      }else{
+        if(m.up)this._planFocus(-1);if(m.down)this._planFocus(1);
+        if(m.left)this._planFocus(-1);if(m.right)this._planFocus(1);
+        if(m.confirm)this.planButtons[this.planFocus]?.click();
+      }
+      return;
+    }
+    // Tab to the planner button with keyboard, or open it with pad left+right menu focus.
+    if(document.activeElement===this.planToggle&&m.down){this.planToggle.blur();this._select(0,false);return;}
+    if(m.confirm&&document.activeElement===this.planToggle){this.planToggle.click();return;}
+    if(m.up&&this.sel===0&&!this.respawn&&this.ctx0.route){this.planToggle.focus();return;}
     if (m.up) this._select(this.sel - 1);
     if (m.down) this._select(this.sel + 1);
     if (m.left) this._shiftMode(-1);
     if (m.right) this._shiftMode(1);
-    if (m.confirm) this._teleport();
-    if (m.back || m.start) this.close();
+    if (m.confirm || (this.respawn && m.start)) this._teleport();
+    if (m.back || (!this.respawn && m.start)) this.close();
+  }
+
+  _planning(on){
+    if(this.respawn||!this.ctx0.route)return;
+    this.planning=on;this.plannerEl.hidden=!on;this.listEl.hidden=on;this.detailEl.hidden=on;this.modesEl.hidden=on;this.goEl.hidden=on;
+    this.planToggle.textContent=on?'Teleport options':'Plan a trip';
+    this.el.querySelector('.map-hint').textContent=on?'Trip editing never moves the aircraft. Up/down or pad navigate buttons, Enter/A chooses. Tab cycles focus. Map cursor: arrows/pad move, Enter/A adds, Escape/B leaves cursor. Click map to choose a point. Last stop is destination.':'Up/down choose airport, left/right start, Enter teleports. Tab to Plan a trip. Pad: Up above first airport, A opens planner.';
+    if(on){this._planner();this.planFocus=0;this._planFocus(0);}this._dirty=true;
+  }
+  _changed(){this.ctx0.onTripChange?.();this._planner();this._dirty=true;}
+  _edit(origin,points){this.ctx0.route.edit(origin,points);this._changed();}
+  _planner(){
+    const route=this.ctx0.route,t=route.trip;this.plannerEl.replaceChildren();this.planButtons=[];
+    const info=document.createElement('p');info.className='map-trip-status';
+    info.textContent=`${t.origin?'Origin: '+t.origin.label:'Origin: live position at activation'}. ${route.active?'Active leg '+route.leg+'/'+(route.path.length-1):route.complete?'Trip complete':'Visual guidance until Route AP selected'}. ${route.notice||''}`;this.plannerEl.append(info);
+    const button=(label,fn,cls='')=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.className=cls;b.onclick=fn;b.onfocus=()=>{this.planFocus=this.planButtons.indexOf(b);};this.planButtons.push(b);this.plannerEl.append(b);return b;};
+    button('Use live origin',()=>this._edit(null,t.points));
+    button('Use selected point as origin',()=>this._edit(this.candidate,t.points));
+    const selected=document.createElement('p');selected.className='map-candidate';selected.textContent='Selected: '+this.candidate.label;this.plannerEl.append(selected);
+    button('Move map cursor',()=>{this.cursorMode=true;this.canvas.focus();this._dirty=true;});
+    button('Add selected point as destination',()=>this._addCandidate());
+    button('Add selected airport',()=>{const a=this.items[this.sel];this.candidate={x:a.px,z:a.pz,label:a.name,airport:a.id};this._addCandidate();});
+    this.stopIndex=Math.max(0,Math.min(this.stopIndex,t.points.length-1));
+    t.points.forEach((p,i)=>{
+      const airport=p.airport&&this.world.airports.list.find(a=>a.id===p.airport),ok=airport?this.ctx0.places.eligible(airport,'runway'):null;
+      button(`${i===this.stopIndex?'Selected: ':''}${i+1}. ${p.label}${i===t.points.length-1?' (destination)':''}${ok&&!ok.ok?' (cannot land: '+ok.why+')':''}`,()=>{this.stopIndex=i;this.view.x=p.x;this.view.z=p.z;this._planner();this._dirty=true;},'map-trip-stop');
+    });
+    const change=(fn)=>{const pts=t.points.map(p=>({...p}));fn(pts);this._edit(t.origin,pts);};
+    button('Move selected stop up',()=>{if(this.stopIndex>0)change(p=>{const i=this.stopIndex;[p[i-1],p[i]]=[p[i],p[i-1]];this.stopIndex--;});});
+    button('Move selected stop down',()=>{if(this.stopIndex<t.points.length-1)change(p=>{const i=this.stopIndex;[p[i],p[i+1]]=[p[i+1],p[i]];this.stopIndex++;});});
+    button('Delete selected stop',()=>change(p=>p.splice(this.stopIndex,1)));
+    button('Reverse trip',()=>{if(!t.points.length)return;const pts=[t.origin||{...this.ctx0.state(),label:'Current position'},...t.points].reverse();this._edit(pts.shift(),pts);});
+    button('Activate trip',()=>{this.ctx0.onTripChange?.();route.activate(this.ctx0.state());this._changed();});
+    button('Activate leg ending at selected stop',()=>{this.ctx0.onTripChange?.();route.activate(this.ctx0.state(),this.stopIndex+1);this._changed();});
+    button('Cancel guidance',()=>{route.reset();this._changed();});
+    button('Clear trip',()=>this._edit(null,[]));
+    button('Navigation zoom in',()=>this.ctx0.onRange?.(-1));button('Navigation zoom out',()=>this.ctx0.onRange?.(1));
+    button('Teleport options',()=>this._planning(false));
+    this.planFocus=Math.min(this.planFocus,this.planButtons.length-1);
+  }
+  _planFocus(dir){this.planFocus=(this.planFocus+dir+this.planButtons.length)%this.planButtons.length;this.planButtons[this.planFocus].focus();}
+  _cursorFocus(){return this.cursorMode&&document.activeElement===this.canvas;}
+  _cursorMove(dx,dy){const ppm=this._ppm();this.candidate={x:clamp(this.candidate.x-dx*24/ppm,-this.world.cfg.size/2,this.world.cfg.size/2),z:clamp(this.candidate.z-dy*24/ppm,-this.world.cfg.size/2,this.world.cfg.size/2),label:'Map point'};this.view.x=this.candidate.x;this.view.z=this.candidate.z;this._dirty=true;}
+  _addCandidate(){
+    const t=this.ctx0.route.trip,prev=t.points.at(-1)||t.origin;
+    if(t.points.length>=NAV.maxPoints||(prev&&Math.hypot(prev.x-this.candidate.x,prev.z-this.candidate.z)<NAV.minLeg)){this.ctx0.route.notice='Point too close or trip is full';this._planner();return;}
+    this._edit(t.origin,[...t.points,{...this.candidate}]);
   }
 
   // --- the list and the detail --------------------------------------------------------------
@@ -159,7 +227,10 @@ export class MapScreen {
       const d = distanceIn(Math.hypot(a.px - me.x, a.pz - me.z), units);
       li.innerHTML = '<span class="map-name"></span><span class="map-meta"></span>';
       li.querySelector('.map-name').textContent = a.name;
-      li.querySelector('.map-meta').textContent = `${KIND[a.tier]}, ${a.isHeliport ? 'helipad' : fmt(a.length) + ' m'}, ${d.value.toFixed(d.value < 10 ? 1 : 0)} ${d.unit}`;
+      const eligible = this.ctx0.places.eligible(a, this.mode);
+      li.classList.toggle('map-ineligible', this.respawn && !eligible.ok);
+      const size = a.isHeliport ? 'helipad' : `${fmt(a.length)} by ${a.layout.width} m`;
+      li.querySelector('.map-meta').textContent = `${KIND[a.tier]}, ${size}, ${d.value.toFixed(d.value < 10 ? 1 : 0)} ${d.unit}${this.respawn ? eligible.ok ? ', available' : ', ' + eligible.why : ''}`;
       li.addEventListener('click', () => this._select(i));
       this.listEl.append(li);
     });
@@ -177,12 +248,14 @@ export class MapScreen {
   }
 
   _setMode(id) {
+    if (this.respawn) return;
     this.mode = id;
     this.ctx0.places.setTeleportMode(id);
     this._detail();
   }
 
   _shiftMode(d) {
+    if (this.respawn) return;
     const i = MODES.findIndex(([id]) => id === this.mode);
     this._setMode(MODES[(i + d + MODES.length) % MODES.length][0]);
   }
@@ -206,24 +279,31 @@ export class MapScreen {
       const e = this.ctx0.places.eligible(a, MODES[i][0]);
       b.classList.toggle('off', !e.ok);
     });
-    this.goEl.textContent = `Teleport to ${a.name}`;
+    this.goEl.textContent = `${this.respawn ? 'Respawn at' : 'Teleport to'} ${a.name}`;
+    this.goEl.disabled = !ok.ok;
     this.goEl.classList.toggle('off', !ok.ok);
-    this.sub.textContent = `${this.items.length} airports, ${this.world.areas.list.length} race tracks`;
+    this.sub.textContent = this.respawn ? this.ctx0.reason : `${this.items.length} airports, ${this.world.areas.list.length} race tracks`;
   }
 
   _teleport() {
     const a = this.items[this.sel];
     if (!this.ctx0.places.eligible(a, this.mode).ok) return;
-    this.hide();
-    this.ctx0.onTeleport(a, this.mode);
+    if (this.respawn) {
+      // A stale destination rejected by the spawn guard must leave the list usable.
+      if (this.ctx0.onTeleport(a, this.mode) !== false) this.hide();
+      else this._detail();
+    } else {
+      this.hide();
+      this.ctx0.onTeleport(a, this.mode);
+    }
   }
 
   // --- the view --------------------------------------------------------------------------------
   _ppm() { return (Math.min(this._w, this._h) * this.view.zoom) / this.world.cfg.size; }
 
   // World to the canvas, in css pixels: east is to the right (-x), north up (+z).
-  _sx(x) { return this._w / 2 + (this.view.x - x) * this._ppm(); }
-  _sy(z) { return this._h / 2 + (this.view.z - z) * this._ppm(); }
+  _sx(x) { return mapX(x,this.view.x,this._w/this._ppm(),this._w); }
+  _sy(z) { return mapY(z,this.view.z,this._w/this._ppm(),this._h,this._w); }
 
   _zoomAt(e, dir) {
     const rect = this.canvas.getBoundingClientRect();
@@ -272,6 +352,11 @@ export class MapScreen {
     if (!d || d.moved) return;
     const rect = this.canvas.getBoundingClientRect();
     const h = this._pick(e.clientX - rect.left, e.clientY - rect.top);
+    if(this.planning){
+      const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+      this.candidate=h?{x:h.x,z:h.z,label:h.name,airport:h.kind==='airport'?h.id:''}:{x:this.view.x-(mx-this._w/2)/this._ppm(),z:this.view.z-(my-this._h/2)/this._ppm(),label:'Map point'};
+      this._planner();this._dirty=true;return;
+    }
     if (h) {
       // A track picks its own airstrip.
       const id = h.kind === 'airport' ? h.id : `strip-${h.id}`;
@@ -291,17 +376,29 @@ export class MapScreen {
   }
 
   _places() {
-    if (!this._markers) {
-      this._markers = [];
-      for (const a of this.world.airports.list) this._markers.push({ kind: 'airport', id: a.id, name: a.name, x: a.px, z: a.pz, heading: a.heading, tier: a.tier, length: a.length, pad: a.isHeliport });
-      for (const a of this.world.areas.list) this._markers.push({ kind: 'track', id: a.id, name: a.name, x: a.x, z: a.z, heading: a.heading, tier: 'track' });
-    }
-    return this._markers;
+    return this.cache.markers;
   }
 
   _onKey(e) {
     if (!this.visible) return;
     const c = e.code;
+    if(c==='Tab')return;
+    if(!this.planning&&e.target?.tagName==='BUTTON'&&(c==='Enter'||c==='Space')){e.preventDefault();e.target.click();return;}
+    if(this.planning){
+      if(this._cursorFocus()){
+        if(c==='Escape'){this.cursorMode=false;this._planFocus(0);}
+        else if(c==='ArrowLeft'||c==='KeyA')this._cursorMove(-1,0);
+        else if(c==='ArrowRight'||c==='KeyD')this._cursorMove(1,0);
+        else if(c==='ArrowUp'||c==='KeyW')this._cursorMove(0,-1);
+        else if(c==='ArrowDown'||c==='KeyS')this._cursorMove(0,1);
+        else if(c==='Enter'||c==='Space')this._addCandidate();else return;
+      }else if(c==='Escape'||c==='KeyM')this.close();
+      else if(c==='ArrowUp'||c==='KeyW')this._planFocus(-1);
+      else if(c==='ArrowDown'||c==='KeyS')this._planFocus(1);
+      else if(c==='Enter'||c==='Space'){if(e.target?.tagName==='BUTTON')e.target.click();else this.planButtons[this.planFocus]?.click();}
+      else return;
+      e.preventDefault();return;
+    }
     if (c === 'ArrowUp' || c === 'KeyW') this._select(this.sel - 1);
     else if (c === 'ArrowDown' || c === 'KeyS') this._select(this.sel + 1);
     else if (c === 'ArrowLeft' || c === 'KeyA') this._shiftMode(-1);
@@ -339,6 +436,12 @@ export class MapScreen {
     g.lineWidth = 1;
     g.strokeRect(this._sx(half), this._sy(half), this.world.cfg.size * ppm, this.world.cfg.size * ppm);
 
+    const adapter={line:(x,y,xx,yy,c,width)=>{g.strokeStyle=c;g.lineWidth=width;g.beginPath();g.moveTo(x,y);g.lineTo(xx,yy);g.stroke();}};
+    for(const pts of this.cache.tracks)for(let i=1;i<pts.length;i++)mapLine(adapter,this._sx(pts[i-1].x),this._sy(pts[i-1].z),this._sx(pts[i].x),this._sy(pts[i].z),'#edede7',1,w,h);
+    const route=this.ctx0.route,path=route?.path.length?route.path:route?[route.trip.origin||this.ctx0.state(),...route.trip.points]:[];
+    for(let i=1;i<path.length;i++)mapLine(adapter,this._sx(path[i-1].x),this._sy(path[i-1].z),this._sx(path[i].x),this._sy(path[i].z),route.active&&route.leg===i?'#f5c518':'#ff92e0',3,w,h);
+    path.forEach((p,i)=>{const x=this._sx(p.x),y=this._sy(p.z);g.fillStyle='#0e1a2b';g.fillRect(x-8,y-8,16,16);g.fillStyle='#ff92e0';g.font='12px Martian Mono';g.textAlign='center';g.fillText(String(i),x,y+4);});
+    if(this.planning){const x=this._sx(this.candidate.x),y=this._sy(this.candidate.z);g.strokeStyle='#f5c518';g.lineWidth=2;g.strokeRect(x-8,y-8,16,16);}
     const sel = this.items[this.sel], me = this.ctx0.state();
     const labelAll = this.view.zoom >= MAP.labelZoom;
     g.font = '600 12px Archivo, sans-serif';
@@ -352,7 +455,7 @@ export class MapScreen {
       g.fillText(text, x + 14, y);
     };
     // The line to the chosen airport.
-    if (sel) {
+    if (sel && !this.planning) {
       g.strokeStyle = 'rgba(245, 197, 24, 0.7)'; g.setLineDash([5, 5]); g.lineWidth = 1.5;
       g.beginPath(); g.moveTo(this._sx(me.x), this._sy(me.z)); g.lineTo(this._sx(sel.px), this._sy(sel.pz)); g.stroke();
       g.setLineDash([]);

@@ -6,28 +6,12 @@
 // time that context is running, and a machine with no audio device plays a
 // silent game.
 //
-// The first version sounded like static, because every voice was a slice of
-// WHITE noise, and a slice of white noise hisses at any cutoff. A jet is not
-// white: it is a deep rumble, a roar that falls off with pitch, and a thin tone
-// on top. So the noise here is shaped before it is filtered (brown noise falls
-// 6 dB an octave, pink 3), the tone is a real voice with a second engine beating
-// against the first, and the afterburner is a flickering low growl, not a band
-// of hiss.
-//
-// Voices, built once and then only steered:
-//   rumble   the core: brown noise, its inaudible sub-bass cut away, through a
-//            steep low-pass that opens with the spool, swelling and ebbing slowly
-//   exhaust  the jet itself: pink noise in a band that rises with the spool
-//   whine    the compressor: a tone per engine, the two a hair apart so they beat
-//   burner   the afterburner: a deep rumble that flickers, a raspy band above it,
-//            and a thump when it lights
-//   wind     airframe noise, rising with the square of the airspeed
-//   boom     the sonic boom, once, as the aircraft goes through Mach 1
-//   stall    a two-tone chirp, gated, for the stall warning
-//
-// Each category will get its own switch in the settings (milestone 9).
+// Broad core/exhaust noise and restrained engine-specific fan/turbine harmonics.
+// No periodic amplitude LFOs or artificial twin-engine detuning. Each harmonic
+// follows its own simulated engine spool, running state and health. The cabin
+// filters engine/wind sound; alerts retain their useful spectrum.
 
-import { FLIGHT_AUDIO, FLIGHT_AUDIO_PROFILES } from '../data/tuning.js';
+import { DAMAGE_FX as F, FLIGHT_DAMAGE as D, FLIGHT_AUDIO, FLIGHT_AUDIO_PROFILES } from '../data/tuning.js';
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
@@ -82,6 +66,9 @@ export class FlightAudio {
     const prof = FLIGHT_AUDIO_PROFILES[def.id];
     this.A = prof ? { ...FLIGHT_AUDIO, ...prof } : FLIGHT_AUDIO;
     this._abPrev = 0;
+    this._damageLevels = new Uint8Array(def.damage.length);
+    this._damageWarningAt = -Infinity;
+    this._damagePending = false;
   }
 
   _build() {
@@ -94,9 +81,10 @@ export class FlightAudio {
     // The cabin: from the cockpit camera everything above the cutoff is muffled.
     this.cabin = ctx.createBiquadFilter();
     this.cabin.type = 'lowpass';
-    this.cabin.frequency.value = 20000;
+    this.cabin.frequency.value = Math.min(20000,ctx.sampleRate/2);
     this.cabin.Q.value = 0.5;
     this.bus.connect(this.cabin).connect(s.master);
+    this.alerts=ctx.createGain();this.alerts.gain.value=0;this.alerts.connect(s.master);
 
     const brown = shapedNoise(ctx, 3, 'brown');
     const pink = shapedNoise(ctx, 3, 'pink');
@@ -122,24 +110,10 @@ export class FlightAudio {
       src.start(0, Math.random() * 2);
       return { src, filters, gain };
     };
-    // A slow oscillator that moves a gain up and down by `depth` (itself a gain
-    // the update steers, so the swing follows the level).
-    const lfo = (freq, target) => {
-      const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.value = freq;
-      const depth = ctx.createGain();
-      depth.gain.value = 0;
-      o.connect(depth).connect(target);
-      o.start();
-      return { osc: o, depth };
-    };
-
     // The core: brown noise through two low-passes (a steep slope, so no hiss
-    // gets through), with two slow swells on it.
+    // gets through), with no artificial amplitude modulation.
     this.rumble = noise(brown, [['highpass', A.rumbleFloor, 0.7], ['lowpass', A.rumbleIdle, 0.7], ['lowpass', A.rumbleIdle, 0.7]]);
-    this.swellA = lfo(1.7, this.rumble.gain.gain);
-    this.swellB = lfo(0.43, this.rumble.gain.gain);
+
 
     // The exhaust: pink noise in a band, with the top rolled off.
     this.exhaust = noise(pink, [['bandpass', A.exhaustIdle, 0.55], ['lowpass', 3200, 0.7]]);
@@ -156,21 +130,21 @@ export class FlightAudio {
     this.whineGain.connect(whineTop).connect(this.bus);
     this.whines = [0, 1].map(() => {
       const osc = ctx.createOscillator();
-      osc.type = 'sawtooth';
+      osc.type = A.toneWave;
       const band = ctx.createBiquadFilter();
       band.type = 'bandpass';
-      band.Q.value = 1.8;
-      osc.connect(band).connect(this.whineGain);
+      band.Q.value = A.toneQ;
+      const gain=ctx.createGain();gain.gain.value=0;
+      osc.connect(band).connect(gain).connect(this.whineGain);
       osc.start();
-      return { osc, band };
+      return { osc, band, gain };
     });
 
-    // The afterburner: a deep rumble that flickers, and a raspy band above it.
+    // The afterburner: a continuous deep rumble with a broad raspy band above it.
     this.burnLow = noise(brown, [['highpass', A.rumbleFloor, 0.7], ['lowpass', A.burnerLow, 0.7], ['lowpass', A.burnerLow, 0.7]]);
-    this.flickerA = lfo(A.burnerFlutter, this.burnLow.gain.gain);
-    this.flickerB = lfo(A.burnerFlutter * 0.41, this.burnLow.gain.gain);
+
     this.burnRasp = noise(pink, [['bandpass', A.roarFreq, 0.9], ['lowpass', 2800, 0.7]]);
-    this.flickerC = lfo(A.burnerFlutter * 0.7, this.burnRasp.gain.gain);
+
 
     // The air going by.
     this.wind = noise(pink, [['bandpass', A.windFreq, 0.5], ['lowpass', 3500, 0.7]]);
@@ -181,7 +155,7 @@ export class FlightAudio {
     this.stall.frequency.value = A.stallFreq;
     this.stallGain = ctx.createGain();
     this.stallGain.gain.value = 0;
-    this.stall.connect(this.stallGain).connect(this.bus);
+    this.stall.connect(this.stallGain).connect(this.alerts);
     this.stall.start();
     this.built = true;
   }
@@ -261,6 +235,17 @@ export class FlightAudio {
     osc.stop(t + 0.25);
   }
 
+  _damageWarning(t) {
+    const ctx = this.ctx, osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.type = 'sine'; osc.frequency.value = F.warningFreq;
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(F.warningGain * this.A.engineGain, t + F.warningTime * 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + F.warningTime);
+    osc.connect(gain).connect(this.alerts);
+    osc.onended = () => { osc.disconnect(); gain.disconnect(); };
+    osc.start(t); osc.stop(t + F.warningTime);
+  }
+
   // Once per rendered frame. s null is silence (paused, a menu). Otherwise
   // s = { spool 0..1, ab 0..1, speed m/s, stallWarn, gearWarn, cockpit, dt }.
   update(s) {
@@ -271,13 +256,38 @@ export class FlightAudio {
     const k = A.smoothing;
     if (!s) {
       this.bus.gain.setTargetAtTime(0, t, 0.05);
+      this.alerts.gain.setTargetAtTime(0,t,.05);
       return;
     }
-    this.bus.gain.setTargetAtTime(1, t, 0.05);
-    this.cabin.frequency.setTargetAtTime(s.cockpit ? A.cabinCutoff : 20000, t, 0.12);
+    this.bus.gain.setTargetAtTime(s.cockpit?A.cabinGain:1, t, 0.05);
+    this.alerts.gain.setTargetAtTime(1,t,.05);
+    this.cabin.frequency.setTargetAtTime(s.cockpit ? A.cabinCutoff : Math.min(20000,this.ctx.sampleRate/2), t, 0.12);
 
-    const E = A.engineGain;
-    const spool = clamp01(s.spool);
+    let health = 1,spool=clamp01(s.spool),burn=clamp01(s.ab);
+    if (s.engines) {
+      health = 0;spool=0;burn=0;
+      for (let i = 0; i < s.engines.length; i++) {
+        const e=s.engines[i],n=clamp01(e.n),live=e.running!==false&&s.fuelOk!==false?1:n;
+        const h=clamp01(e.health)*live;health+=h;spool+=n*h;burn+=clamp01(e.abLevel)*h;
+      }
+      if(health>0){spool/=health;burn/=health;}
+      health /= s.engines.length;
+    }
+    if (s.damage) {
+      let anyWarning = false;
+      for (let i = 0; i < s.damage.health.length; i++) {
+        const h = s.damage.health[i], severity = h < D.fire ? 2 : h < D.smoke ? 1 : 0;
+        anyWarning ||= severity > 0;
+        if (severity > this._damageLevels[i]) this._damagePending = true;
+        this._damageLevels[i] = severity;
+      }
+      if (!anyWarning) this._damagePending = false;
+      if (this._damagePending && t - this._damageWarningAt >= F.warningCooldown) {
+        this._damageWarning(t); this._damageWarningAt = t; this._damagePending = false;
+      }
+    }
+    const E = A.engineGain * health;
+
 
     // The core.
     const rumbleLevel = E * A.rumbleGain * (0.35 + 0.9 * spool);
@@ -285,35 +295,36 @@ export class FlightAudio {
     this.rumble.filters[1].frequency.setTargetAtTime(cut, t, k);
     this.rumble.filters[2].frequency.setTargetAtTime(cut, t, k);
     this.rumble.gain.gain.setTargetAtTime(rumbleLevel, t, k);
-    this.swellA.depth.gain.setTargetAtTime(rumbleLevel * 0.2, t, k);
-    this.swellB.depth.gain.setTargetAtTime(rumbleLevel * 0.14, t, k);
+
 
     // The exhaust.
     this.exhaust.filters[0].frequency.setTargetAtTime(A.exhaustIdle + (A.exhaustMil - A.exhaustIdle) * spool, t, k);
     this.exhaust.gain.gain.setTargetAtTime(E * A.exhaustGain * (0.06 + 0.94 * spool * spool), t, k);
 
     // The whine.
-    const f = A.whineIdle + (A.whineMil - A.whineIdle) * spool;
-    this.whines[0].osc.frequency.setTargetAtTime(f, t, k);
-    this.whines[1].osc.frequency.setTargetAtTime(f * A.whineBeat, t, k);
-    this.whines[0].band.frequency.setTargetAtTime(f * 1.6, t, k);
-    this.whines[1].band.frequency.setTargetAtTime(f * A.whineBeat * 1.6, t, k);
-    this.whineGain.gain.setTargetAtTime(E * A.whineGain * (0.25 + 0.75 * spool) * 1.6, t, k);
+    for(let i=0;i<this.whines.length;i++){
+      const e=s.engines?.[i],n=e?clamp01(e.n):spool,h=e?clamp01(e.health)*(e.running!==false&&s.fuelOk!==false?1:n):health;
+      const f=(A.whineIdle+(A.whineMil-A.whineIdle)*Math.sqrt(n))*(1-(1-h)*F.engineNoteLoss);
+      const v=this.whines[i];v.osc.type=A.toneWave;v.band.Q.setTargetAtTime(A.toneQ,t,k);
+      v.osc.frequency.setTargetAtTime(f,t,k);v.band.frequency.setTargetAtTime(f,t,k);
+      v.gain.gain.setTargetAtTime(h*(A.toneIdle+(1-A.toneIdle)*n*n)/this.whines.length,t,k);
+    }
+    this.whineGain.gain.setTargetAtTime(A.engineGain*A.whineGain,t,k);
 
     // The afterburner.
-    const ab = clamp01(s.ab);
+    const ab = burn;
     if (ab > 0.12 && this._abPrev <= 0.12) this._kick(t);
     this._abPrev = ab;
     const lowLevel = E * A.roarGain * ab * 3.2;
     this.burnLow.gain.gain.setTargetAtTime(lowLevel, t, k * 2);
-    this.flickerA.depth.gain.setTargetAtTime(lowLevel * A.burnerFlutterDepth, t, k);
-    this.flickerB.depth.gain.setTargetAtTime(lowLevel * A.burnerFlutterDepth * 0.6, t, k);
+
+
     const raspLevel = E * A.roarGain * ab * 1.1;
     this.burnRasp.gain.gain.setTargetAtTime(raspLevel, t, k * 2);
     this.burnRasp.filters[0].frequency.setTargetAtTime(A.roarFreq * (0.8 + 0.5 * ab), t, k);
-    this.flickerC.depth.gain.setTargetAtTime(raspLevel * A.burnerFlutterDepth * 0.5, t, k);
 
-    if (s.boom) this._boom(t + A.boomDelay);
+
+    if (s.boom && !s.cockpit) this._boom(t + A.boomDelay);
 
     // The wind.
     const v = clamp01(s.speed / 340);

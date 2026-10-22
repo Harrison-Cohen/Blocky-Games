@@ -16,6 +16,8 @@
 import * as THREE from 'three';
 import { Loft } from '../../game/CarBuilder.js';
 import { glossy, unlit } from '../Materials.js';
+import { NOSE_JOIN, buildNoseGeometry } from './b737Nose.js';
+import { buildCFM56 } from './cfm56.js';
 import { normalizeLivery, paintHex } from '../../data/loadouts.js';
 import { mesh, slab, fin, mirror, lighten, DIGITS, DIGIT_BARS } from '../AircraftBuilder.js';
 
@@ -43,18 +45,7 @@ const FUSELAGE = [
   { z: -14.0, y0: -1.45, y1: 1.95, hw: 1.62, xc: 0, top: 1 },
   { z: -10.0, y0: -1.75, y1: 2.01, hw: 1.88, xc: 0, top: 1 },
   { z: 8.4, y0: -1.75, y1: 2.01, hw: 1.88, xc: 0, top: 1 },
-  // The nose: a taper from the full tube to a small tip over about 9 m, as a 737's is (measured off
-  // photographs of the side: the height is about 56 percent of the tube's at 1.4 m from the tip, 77
-  // at 3.1 m, 88 at 4.8 m, and the tip is a blunt 0.7 m), the axis staying where it was. The first
-  // version closed over the last 4 m into a blunt dome.
-  { z: 10.57, y0: -1.705, y1: 1.965, hw: 1.835, xc: 0, top: 1 },
-  { z: 12.17, y0: -1.615, y1: 1.875, hw: 1.745, xc: 0, top: 1 },
-  { z: 13.57, y0: -1.48, y1: 1.74, hw: 1.61, xc: 0, top: 1 },
-  { z: 14.77, y0: -1.32, y1: 1.58, hw: 1.45, xc: 0, top: 1 },
-  { z: 15.77, y0: -1.13, y1: 1.39, hw: 1.26, xc: 0, top: 1 },
-  { z: 16.57, y0: -0.915, y1: 1.175, hw: 1.045, xc: 0, top: 1 },
-  { z: 17.17, y0: -0.665, y1: 0.925, hw: 0.795, xc: 0, top: 1 },
-  { z: 17.57, y0: -0.22, y1: 0.48, hw: 0.35, xc: 0, top: 1 },
+  { z: NOSE_JOIN, y0: -1.75, y1: 2.01, hw: 1.88, xc: 0, top: 1 },
 ];
 const FUS_N = 2.2;
 
@@ -69,7 +60,7 @@ const zTE = (x) => (x < 4.6 ? -5.4 - (0.6 / 4.6) * x : -6.0 - (1.4 / (SEMI - 4.6
 // normal. The superellipse Loft draws.
 const SKIN = new Loft(FUSELAGE, FUS_N, 8);
 export function skin(z, py, grow = 0) {
-  const s = SKIN.at(z);
+  const s = SKIN.at(clamp(z, SKIN.z0, SKIN.z1));
   const b = (s.y1 - s.y0) / 2, yc = (s.y0 + s.y1) / 2;
   const t = Math.pow(Math.max(0, 1 - Math.pow(Math.abs(py), FUS_N)), 1 / FUS_N);
   const x = s.hw * t, y = yc + py * b;
@@ -127,44 +118,6 @@ function windows(z0, z1, py, side, pitch = 0.51, w = 0.3, h = 0.38) {
   return g;
 }
 
-// A curved patch of the skin, one side: z0 to z1 along the aircraft and heights py0 to py1 of the
-// section, standing `grow` proud of it, as a grid so it follows the curve. Windows are made of
-// these: glass, and a frame a little larger underneath it.
-function patch(z0, z1, py0, py1, side, grow = 0.02, nz = 4, np = 5) {
-  const pos = [], idx = [];
-  for (let i = 0; i <= nz; i++) {
-    const z = z0 + ((z1 - z0) * i) / nz;
-    for (let j = 0; j <= np; j++) {
-      const [x, y] = skin(z, py0 + ((py1 - py0) * j) / np, grow);
-      pos.push(side * x, y, z);
-    }
-  }
-  for (let i = 0; i < nz; i++) {
-    for (let j = 0; j < np; j++) {
-      const a = i * (np + 1) + j, b = a + 1, c = (i + 1) * (np + 1) + j, d = c + 1;
-      if (side > 0) idx.push(a, b, c, b, d, c);
-      else idx.push(a, c, b, b, c, d);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setIndex(idx);
-  g.computeVertexNormals();
-  return g;
-}
-
-// The flight deck's glass, per side, as a 737's is: the forward windshield (high on the nose's
-// slope, so it faces forward over the top as well as out to the side), the front side window and
-// the sliding window, with the small fixed one behind (z0, z1, py0, py1 of each, py being the
-// height across the section, -1 under the belly to 1 on the crown). From the photos the glass
-// starts about 1.4 m behind the nose tip and runs to about 4 m behind it, high on the shoulder.
-export const COCKPIT_GLASS = [
-  [15.5, 16.5, 0.4, 0.985],
-  [14.78, 15.44, 0.28, 0.86],
-  [14.0, 14.72, 0.28, 0.8],
-  [13.5, 13.94, 0.3, 0.74],
-];
-
 // A panel hung on a hinge line: a group at the start of the line, an axis along it that points
 // toward the left on both wings (so the same turn lowers the trailing edge on both), and the
 // slab, given in the wing's frame, moved so the hinge is the group's origin.
@@ -186,6 +139,7 @@ export function buildB737(def, livery = null) {
   const L = normalizeLivery(livery, def.id);
   const root = new THREE.Group();
   const body = new THREE.Group();
+  const damageGroups = { wingL: [], wingR: [], engineL: [], engineR: [], tail: [] };
   root.add(body);
   const owned = [];
   const own = (g) => { owned.push(g); return g; };
@@ -214,25 +168,22 @@ export function buildB737(def, livery = null) {
   // --- fuselage ------------------------------------------------------------
   const fuselage = new Loft(FUSELAGE, FUS_N, 40);
   body.add(mesh(own(fuselage.geometry()), hull));
+  const nose = buildNoseGeometry();
+  for (const [key, mat] of [['lower', hull], ['deck', hull], ['glass', glass], ['frames', dark]]) {
+    const part = mesh(own(nose[key]), mat);
+    part.name = `b737-nose-${key}`;
+    if (key === 'glass' || key === 'frames') part.castShadow = false;
+    body.add(part);
+  }
   // The belly: a darker underside, as an airliner's wear line, and the belly band livery.
   if (belly) {
-    for (const side of [1, -1]) body.add(mesh(own(band(-17, 13.5, -0.98, -0.3, side, 0.012, 0.9)), accent));
+    for (const side of [1, -1]) body.add(mesh(own(band(-17, NOSE_JOIN, -0.98, -0.3, side, 0.012, 0.9)), accent));
   }
   // The cheat line: a stripe along the windows, tapering to the tail.
   if (cheat) {
-    for (const side of [1, -1]) body.add(mesh(own(band(-18, 15.2, 0.18, 0.4, side, 0.012, 0.8)), accent));
+    for (const side of [1, -1]) body.add(mesh(own(band(-18, NOSE_JOIN, 0.18, 0.4, side, 0.012, 0.8)), accent));
   }
-  // The flight deck's glass and the passenger windows.
-  for (const side of [1, -1]) {
-    for (const [z0, z1, p0, p1] of COCKPIT_GLASS) {
-      const frame = mesh(own(patch(z0 - 0.07, z1 + 0.07, p0 - 0.06, p1 + 0.05, side, 0.012, 4, 5)), dark);
-      frame.castShadow = false;
-      body.add(frame);
-      const pane = mesh(own(patch(z0, z1, p0, p1, side, 0.02, 4, 5)), glass);
-      pane.castShadow = false;
-      body.add(pane);
-    }
-  }
+  // Passenger windows remain on the cabin tube, behind the new flight deck.
   for (const side of [1, -1]) {
     const w = mesh(own(windows(-11.8, 12.4, 0.36, side)), glass);
     w.castShadow = false;
@@ -269,6 +220,7 @@ export function buildB737(def, livery = null) {
     g.rotation.z = side * DIHEDRAL;
     body.add(g);
     wings.push(g);
+    damageGroups[side === 1 ? 'wingL' : 'wingR'].push(g);
     const flip = (pts) => (side === 1 ? pts : mirror(pts));
     wingMeshes.push(mesh(own(slab(flip(planOuter), 0.3, 0.07)), wingMat));
     g.add(wingMeshes[wingMeshes.length - 1]);
@@ -323,62 +275,19 @@ export function buildB737(def, livery = null) {
   }
 
   // --- engines ---------------------------------------------------------------------------------------
-  // CFM56 nacelles, slung forward of the wing, flat on the bottom, a big fan face and a hub.
-  const NACELLE = [
-    { z: -2.2, y0: -0.3, y1: 0.3, hw: 0.28, xc: 0, top: 1 },
-    { z: -1.5, y0: -0.5, y1: 0.52, hw: 0.48, xc: 0, top: 1 },
-    { z: 0.0, y0: -0.72, y1: 0.8, hw: 0.74, xc: 0, top: 1 },
-    { z: 1.6, y0: -0.76, y1: 0.86, hw: 0.83, xc: 0, top: 1 },
-    { z: 2.9, y0: -0.73, y1: 0.86, hw: 0.82, xc: 0, top: 1 },
-    { z: 3.4, y0: -0.68, y1: 0.8, hw: 0.77, xc: 0, top: 1 },
-  ];
+  // Each installation, including its pylon, belongs to its engine's damage group.
   const fans = [];
   for (const e of def.engines) {
-    const g = new THREE.Group();
-    g.position.set(e.x, e.y, 0);
-    const nacelle = new Loft(NACELLE, 2.4, 32);
-    g.add(mesh(own(nacelle.geometry()), engineMat));
-    // Engine rings of the livery: bands round the nacelle at the lip and the cowl.
-    if (rings) {
-      for (const [z0, z1] of [[2.95, 3.4], [-0.1, 0.4]]) {
-        const band3 = new Loft([{ ...nacelle.at(z0), z: z0 }, { ...nacelle.at(z1), z: z1 }].map((q) => ({ ...q, hw: q.hw + 0.014, y0: q.y0 - 0.014, y1: q.y1 + 0.014, xc: 0, top: 1 })), 2.4, 32);
-        const m = mesh(own(band3.geometry()), accent);
-        m.castShadow = false;
-        g.add(m);
-      }
-    }
-    // The inlet: a dark ring and the fan face with its blades and hub, turning with the engine.
-    const inlet = new THREE.Mesh(own(new THREE.CircleGeometry(0.7, 28)), black);
-    inlet.position.set(0, 0.04, 3.39);
-    g.add(inlet);
-    const fan = new THREE.Group();
-    fan.position.set(0, 0.04, 3.4);
-    const bladeGeo = own(new THREE.BoxGeometry(0.07, 0.62, 0.015));
-    for (let i = 0; i < 14; i++) {
-      const b = new THREE.Mesh(bladeGeo, i % 2 ? dark : hubMat);
-      b.position.set(0, 0, 0);
-      const holder = new THREE.Group();
-      holder.rotation.z = (i / 14) * Math.PI * 2;
-      b.position.y = 0.36;
-      b.rotation.z = 0.25;
-      holder.add(b);
-      fan.add(holder);
-    }
-    const hub = new THREE.Mesh(own(new THREE.ConeGeometry(0.2, 0.34, 20)), hubMat);
-    hub.rotation.x = Math.PI / 2;
-    hub.position.z = 0.1;
-    fan.add(hub);
-    g.add(fan);
-    fans.push(fan);
-    body.add(g);
-    // The pylon that holds it to the wing.
-    const pylon = mesh(own(new THREE.BoxGeometry(0.34, 0.45, 2.4)), wingMat);
-    pylon.position.set(e.x, e.y + 0.9, 0.9);
-    body.add(pylon);
+    const built = buildCFM56({ own, engineMat, hubMat, fanMat: glossy(0x737d87, { shininess: 45 }), dark, black, accent, rings });
+    built.group.position.set(e.x, e.y, 0);
+    body.add(built.group);
+    fans.push(built.fan);
+    damageGroups[e.x > 0 ? 'engineL' : 'engineR'].push(built.group);
   }
 
   // --- tail ---------------------------------------------------------------------------------------------------------
   // The tailplane (the elevators are panels hinged at 68% of the chord) and the fin and rudder.
+  const tailStart = body.children.length;
   const elevators = [];
   for (const side of [1, -1]) {
     const g = new THREE.Group();
@@ -410,15 +319,19 @@ export function buildB737(def, livery = null) {
   // The logo on the fin, both sides, in the accent (or the body colour on a painted fin).
   if (L.insignia !== 'none') {
     const logoMat = tailPaint ? (stock ? hull : glossy(WHITE, { shininess: 60 })) : accent;
-    const zc = -16.4, yc = 5.2;
-    const flat = (pts) => fin(pts, 0.012, 0.004);
+    // Flat paint entirely on the fixed fin, clear of the moving rudder seam.
+    const zc = -17.7, yc = 4.5;
+    const flat = (pts) => {
+      const shape = new THREE.Shape();
+      pts.forEach(([z, y], i) => i ? shape.lineTo(-z, y) : shape.moveTo(-z, y));
+      shape.closePath();
+      return new THREE.ShapeGeometry(shape).rotateY(Math.PI / 2);
+    };
     const shapes = {
       ring: () => {
-        const ringG = own(new THREE.TorusGeometry(1.05, 0.2, 8, 28));
+        const ringG = own(new THREE.RingGeometry(0.78, 1.0, 32));
         ringG.rotateY(Math.PI / 2);
-        const disc = own(new THREE.CylinderGeometry(0.42, 0.42, 0.02, 20));
-        disc.rotateZ(Math.PI / 2);
-        return [ringG, disc];
+        return [ringG];
       },
       wave: () => [-0.8, 0, 0.8].map((dy, i) => own(flat([[-1.5, dy - 0.1 + 0.1 * (i - 1)], [-0.5, dy + 0.18], [0.5, dy - 0.18], [1.5, dy + 0.1], [1.5, dy - 0.12], [0.5, dy - 0.45], [-0.5, dy - 0.07], [-1.5, dy - 0.32]]))),
       star: () => {
@@ -432,11 +345,15 @@ export function buildB737(def, livery = null) {
       for (const geo of shapes()) {
         const m = mesh(geo, logoMat);
         m.castShadow = false;
-        m.position.set(side * 0.12, FIN.root + yc, zc);
+        m.position.set(side * 0.162, FIN.root + yc, zc);
+        m.scale.set(1, 0.6, 0.6);
+        if (side < 0) m.rotation.y = Math.PI;
         body.add(m);
       }
     }
   }
+
+  damageGroups.tail.push(...body.children.slice(tailStart));
 
   // --- landing gear -------------------------------------------------------------------------------------------------------------
   // Twin wheels on the nose, twin wheels either side of each main strut (Boeing: 0.41 m and
@@ -513,8 +430,7 @@ export function buildB737(def, livery = null) {
     // The spoilers rise with the airbrake, hinged on their front edge.
     spoilerPanels.forEach((p) => turn(p, rad(52) * s.airbrake));
     // The fans turn with the engines.
-    const spin = 0.4 + 3.2 * s.spool;
-    fans.forEach((f, i) => { f.rotation.z += dt * spin * 6 * (i ? -1 : 1); });
+    fans.forEach((f, i) => { f.rotation.z += dt * (0.4 + 3.2 * physics.engines[i].n) * 6; });
     // The gear folds into the body, as a real one does (the first version lifted the legs straight
     // up and they showed through the wing and the skin, then vanished): a main leg swings inboard
     // through a quarter turn, which lays its wheels flat, while it slides toward the middle and up so
@@ -547,6 +463,7 @@ export function buildB737(def, livery = null) {
   return {
     root,
     body,
+    damageGroups,
     parts: { gear, flapPanels, slatPanels, spoilerPanels, ailerons, elevators, rudder: rudG, fans, wings },
     update,
     dispose() { for (const g of owned) g.dispose(); },

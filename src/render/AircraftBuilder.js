@@ -185,6 +185,7 @@ export function buildAircraft(def, livery = null) {
   const L = normalizeLivery(livery);
   const root = new THREE.Group();
   const body = new THREE.Group();
+  const damageGroups = { wingL: [], wingR: [], tail: [] };
   root.add(body);
   const owned = [];
   const own = (g) => { owned.push(g); return g; };
@@ -217,17 +218,36 @@ export function buildAircraft(def, livery = null) {
   // Rear first, as Loft wants. Wide and deep through the middle where the
   // engines and intakes are, a long chined taper to a rounded nose.
   const fuselage = new Loft([
-    { z: -9.7, y0: -0.45, y1: 0.6, hw: 0.9, xc: 0, top: 0.8 },
-    { z: -7.6, y0: -0.78, y1: 0.78, hw: 1.38, xc: 0, top: 0.7 },
-    { z: -4.0, y0: -1.0, y1: 0.9, hw: 1.7, xc: 0, top: 0.62 },
-    { z: 0.2, y0: -1.04, y1: 0.95, hw: 1.78, xc: 0, top: 0.6 },
-    { z: 3.0, y0: -0.88, y1: 0.86, hw: 1.34, xc: 0, top: 0.62 },
-    { z: 5.2, y0: -0.58, y1: 0.66, hw: 0.84, xc: 0, top: 0.7 },
-    { z: 7.0, y0: -0.38, y1: 0.46, hw: 0.5, xc: 0, top: 0.8 },
+    { z: -9.7, y0: -0.16, y1: 0.18, hw: 0.18, xc: 0, top: 0.8 },
+    { z: -7.6, y0: -0.58, y1: 0.48, hw: 1.48, xc: 0, top: 0.58 },
+    { z: -4.0, y0: -0.88, y1: 0.62, hw: 1.85, xc: 0, top: 0.48 },
+    { z: 0.2, y0: -1.0, y1: 0.76, hw: 1.72, xc: 0, top: 0.48 },
+    { z: 3.0, y0: -0.8, y1: 0.69, hw: 1.08, xc: 0, top: 0.42 },
+    { z: 5.2, y0: -0.55, y1: 0.6, hw: 0.72, xc: 0, top: 0.5 },
+    { z: 7.0, y0: -0.34, y1: 0.38, hw: 0.46, xc: 0, top: 0.52 },
     { z: 8.1, y0: -0.24, y1: 0.3, hw: 0.28, xc: 0, top: 0.9 },
     { z: 8.6, y0: -0.1, y1: 0.14, hw: 0.1, xc: 0, top: 1 },
   ], 3, 36);
-  body.add(mesh(own(fuselage.geometry()), hull));
+  const cockpitShell=mesh(own(fuselage.geometry()),hull);
+  body.add(cockpitShell);
+  // Reference-led C revision: broad flat chines blend the forebody into the wing,
+  // with two engine shoulders instead of a single rounded aft fuselage. These are
+  // skin geometry only. Engine definitions, collision and lifting surfaces stay data.
+  const shoulderShells=[];
+  for(const side of [1,-1]){
+    const shoulder=new Loft([
+      {z:-8.2,y0:-.45,y1:.32,hw:.72,xc:side*1.08,top:.48},
+      {z:-6.2,y0:-.72,y1:.65,hw:.84,xc:side*1.12,top:.72},
+      {z:-3.3,y0:-.81,y1:.72,hw:.87,xc:side*1.18,top:.72},
+      {z:-.2,y0:-.78,y1:.65,hw:.71,xc:side*1.16,top:.7},
+      {z:1.4,y0:-.65,y1:.47,hw:.48,xc:side*1.12,top:.7},
+      {z:2.7,y0:-.3,y1:.42,hw:.02,xc:side*.9,top:.65},
+    ],5,28);
+    const m=mesh(own(shoulder.geometry()),sideHull(side));body.add(m);shoulderShells.push(m);
+    const chine=[[side*.35,7.0],[side*.78,5.0],[side*1.84,2.7],[side*2.14,-.4],[side*2.6,-1.0],[side*1.5,-3.0],[side*.7,1.0]];
+    const blend=mesh(own(slab(chine,.24,.025)),sideHull(side));blend.position.y=.16;body.add(blend);shoulderShells.push(blend);
+  }
+
 
   // Intakes: on each side of the forebody, under the wing's root, with a mouth that is a
   // parallelogram (the top edge leaning outboard) and a lip swept back along its top and outer
@@ -281,6 +301,7 @@ export function buildAircraft(def, livery = null) {
       g.position.set(side * 4.3, 0, -2.76);
       for (const m of mark()) g.add(m);
       body.add(g);
+      damageGroups[side === 1 ? 'wingL' : 'wingR'].push(g);
     }
   }
 
@@ -289,7 +310,7 @@ export function buildAircraft(def, livery = null) {
   // roots are buried in the fuselage. The trailing edge carries the
   // flaperons: an inboard and an outboard panel, hinged at 78% of the chord, so
   // roll and the scheduled flaps are visible on the wing.
-  const rootLE = [1.3, 2.9], tipLE = [6.78, -2.9], tipTE = [6.78, -4.3], rootTE = [1.3, -6.4];
+  const rootLE = [1.5, 1.3], tipLE = [6.78, -3.25], tipTE = [6.78, -4.35], rootTE = [1.5, -6.2];
   const HINGE = 0.78;
   const hingeRoot = lerp2(rootLE, rootTE, HINGE);
   const hingeTip = lerp2(tipLE, tipTE, HINGE);
@@ -300,6 +321,7 @@ export function buildAircraft(def, livery = null) {
   const outboardPlan = [hingeMid, hingeTip, tipTE, teMid];
   const wingFlaps = [];
   for (const side of [1, -1]) {
+    const start = body.children.length;
     const flip = (pts) => (side === 1 ? pts : mirror(pts));
     body.add(mesh(own(slab(flip(fixedPlan), 0.14, 0.05)), sideHull(side)));
     // Each flap is a group at the start of its hinge line, turning about the
@@ -332,14 +354,16 @@ export function buildAircraft(def, livery = null) {
       decal(body, flip(strip(0.34, 0.44)), 0.16, 0.06);
       decal(body, flip(strip(0.56, 0.66)), 0.16, 0.06);
     }
+    damageGroups[side === 1 ? 'wingL' : 'wingR'].push(...body.children.slice(start));
   }
 
   // --- stabilators --------------------------------------------------------
   // All-moving tailplanes, each on its own pivot at z = -7, so a pull tips both
   // trailing edges up and a roll tips them against each other.
-  const stabPlan = [[0.9, -5.2], [4.5, -8.0], [4.5, -9.1], [0.9, -8.9]];
+  const stabPlan = [[1.0, -6.0], [4.4, -8.0], [4.4, -9.1], [1.0, -8.9]];
   const pivotZ = -7.0;
   const rel = (pts) => pts.map(([x, z]) => [x, z - pivotZ]);
+  const tailStart = body.children.length;
   const stabL = new THREE.Group();
   stabL.position.set(0, 0.02, pivotZ);
   stabL.add(mesh(own(slab(rel(stabPlan), 0.11, 0.04)), sideHull(1)));
@@ -371,7 +395,7 @@ export function buildAircraft(def, livery = null) {
   const rudders = [];
   for (const side of [1, -1]) {
     const g = new THREE.Group();
-    g.position.set(side * 1.1, 0.5, 0);
+    g.position.set(side * 1.48, 0.5, 0);
     g.rotation.z = -side * cant;
     g.add(mesh(own(fin(finFixed, 0.1, 0.035)), sideHull(side)));
     // The rudder: a group at the foot of the hinge line, turning about it.
@@ -413,6 +437,8 @@ export function buildAircraft(def, livery = null) {
     rudders.push({ group: r, axis: new THREE.Vector3(0, TIP, hz1 - hz0).normalize() });
   }
 
+  damageGroups.tail.push(...body.children.slice(tailStart));
+
   // --- nozzles ------------------------------------------------------------
   // The F-22's are two-dimensional: a rectangular duct, wide and shallow, closed
   // top and bottom by flat flaps that tilt together to vector the thrust, with
@@ -420,7 +446,7 @@ export function buildAircraft(def, livery = null) {
   // well -- a wide ribbon with shock diamonds in it -- not the round cone of an
   // F-16. Each nozzle pivots at the engine position. The hot throat is dark at
   // idle and glows as the engine spools up.
-  const NW = 1.5, NH = 0.64, NL = 1.9;               // exit width, height, length
+  const NW = 1.62, NH = 0.58, NL = 1.9;               // exit width, height, length
   const nozzles = [];
   // A flap: a flat slab with a toothed trailing edge, lying in x-z.
   const teeth = (w, l, n) => {
@@ -550,6 +576,8 @@ export function buildAircraft(def, livery = null) {
   return {
     root,
     body,
+    damageGroups,
+    cockpitShell: [cockpitShell, ...shoulderShells],
     parts: { stabL, stabR, rudders, wingFlaps, nozzles, gear },
     dispose() {
       for (const g of owned) g.dispose();

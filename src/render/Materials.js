@@ -277,3 +277,11 @@ export function disposeAll() {
 export function materialCount() {
   return cache.size;
 }
+
+// Batched, texture-free cockpit vector ink. Vertex colours are linear; no lights
+// or tone mapping change the instrument readings between day and night.
+export function instrumentInk() {
+  const k='instrument-ink';
+  if(!cache.has(k))cache.set(k,new THREE.MeshBasicMaterial({vertexColors:true,toneMapped:false,fog:false}));
+  return cache.get(k);
+}

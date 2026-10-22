@@ -60,6 +60,17 @@ const CANT = 27;
 const finN = [Math.cos(rad(CANT)), -Math.sin(rad(CANT)), 0];
 
 export const F22 = {
+  // Damage parts map to the existing force/contact components. Health is independent of paint.
+  damage: [
+    { id: 'wingL', anchor: [4.3, 0, -2], hits: [[2.7, 0, 0, 0.6], [4.7, 0, -2, 0.6], [6.5, 0, -3.2, 0.4]], name: 'Left wing', kind: 'wing', legacy: 'wings', surfaces: [0], hull: ['tipL'] },
+    { id: 'wingR', anchor: [-4.3, 0, -2], hits: [[-2.7, 0, 0, 0.6], [-4.7, 0, -2, 0.6], [-6.5, 0, -3.2, 0.4]], name: 'Right wing', kind: 'wing', legacy: 'wings', surfaces: [1], hull: ['tipR'] },
+    { id: 'engineL', anchor: [1.1, 0.65, -7.5], hits: [[1.1, 0, -6, 0.7]], name: 'Left engine', kind: 'engine', legacy: 'engines', engines: [0], hull: ['nacelleL'] },
+    { id: 'engineR', anchor: [-1.1, 0.65, -7.5], hits: [[-1.1, 0, -6, 0.7]], name: 'Right engine', kind: 'engine', legacy: 'engines', engines: [1], hull: ['nacelleR'] },
+    { id: 'tail', anchor: [0, 0.5, -7], hits: [[2.8, 0, -7.5, 0.6], [-2.8, 0, -7.5, 0.6], [2, 2.5, -8, 0.5], [-2, 2.5, -8, 0.5]], name: 'Tail and fins', kind: 'tail', surfaces: [2, 3, 4, 5], hull: ['tail', 'fin', 'finL', 'finR'] },
+    { id: 'gear', anchor: [0, -1.2, 0], hits: [[0, -1.4, 4.8, 0.3], [2.1, -1.4, -0.9, 0.3], [-2.1, -1.4, -0.9, 0.3]], name: 'Landing gear', kind: 'gear', hull: [] },
+    { id: 'fuselage', anchor: [0, 0, 0], hits: [[0, 0, 7, 0.7], [0, 0, 4, 1], [0, 0, 1, 1.1], [0, 0, -2, 1.1], [0, 0, -5, 0.9]], name: 'Fuselage', kind: 'fuselage', hull: ['nose', 'belly', 'bellyAft', 'canopy'] },
+  ],
+
   id: 'f22',
   name: 'F-22 Raptor',
   role: 'fighter',
@@ -68,6 +79,7 @@ export const F22 = {
   // apply, `mapIcon` its silhouette on the map and the radar.
   kind: 'fixed',
   model: 'f22',
+  instrumentProfile: 'raptor',
   supersonic: true,
   mapIcon: 'delta',
   // "Start airborne": the speed (m/s), pitch (rad), throttle and flaps it is put in the
@@ -267,12 +279,27 @@ const CFM56 = {
 };
 
 export const B737 = {
+  // Damage parts map to the existing force/contact components. Health is independent of paint.
+  damage: [
+    { id: 'wingL', breaks: ['engineL'], anchor: [8, -1.2, -1], hits: [[3, -1.2, 1, 0.8], [7, -0.7, -1.5, 0.8], [11, -0.2, -4, 0.6], [15, 0.4, -6.5, 0.5], [17.5, 1, -8, 0.4]], name: 'Left wing', kind: 'wing', legacy: 'wings', surfaces: [0], hull: ['tipL'] },
+    { id: 'wingR', breaks: ['engineR'], anchor: [-8, -1.2, -1], hits: [[-3, -1.2, 1, 0.8], [-7, -0.7, -1.5, 0.8], [-11, -0.2, -4, 0.6], [-15, 0.4, -6.5, 0.5], [-17.5, 1, -8, 0.4]], name: 'Right wing', kind: 'wing', legacy: 'wings', surfaces: [1], hull: ['tipR'] },
+    { id: 'engineL', anchor: [5.7, -1, 1], hits: [[5.7, -2, 1.4, 0.9]], name: 'Left engine', kind: 'engine', legacy: 'engines', engines: [0], hull: ['nacelleL'] },
+    { id: 'engineR', anchor: [-5.7, -1, 1], hits: [[-5.7, -2, 1.4, 0.9]], name: 'Right engine', kind: 'engine', legacy: 'engines', engines: [1], hull: ['nacelleR'] },
+    { id: 'tail', anchor: [0, 3, -17], hits: [[4.5, 1, -17.8, 0.7], [-4.5, 1, -17.8, 0.7], [0, 5, -17, 1], [0, 8, -18.5, 0.7]], name: 'Tail and fins', kind: 'tail', surfaces: [2, 3, 4], hull: ['tail', 'fin', 'finL', 'finR'] },
+    { id: 'gear', anchor: [0, -3, 0], hits: [[0, -3, 14, 0.4], [2.86, -3, -1.6, 0.4], [-2.86, -3, -1.6, 0.4]], name: 'Landing gear', kind: 'gear', hull: [] },
+    { id: 'fuselage', anchor: [0, 0, 0], hits: [[0, 0, 17, 0.8], [0, 0, 14, 1.6], [0, 0, 10, 1.9], [0, 0, 6, 1.9], [0, 0, 2, 1.9], [0, 0, -2, 1.9], [0, 0, -6, 1.9], [0, 0, -10, 1.8], [0, 0, -14, 1.3]], name: 'Fuselage', kind: 'fuselage', hull: ['nose', 'belly', 'bellyAft', 'canopy'] },
+  ],
+  // Provisional inherited NG gear limits, m/s CAS. Primary NG verification remains open.
+  // Flap maxima are corroborated by FAA ASCENT Project 23, Table 3 (see FLIGHT_M5_PLAN.md).
+  damageLimits: { gearExtend: 270 * 0.514444, gearRetract: 235 * 0.514444, gearDown: 320 * 0.514444, gearMach: 0.82 },
+
   id: 'b737',
   name: 'Boeing 737-800',
   role: 'airliner',
   blurb: 'Twin-engine airliner. Heavy and stable, slow to answer the stick, and it needs its flaps and a long runway.',
   kind: 'fixed',
   model: 'b737',
+  instrumentProfile: '737ng',
   supersonic: false,
   mapIcon: 'airliner',
   airStart: { speed: 125, pitch: 0.03, throttle: 0.6, flaps: 0 },
@@ -390,9 +417,9 @@ export const B737 = {
   ground: { minRunway: 1500, vtol: false },
 
   // --- where the pilot sits and the camera looks --------------------------
-  cockpitEye: [-0.5, 1.5, 14.0],
+  cockpitEye: [0.55, 1.04, 14.1],
   // The captain's eye in the Cockpit camera view: the left seat (+x is left).
-  cockpitView: { eye: [0.55, 0.82, 14.1] },
+  cockpitView: { eye: [0.55, 1.04, 14.1] },
   camTarget: [0, 0.5, 0],
 
   // --- the figures it is held to ------------------------------------------

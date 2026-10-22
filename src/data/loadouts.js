@@ -21,6 +21,7 @@
 
 import { PAINTS } from './palette.js';
 import { HANGAR } from './tuning.js';
+import { getAircraft } from './aircraft.js';
 
 // The paints: the aircraft's own two greys, then the generic twelve. 'stock' as a
 // body colour is exactly the grey the F-22 has always been.
@@ -125,13 +126,7 @@ export const HANGAR_OPTIONS = {
       { id: 'assist', name: 'Flight assist', note: 'How well it holds its path hands off: auto trim (and the roll self levelling, which is off as shipped). The load limits stay on' },
     ],
     // The parts that wear (milestone 5). Health is 0 to 1.
-    damage: [
-      { id: 'wings', name: 'Wings and flaperons' },
-      { id: 'tail', name: 'Tail and fins' },
-      { id: 'engines', name: 'Engines' },
-      { id: 'gear', name: 'Landing gear' },
-      { id: 'fuselage', name: 'Fuselage' },
-    ],
+    damage: getAircraft('f22').damage,
   },
   // The 737: passengers and hold cargo are its payload. The default load (120 passengers and
   // 2,500 kg) is the data's payload (aircraft.js), so every figure it was fitted to is at the
@@ -147,13 +142,7 @@ export const HANGAR_OPTIONS = {
       { id: 'response', name: 'Control response', note: 'Stick authority and rate damping' },
       { id: 'assist', name: 'Flight assist', note: 'How well it holds its path hands off: the auto trim. The load limits stay on' },
     ],
-    damage: [
-      { id: 'wings', name: 'Wings, flaps and spoilers' },
-      { id: 'tail', name: 'Tail and fin' },
-      { id: 'engines', name: 'Engines' },
-      { id: 'gear', name: 'Landing gear' },
-      { id: 'fuselage', name: 'Fuselage' },
-    ],
+    damage: getAircraft('b737').damage,
   },
 };
 
@@ -208,7 +197,14 @@ export function defaultDamage(aircraftId) {
 export function normalizeDamage(aircraftId, raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   const o = {};
-  for (const p of hangarOptions(aircraftId).damage) o[p.id] = clamp(num(r[p.id], 1), 0, 1);
+  for (const p of hangarOptions(aircraftId).damage) {
+    // An explicit child takes precedence, even if corrupt (then only that child defaults).
+    const value = Object.hasOwn(r, p.id) ? r[p.id] : p.legacy ? r[p.legacy] : undefined;
+    o[p.id] = clamp(num(value, 1), 0, 1);
+  }
+  for (const p of hangarOptions(aircraftId).damage) if (o[p.id] === 0 && p.breaks) {
+    for (const child of p.breaks) o[child] = 0;
+  }
   return o;
 }
 

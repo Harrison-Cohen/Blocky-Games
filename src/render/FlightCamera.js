@@ -24,6 +24,13 @@ import { FLIGHT_CAMERA, SHOCK } from '../data/tuning.js';
 export const FLIGHT_CAMERA_MODES = ['Chase', 'First person', 'Cockpit', 'Far orbit'];
 export const CAM = { CHASE: 0, FIRST: 1, COCKPIT: 2, ORBIT: 3 };
 
+export function normalizeFlightFov(value) {
+  const C=FLIGHT_CAMERA;
+  return typeof value==='number'&&Number.isFinite(value)
+    ? Math.max(C.userFovMin,Math.min(C.userFovMax,Math.round(value/C.userFovStep)*C.userFovStep))
+    : C.userFovDefault;
+}
+
 const UP = new THREE.Vector3(0, 1, 0);
 const _q = new THREE.Quaternion();
 const _f = new THREE.Vector3();
@@ -43,9 +50,11 @@ export class FlightCamera {
     this.qs = new THREE.Quaternion();          // the smoothed orientation
     this.offset = new THREE.Vector3(0, FLIGHT_CAMERA.height, -FLIGHT_CAMERA.distance);
     this.fov = FLIGHT_CAMERA.fovMin;
+    this.userFov = null; // FlightGame supplies the saved choice; standalone cameras retain automatic FOV.
     this.punch = 0;                // degrees of jolt on the field of view, easing to 0
     this.overlay = null;           // the second pass's camera (Scene.overlayCamera), kept level with this one
     this._init = false;
+    this.obstructionFn = null; // segment from aircraft to external camera, returns clear fraction
     this.groundFn = null;   // (x, z) in scene coordinates -> ground height, or null
     this._shake = 0;
     this._t = 0;
@@ -82,7 +91,11 @@ export class FlightCamera {
     this.fov += (fovT - this.fov) * (1 - Math.exp(-C.fovSpring * dt));
     // A jolt (the sound barrier) widens it for a moment and eases off.
     this.punch -= this.punch * (1 - Math.exp(-SHOCK.kickDecay * dt));
-    cam.fov = (this.mode === CAM.FIRST ? Math.max(this.fov, C.firstFov) : this.mode === CAM.COCKPIT ? C.cockpitFov : this.fov) + this.punch;
+    const baseFov = this.userFov === null
+      ? (this.mode === CAM.FIRST ? Math.max(this.fov, C.firstFov) : this.mode === CAM.COCKPIT ? C.cockpitFov : this.fov)
+      : normalizeFlightFov(this.userFov);
+    cam.fov = baseFov + this.punch * (this.isEye ? C.eyeKickScale : 1);
+    if(this.userFov!==null)cam.fov=Math.min(C.userFovMax,Math.max(C.userFovMin,cam.fov));
 
     if (this.isEye) {
       // The pilot's eye. Free look turns the head.
@@ -128,10 +141,16 @@ export class FlightCamera {
 
     // Shake: the afterburner and the stall.
     if (shake > 0) {
-      const a = shake;
+      const a = shake * (this.isEye ? C.eyeShakeScale : 1);
       cam.position.x += Math.sin(this._t * 61) * a * 0.5;
       cam.position.y += Math.sin(this._t * 73 + 1) * a * 0.5;
       cam.position.z += Math.sin(this._t * 67 + 2) * a * 0.5;
+    }
+
+    // Pull an external camera in front of airport walls/roofs that hide the aircraft.
+    if (!this.isEye && this.obstructionFn) {
+      const t = this.obstructionFn(state.x,state.y,state.z,cam.position.x,cam.position.y,cam.position.z);
+      cam.position.set(state.x+(cam.position.x-state.x)*t,state.y+(cam.position.y-state.y)*t,state.z+(cam.position.z-state.z)*t);
     }
 
     // Never under the ground. In the open world the ground is wherever the

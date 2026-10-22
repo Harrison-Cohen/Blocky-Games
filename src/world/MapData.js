@@ -70,7 +70,9 @@ export function renderRaster(world, r, budgetMs = Infinity) {
 export function mapMarkers(world) {
   const out = [];
   for (const a of world.airports.list) {
-    out.push({ kind: 'airport', id: a.id, name: a.name, x: a.px, z: a.pz, heading: a.heading, tier: a.tier, length: a.length, pad: a.isHeliport });
+    // Airport local u=0 is the threshold, not the runway centre.
+    const centre=a.toWorld(a.length/2,0,{});
+    out.push({ kind: 'airport', id: a.id, name: a.name, x: centre.x, z: centre.z, heading: a.heading, tier: a.tier, length: a.length, pad: a.isHeliport });
   }
   for (const a of world.areas.list) {
     out.push({ kind: 'track', id: a.id, name: a.name, x: a.x, z: a.z, heading: a.heading, tier: 'track', biome: a.biome });

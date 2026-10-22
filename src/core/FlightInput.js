@@ -52,7 +52,7 @@ export class FlightInput {
     this.actions = {
       pause: false, camera: false, hud: false, map: false, mute: false,
       mouseFlight: false, reset: false, telemetry: false,
-      gear: false, flapsUp: false, flapsDown: false, autopilot: false, hover: false, hook: false,
+      gear: false, hangar: false, airbrake: false, flapsUp: false, flapsDown: false, autopilot: false, hover: false, hook: false,
       missile: false, flares: false, target: false,
     };
 
@@ -68,6 +68,7 @@ export class FlightInput {
     this._backWas = false;
     this._backUsed = false;
     this._prev = [];
+    this._menuAUsed = false;
     this._prevThrottleAxis = null;
     this._pad = null;
     this._onKeyDown = this._onKeyDown.bind(this);
@@ -152,6 +153,8 @@ export class FlightInput {
       case 'KeyT': A.mouseFlight = true; break;
       case 'Backquote': A.telemetry = true; break;
       case 'KeyG': A.gear = true; break;
+      case 'Enter': A.hangar = true; break;
+      case 'KeyV': A.airbrake = true; break;
       case 'KeyZ': A.flapsUp = true; break;
       case 'KeyX': A.flapsDown = true; break;
       case 'KeyP': A.autopilot = true; break;
@@ -169,12 +172,13 @@ export class FlightInput {
 
   _onMouseMove(e) {
     if (this.suspended) return;
-    if (this.mouseFlight) {
+    if (this._lookMouse) {
+      // Negative look.y points down. Middle look takes priority over the mouse-flight stick.
+      this.look.x = clamp(this.look.x - e.movementX * FC.lookMouse, -Math.PI, Math.PI);
+      this.look.y = clamp(this.look.y - e.movementY * FC.lookMouse, -1.4, 1.4);
+    } else if (this.mouseFlight) {
       this._mouse.x = clamp(this._mouse.x + e.movementX * FI.mouseSensitivity, -1, 1);
       this._mouse.y = clamp(this._mouse.y + e.movementY * FI.mouseSensitivity, -1, 1);
-    } else if (this._lookMouse) {
-      this.look.x = clamp(this.look.x - e.movementX * FC.lookMouse, -Math.PI, Math.PI);
-      this.look.y = clamp(this.look.y + e.movementY * FC.lookMouse, -1.4, 1.4);
     }
   }
 
@@ -231,7 +235,10 @@ export class FlightInput {
       this._resetHeld = 0; this.resetProgress = 0;
       // Keep the pad's button states current so what was held to open or close
       // a menu does not read as a fresh press when flying resumes.
-      if (pad) for (let i = 0; i < pad.buttons.length; i++) this._prev[i] = pad.buttons[i].pressed;
+      if (pad) {
+        this._menuAUsed ||= !!pad.buttons[0]?.pressed;
+        for (let i = 0; i < pad.buttons.length; i++) this._prev[i] = pad.buttons[i].pressed;
+      }
       return s;
     }
 
@@ -254,7 +261,6 @@ export class FlightInput {
     const brakeStep = (keyBrake > this._brakeKey ? FI.brakeAttack : FI.brakeRelease) * dt;
     this._brakeKey += Math.max(-brakeStep, Math.min(brakeStep, keyBrake - this._brakeKey));
     let brake = this._brakeKey;
-    let airbrake = K.has('KeyV');
     let cannon = K.has('Space') || (this.mouseFlight && this.state.cannon);
     let analog = false;
     let lookX = 0, lookY = 0, padLook = false;
@@ -292,6 +298,8 @@ export class FlightInput {
       };
 
       if (pad.mapping === 'standard' || pad.buttons.length >= 12) {
+        // A used for a menu/entry must be released before it can command afterburner.
+        if (!down(0)) this._menuAUsed = false;
         const sx = curve(deadzone(pad.axes[0] ?? 0, INPUT.stickDeadzone));
         const sy = curve(deadzone(pad.axes[1] ?? 0, INPUT.stickDeadzone));
         const rx = deadzone(pad.axes[2] ?? 0, INPUT.stickDeadzone);
@@ -316,17 +324,20 @@ export class FlightInput {
         if (back) {
           if (down(0) || down(1) || down(2)) this._backUsed = true;
           resetPad = down(0);
+          this._menuAUsed ||= down(0);
           if (edge(1)) A.mute = true;
           if (edge(2)) A.hover = true;
           this._prev[0] = down(0);
         } else {
-          if (down(0)) ab = true;
-          if (down(1)) airbrake = true;
+          if (down(0) && !this.hangarAvailable && !this._menuAUsed) ab = true;
+          if (edge(1)) A.airbrake = true;
           if (edge(2)) A.gear = true;
           // A is the afterburner on a jet and the cargo hook on a helicopter: the game
           // reads the edge only where it means something.
-          if (edge(0)) A.hook = true;
-          this._prev[1] = down(1);
+          if (edge(0)) {
+            if (this.hangarAvailable) { A.hangar = true; this._menuAUsed = true; }
+            else A.hook = true;
+          }
           if (this._backWas && !this._backUsed) A.map = true;
         }
         this._backWas = back;
@@ -367,7 +378,6 @@ export class FlightInput {
     s.throttleRate = clamp(throttleRate, -2, 2);
     s.ab = ab;
     s.brake = brake;
-    s.airbrake = airbrake;
     s.cannon = cannon;
     s.apAlt = clamp(apAlt, -1, 1);
     s.apHdg = clamp(apHdg, -1, 1);
@@ -376,7 +386,7 @@ export class FlightInput {
     // --- free look ---
     if (padLook) {
       this.look.x = clamp(this.look.x - lookX * FC.lookStick * dt, -Math.PI, Math.PI);
-      this.look.y = clamp(this.look.y + lookY * FC.lookStick * dt, -1.4, 1.4);
+      this.look.y = clamp(this.look.y - lookY * FC.lookStick * dt, -1.4, 1.4);
       this.look.active = true;
     } else if (this._lookMouse) {
       this.look.active = true;

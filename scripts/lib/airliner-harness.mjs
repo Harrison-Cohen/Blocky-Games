@@ -95,6 +95,8 @@ export function climbPotential(def, h, { fuel = 0.4, payload, machs = [0.6, 0.66
 // near the stall is off, so the airframe is let go on to the stall itself; the trim and
 // the rest stay. The 1 g stall speed.
 export function stallSpeed(def, { flaps = 0, fuel = 0.5, payload, h = 3000, gear = flaps >= 2 ? 1 : 0, start = 230, decel = 0.4 } = {}) {
+  // Begin each configuration within its placard speed now that overspeed causes damage.
+  start = Math.min(start, (def.flaps.detents[flaps].vfe / KT) * 0.95);
   const soft = [FLIGHT.softAlpha, FLIGHT.softPush];
   FLIGHT.softAlpha = 0.9999; FLIGHT.softPush = 0;
   try {

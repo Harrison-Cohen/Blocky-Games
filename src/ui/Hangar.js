@@ -51,6 +51,7 @@ export class Hangar {
         <div class="garage-actions">
           <button type="button" class="garage-btn garage-btn-primary">Save aircraft</button>
           <button type="button" class="garage-btn">Discard changes</button>
+          <button type="button" class="garage-btn" hidden>Keep editing</button>
         </div>
         <p class="garage-hint"></p>
       </div>
@@ -93,7 +94,7 @@ export class Hangar {
       this.button = k;
       this._activate();
     }));
-    this._defaultHint = 'Up and down pick a setting, left and right change it. Enter takes a repair. Esc leaves without saving.';
+    this._defaultHint = 'Up and down pick a setting, left and right change it. Enter repairs immediately. Esc discards paint, load and tuning.';
     this._onKeyDown = this._onKeyDown.bind(this);
   }
 
@@ -390,7 +391,8 @@ export class Hangar {
     const it = this.fields[this.index];
     const s = this.setup;
     if (it.kind === 'buttons') {
-      this.button = d < 0 ? 0 : 1;
+      const n = this.confirmSave ? 3 : 2;
+      this.button = (this.button + d + n) % n;
     } else if (it.kind === 'select' || it.kind === 'swatch') {
       const opts = this._options(it.key);
       const at = opts.findIndex((o) => o.id === this._get(it.key));
@@ -425,13 +427,20 @@ export class Hangar {
     const o = hangarOptions(this.def.id);
     const list = part ? [part] : o.damage.map((p) => p.id);
     let fixed = 0;
-    for (const id of list) if (this.setup.damage[id] < 0.999) { this.setup.damage[id] = 1; fixed++; }
+    for (const id of list) if (this.setup.damage[id] < 1) { this.setup.damage[id] = 1; fixed++; }
+    if (fixed && this.onRepair) this.onRepair(this.def.id, this.setup.damage);
     this._say(fixed ? (part ? 'Repaired' : 'Everything repaired') : 'Nothing to repair');
   }
 
   _activate() {
     const it = this.fields[this.index];
-    if (it.kind === 'buttons') this.close(this.button === 0);
+    if (it.kind === 'buttons') {
+      if (this.confirmSave) {
+        if (this.button === 2) this._cancelDeparture();
+        else this.close(this.button === 0, this.departure);
+      } else if (this.departures) this._requestDeparture(this.button === 0 ? 'hangar' : 'runway');
+      else this.close(this.button === 0);
+    }
     else if (it.kind === 'repair') this._repair(it.part);
     else if (it.kind === 'link') {
       if (it.key === 'repairAll') this._repair(null);
@@ -468,6 +477,16 @@ export class Hangar {
     this.setups = {};
     for (const d of this.defs) this.setups[d.id] = normalizeSetup(d.id, clone(state.setups?.[d.id] || {}));
     this.onClose = state.onClose;
+    this.departures = !!state.departures;
+    this.confirmSave = false;
+    this.departure = 'hangar';
+    this._originalId = this.def.id;
+    this._originalEdits = this._edits();
+    this._departureButtons();
+    this._defaultHint = this.departures
+      ? 'Up and down pick a setting, left and right change it. Enter repairs immediately. Choose Leave hangar or Teleport to runway below; pending changes need Save or Discard.'
+      : 'Up and down pick a setting, left and right change it. Enter repairs immediately. Esc discards paint, load and tuning.';
+    this.onRepair = state.onRepair;
     this.visible = true;
     this.index = 0;
     this.button = 0;
@@ -483,7 +502,42 @@ export class Hangar {
     window.addEventListener('keydown', this._onKeyDown);
   }
 
-  close(save) {
+  _edits() {
+    return JSON.stringify(Object.fromEntries(Object.entries(this.setups).map(([id, s]) => [id, { livery: s.livery, loadout: s.loadout, tune: s.tune }])));
+  }
+
+  _departureButtons() {
+    this.buttons[0].textContent = this.confirmSave ? 'Save changes and leave' : this.departures ? 'Leave hangar' : 'Save aircraft';
+    this.buttons[1].textContent = this.confirmSave ? 'Discard changes and leave' : this.departures ? 'Teleport to runway' : 'Discard changes';
+    this.buttons[2].hidden = !this.confirmSave;
+  }
+
+  _requestDeparture(mode) {
+    this.departure = mode;
+    if (this.def.id === this._originalId && this._edits() === this._originalEdits) this.close(false, mode);
+    else {
+      this.confirmSave = true;
+      this.button = 0;
+      this._departureButtons();
+      this._focus(this.fields.length - 1);
+      this._say(`Save or discard changes before ${mode === 'runway' ? 'moving to the runway' : 'leaving the hangar'}.`);
+    }
+  }
+
+  _cancelDeparture() {
+    this.confirmSave = false;
+    this.button = 0;
+    this._departureButtons();
+    this._paint();
+  }
+
+  _back() {
+    if (this.confirmSave) this._cancelDeparture();
+    else if (this.departures) this._requestDeparture('hangar');
+    else this.close(false);
+  }
+
+  close(save, departure = 'hangar') {
     if (!this.visible) return;
     this.visible = false;
     this.root.hidden = true;
@@ -492,12 +546,13 @@ export class Hangar {
     this.turntable.clear();
     if (this.display) { this.display.dispose(); this.display = null; }
     const result = save ? { id: this.def.id, setups: this.setups } : null;
-    if (this.onClose) this.onClose(result);
+    if (this.onClose) this.onClose(result, departure);
   }
 
   _onKeyDown(e) {
     if (!this.visible) return;
     const code = e.code;
+    if (e.repeat && (code === 'Enter' || code === 'Space')) return;
     const is = (a, b) => code === a || code === b;
     // In the number box, digits and the editing keys type.
     if (document.activeElement === this.numberInput && (isDigitKey(code) || is('Backspace', 'Delete'))) return;
@@ -506,7 +561,7 @@ export class Hangar {
     else if (is('ArrowLeft', 'KeyA')) this._step(-1);
     else if (is('ArrowRight', 'KeyD')) this._step(1);
     else if (is('Enter', 'Space')) this._activate();
-    else if (code === 'Escape') this.close(false);
+    else if (code === 'Escape') this._back();
     else return;
     e.preventDefault();
   }
@@ -519,7 +574,7 @@ export class Hangar {
     if (menu.left) this._step(-1);
     if (menu.right) this._step(1);
     if (menu.confirm) this._activate();
-    if (menu.back) this.close(false);
+    if (menu.back) this._back();
   }
 
   render(dt) {

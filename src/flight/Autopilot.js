@@ -24,7 +24,7 @@
 // flaps and spoilers stay the pilot's. It lets go by itself on the ground, in a stall
 // and in a wreck.
 
-import { AUTOPILOT } from '../data/tuning.js';
+import { FLIGHT_DAMAGE as D, AUTOPILOT } from '../data/tuning.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const wrapPi = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
@@ -40,6 +40,7 @@ export class Autopilot {
   constructor(def) {
     this.cfg = Object.assign({}, AUTOPILOT.default, AUTOPILOT[def.id] || null);
     this.on = false;
+    this.mode = 'Off';
     // Which of the three holds are working. All of them, as the player has it; a test
     // can take one away to measure what the others do on their own.
     this.altHold = true; this.hdgHold = true; this.spdHold = true;
@@ -52,6 +53,7 @@ export class Autopilot {
     this.acc = 0;        // the acceleration it measures (calibrated speed, filtered), m/s2
     this._cas = 0;
     this._primed = false;   // the speed has been read once since it took over
+    this.rollTrim = 0;
     this.vsInt = 0;      // the vertical speed the altitude loop has built up to close a small error
     this.why = '';       // why it let go, for the HUD
     this._att = { pitch: 0, bank: 0, heading: 0 };
@@ -66,14 +68,22 @@ export class Autopilot {
     this.acc = 0;
     this._cas = p.cas;
     this._primed = false;
+    this.rollTrim = 0;
     this.vsInt = 0;
     this.on = true;
+    this.mode = 'Hold';
     this.why = '';
   }
 
   disengage(why = '') {
     this.on = false;
+    this.mode = 'Off';
     this.why = why;
+  }
+
+  followRoute(route) {
+    if (!this.on || !route?.usable) return false;
+    this.route = route; this.mode = 'Route'; return true;
   }
 
   // One physics step. `input` is what the pilot did, `cmd` is what the aircraft is
@@ -90,7 +100,10 @@ export class Autopilot {
 
     // The targets, moved by the keys while they are held.
     this.alt += (input.apAlt || 0) * C.altRate * dt;
-    this.hdg += (input.apHdg || 0) * C.hdgRate * dt;
+    if (this.mode === 'Route') {
+      if (this.route?.usable) this.hdg = this.route.heading;
+      else { this.mode = 'Hold'; this.hdg = this.route?.heading ?? a.heading; this.message = this.route?.complete ? 'Route complete: Hold on final heading' : 'Route unavailable: Hold'; }
+    } else this.hdg += (input.apHdg || 0) * C.hdgRate * dt;
     this.spd = clamp(this.spd + (input.apSpd || 0) * C.spdRate * dt, C.spdMin, C.spdMax);
     this.alt = clamp(this.alt, C.altMin, C.altMax);
     if (this.hdg < 0) this.hdg += Math.PI * 2; else if (this.hdg >= Math.PI * 2) this.hdg -= Math.PI * 2;
@@ -113,7 +126,15 @@ export class Autopilot {
     // eased off as the aircraft nears the heading so it rolls out on it.
     if (this.hdgHold) {
       this.bankCmd = clamp(wrapPi(this.hdg - a.heading) * C.kHdg, -C.bankMax, C.bankMax);
-      cmd.roll = clamp((this.bankCmd - a.bank) * C.kBank, -C.rollMax, C.rollMax);
+      // A damaged wing needs sustained opposite stick. Integrate actual bank error,
+      // like a pilot trimming it out, bounded by the same physical controls.
+      const asymmetric = p.damage.get('wingL') !== p.damage.get('wingR');
+      if (asymmetric) {
+        const error = this.bankCmd - a.bank;
+        const raw = error * C.kBank + this.rollTrim;
+        if (Math.abs(raw) < C.rollMax || raw * error < 0) this.rollTrim = clamp(this.rollTrim + error * D.apRollTrimRate * dt, -D.apRollTrimLimit, D.apRollTrimLimit);
+      } else this.rollTrim = 0;
+      cmd.roll = clamp((this.bankCmd - a.bank) * C.kBank + this.rollTrim, -C.rollMax, C.rollMax);
     }
 
     // Speed: the error asks for an acceleration, and the lever moves at a rate in proportion

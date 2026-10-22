@@ -788,7 +788,7 @@ console.log('\nAirports in the world');
 }
 function gs0(q) { return Math.hypot(q.vx, q.vz); }
 
-// The places: the starts, the bay's dwell, landing somewhere.
+// The places: starts, explicit bay availability and airport arrival.
 console.log('\nPlaces');
 {
   const T = await import('./lib/track-hash.mjs');
@@ -809,20 +809,22 @@ console.log('\nPlaces');
   const inp = makeInput({ gearDown: true });
   const settle = () => H.runOn(world, q, inp, 3);
 
-  // Put at the mouth of a bay: stopped, outside it. It does not fire.
+  // Reset/teleport is outside the painted bay, within deliberate entry reach.
   put(major, 'hangar'); settle();
-  let fired = 0;
-  for (let k = 0; k < 120 * 6; k++) { q.step(DT, inp, world); if (places.update(DT, q)) fired++; }
-  check(fired === 0 && places.zone === null, 'put at the mouth of a hangar bay (a reset), it is outside the bay and nothing opens');
-  // Rolled into the bay and stopped: fires once after the dwell, and not again.
   const z0 = major.layout.zones[0], w = { x: 0, z: 0 };
+  for (let k = 0; k < 120 * 6; k++) { q.step(DT, inp, world); places.update(DT, q); }
+  check(AP.zoneAt(q.x,q.z) === null && places.availableHangar(q) === z0,
+    'Hangar teleport remains outside the painted bay and offers explicit entry');
+  // Stopping offers the same bay continuously, without a dwell/rearm latch.
   major.toWorld((z0.u0 + z0.u1) / 2, (z0.v0 + z0.v1) / 2, w);
   q.reset({ x: w.x, y: major.base + 1.6, z: w.z, heading: major.heading - Math.PI / 2, fuel: 0.6, gear: 1, throttle: 0 });
   settle();
-  let firedAt = -1, count = 0;
-  for (let k = 0; k < 120 * 8; k++) { q.step(DT, inp, world); if (places.update(DT, q)) { count++; if (firedAt < 0) firedAt = k * DT; } }
-  check(count === 1 && Math.abs(firedAt - HANGAR.dwell) < 0.3 && places.zone === z0, `stopped in a bay it fires once, after ${f2(firedAt)} s (dwell ${HANGAR.dwell} s), and not again while it stays`);
-  // Out of the bay and back in: it fires again. A rolling aircraft never does.
+  let available = true;
+  for (let k = 0; k < 120 * 8; k++) { q.step(DT, inp, world); available &&= places.update(DT,q) === z0; }
+  places.rearm();
+  check(available && places.availableHangar(q) === z0,
+    'stopped Hangar entry remains available on repeat visits without leaving the bay');
+  // A rolling aircraft has no entry prompt.
   put(major, 'hangar'); settle();
   for (let k = 0; k < 120; k++) { q.step(DT, inp, world); places.update(DT, q); }
   let again = 0;
@@ -831,7 +833,7 @@ console.log('\nPlaces');
   q.vx = -Math.sin(major.heading) * 3; q.vz = Math.cos(major.heading) * 3;
   const passInp = makeInput({ gearDown: true });
   for (let k = 0; k < 120 * 2; k++) { passInp.throttleRate = 0; q.step(DT, passInp, world); if (places.update(DT, q)) again++; }
-  check(again === 0, 'rolling through a bay does not open it, only stopping in it does');
+  check(again === 0, 'rolling through a bay does not offer Hangar entry');
 
   // Landed: sitting stopped on an airport makes it the last one used.
   const red = AP.byId.get('redwater');
@@ -879,7 +881,7 @@ console.log('\nThe Hangar');
   check(bent.livery.body === 'stock' && bent.livery.accent === 'sky' && bent.livery.pattern === 'plain' && bent.livery.number === 9999 && bent.livery.insignia === 'none' &&
     bent.loadout.medium === 6 && bent.loadout.short === 0 && bent.loadout.rounds === 480 && bent.loadout.flares === 60 &&
     bent.tune.power === HANGAR.tune.power.max && bent.tune.response === HANGAR.tune.response.min && bent.tune.assist === 1 &&
-    bent.damage.wings === 1 && bent.damage.tail === 0 && bent.damage.engines === 1 && Object.keys(bent.damage).length === 5,
+    bent.damage.wingL === 1 && bent.damage.wingR === 1 && bent.damage.tail === 0 && bent.damage.engineL === 1 && bent.damage.engineR === 1 && Object.keys(bent.damage).length === 7,
     'out of range and unknown values are clamped or dropped one by one, and a good value beside a bad one is kept');
   const odd = L.normalizeLoadout('f22', { rounds: 333, medium: 2.6 });
   check(odd.rounds % 20 === 0 && Number.isInteger(odd.medium), `a loadout is snapped to what the Hangar steps by (333 rounds is ${odd.rounds}, 2.6 missiles is ${odd.medium})`);
@@ -899,7 +901,7 @@ console.log('\nThe Hangar');
     check(JSON.stringify([...store].filter(([k]) => !k.includes('.livery.'))) === before, 'repainting writes the livery and nothing else: the loadout, tuning and damage records are untouched');
     store.set('racing-game.v1.flight.tune.f22', '{not json');
     const back = Store.loadSetup('f22');
-    check(back.livery.body === 'ember' && back.loadout.medium === 4 && back.tune.power === 1 && back.damage.wings === 0.5, 'a corrupt record falls back to its own defaults and costs nothing else');
+    check(back.livery.body === 'ember' && back.loadout.medium === 4 && back.tune.power === 1 && back.damage.wingL === 0.5 && back.damage.wingR === 0.5, 'a corrupt record falls back to its own defaults and costs nothing else');
     delete globalThis.window;
   }
 
@@ -1103,7 +1105,7 @@ console.log('\nAllocation');
 // takes the kit below and reports through its check().
 {
   const kit = { check, near, f1, f2, f3, deg, H, FT, KT, DT, makeInput, AircraftPhysics, field };
-  for (const name of ['identity', 'b737', 'autopilot', 'switching', 'flaps']) await (await import(`./flight/${name}.mjs`)).default(kit);
+  for (const name of ['identity', 'b737', 'autopilot', 'switching', 'flaps', 'damage', 'damage-store', 'structures', 'respawn', 'damage-visuals', 'input', 'cockpit', 'hangar-flow', 'instruments', 'cockpit-feedback', 'navigation']) await (await import(`./flight/${name}.mjs`)).default(kit);
 }
 
 console.log(failed ? '\nFLIGHT CHECK FAILED' : '\nFLIGHT CHECK PASSED');

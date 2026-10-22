@@ -202,7 +202,7 @@ export async function measure() {
 }
 
 export default async function run(kit) {
-  console.log('\nThe F-22 is unchanged (identical to the bit to the tree before milestone 4)');
+  console.log('\nRetained F-22 references (B response and C exterior intentionally differ; goldens unchanged)');
   const got = await measure();
   for (const k of Object.keys(GOLDEN)) kit.check(got[k] === GOLDEN[k], `${k.padEnd(12)} ${got[k]}${got[k] === GOLDEN[k] ? '' : `  (recorded ${GOLDEN[k]})`}`);
 }

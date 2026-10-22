@@ -79,7 +79,7 @@ export default async function run(kit) {
     store.set('racing-game.v1.flight.livery.b737', '{not json');
     store.set('racing-game.v1.flight.loadout.b737', JSON.stringify({ passengers: 9999, cargo: -5 }));
     const back = Store.loadSetup('b737');
-    check(JSON.stringify(back.livery) === JSON.stringify(L.defaultLivery('b737')) && back.loadout.passengers === 162 && back.loadout.cargo === 0 && back.tune.power === 0.9 && back.damage.engines === 0.4 && JSON.stringify(Store.loadSetup('f22')) === before,
+    check(JSON.stringify(back.livery) === JSON.stringify(L.defaultLivery('b737')) && back.loadout.passengers === 162 && back.loadout.cargo === 0 && back.tune.power === 0.9 && back.damage.engineL === 0.4 && back.damage.engineR === 0.4 && JSON.stringify(Store.loadSetup('f22')) === before,
       'a corrupt livery record and an out of range loadout cost the 737 only themselves, its tuning and damage are kept, and the F-22 is untouched');
     store.clear();
     check(JSON.stringify(Store.loadSetup('b737')) === JSON.stringify(L.normalizeSetup('b737', {})) && Store.loadSetup('b737').loadout.passengers === 120 && Store.loadSetup('b737').loadout.cargo === 2500,

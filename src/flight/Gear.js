@@ -15,7 +15,7 @@
 // mass; the wheel points are where each tyre touches with the strut fully
 // extended.
 
-import { FLIGHT } from '../data/tuning.js';
+import { FLIGHT_DAMAGE as D, FLIGHT } from '../data/tuning.js';
 
 // Hull points are the places the airframe can strike the ground when the gear
 // is up or the aircraft is inverted: nose, tail, wing tips, fin tips, belly. A
@@ -47,6 +47,11 @@ export class Gear {
     this.load = new Float64Array(n);         // N
     this.rpm = new Float64Array(n);          // wheel spin, rad/s
     this.spin = new Float64Array(n);         // wheel angle, rad
+    this.health = 1;
+    this.hullDepth = new Float64Array(hull.length);
+    this.hullClosing = new Float64Array(hull.length);
+    this.hullSliding = new Float64Array(hull.length);
+    this.hullSeverity = new Float64Array(hull.length);
     this.steerAngle = 0;                     // rad, nose wheel
     this.onGround = false;                   // any wheel loaded
     this.weightOnWheels = 0;                 // fraction of weight the wheels carry
@@ -54,6 +59,7 @@ export class Gear {
     this.hullImpact = 0;                     // fastest hull strike this step, m/s into the ground
     this.skidHit = 0;                        // the same two for the skid points (the tail)
     this.skidImpact = 0;
+    this.touchdownSeverity = 1;
     this.touchdownSink = 0;                  // sink rate at the first wheel contact of a landing, m/s
     this._wasOn = false;
     this._out = { f: 0 };
@@ -67,6 +73,10 @@ export class Gear {
     this.onGround = false;
     this._wasOn = false;
     this.touchdownSink = 0;
+    this.touchdownSeverity = 1;
+    this.hullHit = this.hullImpact = this.skidHit = this.skidImpact = 0;
+    this.weightOnWheels = 0;
+    this.hullDepth.fill(0); this.hullClosing.fill(0); this.hullSliding.fill(0);
   }
 
   // Apply the contact forces of one step to `body` (an AircraftPhysics: x, y,
@@ -85,6 +95,7 @@ export class Gear {
     this.hullImpact = 0;
     this.skidHit = 0;
     this.skidImpact = 0;
+    if (!this._wasOn) this.touchdownSeverity = 1;
 
     // Nose wheel steering fades with speed so it cannot throw the nose at 100 kt.
     // The assist also turns it at a rate, not at once, and limits the lock to the
@@ -92,7 +103,7 @@ export class Gear {
     // wheelbase over speed squared).
     const speed = Math.sqrt(body.vx * body.vx + body.vz * body.vz);
     const fade = 1 / (1 + (speed / F.noseSteerSpeed) * (speed / F.noseSteerSpeed));
-    let lock = F.noseSteerMax * fade;
+    let lock = F.noseSteerMax * fade * this.health;
     if (F.groundAssist) {
       const lat = Math.atan((F.noseSteerLatG * 9.81 * this.wheelbase) / Math.max(speed * speed, 1e-3));
       if (lat < lock) lock = lat;
@@ -104,7 +115,7 @@ export class Gear {
     }
     const sinS = Math.sin(this.steerAngle), cosS = Math.cos(this.steerAngle);
 
-    if (down >= 0.99) {
+    if (down >= 0.99 && this.health > 0) {
       for (let i = 0; i < wheels.length; i++) {
         const w = wheels[i];
         // Attach point in world axes.
@@ -126,16 +137,18 @@ export class Gear {
         const n = g.normal;
         const vn = vx * n.x + vy * n.y + vz * n.z;
 
-        const comp = pen < w.travel ? pen : w.travel;
+        const travel = w.travel * (1 - (1 - this.health) * D.gearTravelLoss);
+        const comp = pen < travel ? pen : travel;
         const rate = -vn;
         let nForce = w.k * comp + (rate > 0 ? w.c : w.c * 0.5) * rate;
         // Bottomed out: the stop is hard, and the airframe takes it.
-        if (pen > w.travel) nForce += HULL_K * (pen - w.travel);
+        if (pen > travel) nForce += HULL_K * (pen - travel);
         if (nForce < 0) nForce = 0;
         this.compression[i] = comp;
         this.load[i] = nForce;
         total += nForce;
         if (!this._wasOn && rate > this.touchdownSink) this.touchdownSink = rate;
+        if (!this._wasOn) this.touchdownSeverity = Math.max(this.touchdownSeverity, D.surface[g.surface] ?? 1);
 
         // Wheel plane in world axes: forward and left, flattened onto the ground.
         let fbx = w.steer ? sinS : 0, fbz = w.steer ? cosS : 1;
@@ -155,9 +168,9 @@ export class Gear {
         const vLat = vx * lwx + vy * lwy + vz * lwz;
         const s = F.surfaces[g.surface] || F.surfaces.grass;
         const vs = F.slipSpeed;
-        const brk = w.brake ? brake * F.brakeFriction : 0;
+        const brk = w.brake ? brake * F.brakeFriction * this.health : 0;
         const fLat = -s.lateral * nForce * vLat / (Math.abs(vLat) + vs);
-        const fLong = -(s.rolling + brk) * nForce * vLong / (Math.abs(vLong) + vs);
+        const fLong = -(s.rolling + brk + (1 - this.health) * D.gearRolling) * nForce * vLong / (Math.abs(vLong) + vs);
 
         // Force on the aircraft, world axes, then into body axes.
         const Fx = nForce * n.x + fLat * lwx + fLong * fwx;
@@ -183,12 +196,19 @@ export class Gear {
     const hull = this.hull;
     for (let i = 0; i < hull.length; i++) {
       const h = hull[i];
+      if (body.damage && body.damage.health[body.damage.hullPart[i]] === 0) {
+        this.hullDepth[i] = 0; this.hullClosing[i] = 0; this.hullSliding[i] = 0;
+        continue;
+      }
       const rx = r[0] * h.x + r[1] * h.y + r[2] * h.z;
       const ry = r[3] * h.x + r[4] * h.y + r[5] * h.z;
       const rz = r[6] * h.x + r[7] * h.y + r[8] * h.z;
       const hx = body.x + rx, hy = body.y + ry, hz = body.z + rz;
       const g = ground.sample(hx, hz, hy);
       const pen = g.height - hy;
+      this.hullDepth[i] = Math.max(0, pen);
+      this.hullClosing[i] = 0; this.hullSliding[i] = 0;
+      this.hullSeverity[i] = D.surface[g.surface] ?? 1;
       if (pen <= 0) continue;
       const ox = body.wy * h.z - body.wz * h.y;
       const oy = body.wz * h.x - body.wx * h.z;
@@ -209,6 +229,8 @@ export class Gear {
       if (nForce < 0) nForce = 0;
       // Scraping: sliding friction against the skin.
       const vt = Math.sqrt(Math.max(0, vx * vx + vy * vy + vz * vz - vn * vn));
+      this.hullClosing[i] = Math.max(0, -vn);
+      this.hullSliding[i] = vt;
       const fr = F.hullFriction * nForce / (vt + F.slipSpeed);
       const Fx = nForce * n.x - fr * (vx - vn * n.x);
       const Fy = nForce * n.y - fr * (vy - vn * n.y);

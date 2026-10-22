@@ -91,7 +91,12 @@ export default async function run(kit) {
       if (stallAt < 0 && started < 0) { inp.pitch = 1; inp.throttleRate = -1; }
       else if (started < 0) { started = t; inp.pitch = 0; inp.throttleRate = 1; }
       if (started >= 0 && recAt < 0 && p.alpha < (p.stallAlpha - p.flapA) * 0.7 && p.alpha > -p.stallAlpha) recAt = t - started;
-      if (recAt >= 0) H.altitudeHold(p, inp, 2200, 0.4);
+      if (recAt >= 0) {
+        // Finish recovery in a legal configuration rather than accelerating for two
+        // minutes at full thrust with landing flaps out (now causes real damage).
+        if (inp.flaps > 0 && p.cas > D.flaps.detents[inp.flaps].vfe * 0.95) inp.flaps--;
+        H.altitudeHold(p, inp, 2200, 0.4);
+      }
     });
     FLIGHT.aids = true;
     return { warnAt, stallAt, recAt, minY, maxA, end: p.y, crashed: p.crashed };

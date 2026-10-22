@@ -17,6 +17,7 @@ import { OPEN_WORLD } from '../data/tuning.js';
 import { AIRPORTS, landLifts } from '../data/airports.js';
 import { Heightfield } from './Heightfield.js';
 import { Airports } from './Airports.js';
+import { AirportCollisions } from './AirportCollisions.js';
 import { TrackAreas } from './TrackAreas.js';
 import { Biomes, BIOME_INDEX } from './Biomes.js';
 
@@ -36,6 +37,7 @@ export class World {
     this.hf.areas = this.areas;
     this.airports.addStrips(this.areas.list);
     this.hf.airports = this.airports;
+    this.collisions = new AirportCollisions(this.airports);
     this.biomes = new Biomes(cfg, this.areas);
     this._out = { height: 0, normal: { x: 0, y: 1, z: 0 }, surface: 'grass' };
     this._w = new Float64Array(Object.keys(BIOME_INDEX).length);

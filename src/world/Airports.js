@@ -29,7 +29,7 @@
 // airstrip is derived from its own area alone (addStrips). So adding a track moves
 // no airport, no area and no other strip.
 
-import { OPEN_WORLD } from '../data/tuning.js';
+import { OPEN_WORLD, HANGAR } from '../data/tuning.js';
 import { AIRPORTS, TIERS, stripFor } from '../data/airports.js';
 import { hash2 } from './Noise.js';
 
@@ -604,14 +604,19 @@ export class Airports {
   // centre line, high and level) or 'hangar' (the mouth of a hangar bay, facing the
   // door). Writes { x, y, z, heading, mode, airport }: y is the ground's height (the
   // caller puts the wheels on it), or that plus the height of an air start.
-  start(ap, mode = 'apron', out = {}) {
+  start(ap, mode = 'apron', out = {}, visit = null) {
     const k = this.k, L = ap.layout;
     let u, v, rel = 0, up = 0;
     if (mode === 'runway') { u = L.pad ? L.length / 2 : k.startOffset; v = 0; }
     else if (mode === 'air') { u = -k.airDistance; v = 0; up = k.airHeight; }
     else if (mode === 'hangar') {
-      const z = L.zones[0];
-      u = (z.u0 + z.u1) / 2; v = z.v0 - k.hangarMouth; rel = -Math.PI / 2;
+      const z = visit?.zone?.airport === ap ? visit.zone : L.zones[0];
+      const structure = L.structures[z.structure];
+      const radius = visit?.def ? Math.hypot(visit.def.length, visit.def.span) / 2 : 0;
+      const front = structure.v - structure.d / 2;
+      u = (z.u0 + z.u1) / 2;
+      v = Math.min(z.v0 - k.hangarMouth, front - radius - HANGAR.clearance);
+      rel = visit?.outward ? Math.PI / 2 : -Math.PI / 2;
     } else { const s = L.stands[0]; u = s.u; v = s.v; rel = s.rel; mode = 'apron'; }
     ap.toWorld(u, v, this._w);
     out.x = this._w.x; out.z = this._w.z;

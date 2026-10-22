@@ -728,6 +728,8 @@ export const GRAPHICS = {
 export const GRAPHICS_LEVELS = [
   {
     id: 'low',
+    damageParticles: 48, // total live damage particles; range 0 to 300
+    damageEmit: 12, // total emissions per second; range 0 to 100
     name: 'Low',
     note: 'Lower resolution, no post effects',
     // No post chain at all: no occlusion, no bloom, no eye adaptation. The
@@ -740,6 +742,8 @@ export const GRAPHICS_LEVELS = [
   },
   {
     id: 'medium',
+    damageParticles: 96, // total live damage particles; range 0 to 300
+    damageEmit: 24, // total emissions per second; range 0 to 100
     name: 'Medium',
     note: 'No ambient shading, smaller shadows',
     // Ambient occlusion off, the single biggest cost, but bloom and 2x MSAA
@@ -753,6 +757,8 @@ export const GRAPHICS_LEVELS = [
   },
   {
     id: 'high',
+    damageParticles: 160, // total live damage particles; range 0 to 300
+    damageEmit: 40, // total emissions per second; range 0 to 100
     name: 'High',
     note: 'Full resolution, lighter anti-aliasing',
     // Occlusion worked out at 40% of the screen rather than half: about a
@@ -762,6 +768,8 @@ export const GRAPHICS_LEVELS = [
   },
   {
     id: 'ultra',
+    damageParticles: 224, // total live damage particles; range 0 to 300
+    damageEmit: 56, // total emissions per second; range 0 to 100
     name: 'Ultra',
     note: 'Everything at full quality',
     // Nothing overridden: exactly the GRAPHICS and WORLD blocks above.
@@ -1610,7 +1618,11 @@ export const FLIGHT = {
 
   // The throttle lever: how fast a held key or the stick moves it, fraction of
   // travel per second. Range 0.15-1.
-  throttleRate: 0.35,
+  throttleRate: 0.65,
+  // Power arrives sooner after advancing the lever, without raising rated thrust.
+  // Multipliers on the aircraft's engine time constants. Range 0.3-1.5.
+  engineSpoolUpScale: 0.55,
+  engineAbUpScale: 0.65,
 
   // Lag on the control surfaces, seconds. Range 0.02-0.2.
   actuatorTau: 0.07,
@@ -1767,6 +1779,7 @@ export const FIELD = {
 // banks and lags through a turn and swings behind you in a loop.
 // ============================================================================
 export const FLIGHT_CAMERA = {
+  buildingClearance: 1.5, // external camera stand-off from airport solids, m; range 0.3 to 3
   // Chase: metres behind and above the aircraft, and how much further back it
   // pulls at speed (m at 340 m/s). Range: distance 18-70, height 3-20,
   // pullback 0-40.
@@ -1788,6 +1801,12 @@ export const FLIGHT_CAMERA = {
   fovMin: 64,
   fovMax: 84,
   fovSpring: 2.5,
+  // Player-selected vertical field of view, degrees, shared by flight camera views.
+  // Menu bounds 40-120, default within bounds, step 1-5. No speed-driven zoom when selected.
+  userFovMin: 55,
+  userFovMax: 110,
+  userFovDefault: 78,
+  userFovStep: 1,
 
   // Far orbit: distance (m) and the look-at height. Range 40-200.
   orbitDistance: 90,
@@ -1821,6 +1840,10 @@ export const FLIGHT_CAMERA = {
   // Range 0-0.3.
   shakeBurner: 0.04,
   shakeStall: 0.12,
+  // First person and Cockpit retain 20% of positional shake and Mach-1 FOV kick.
+  // External camera effects keep their original amplitude. Range 0-1.
+  eyeShakeScale: 0.2,
+  eyeKickScale: 0.2,
 
   // After a crash the wreck is shown this many seconds before the respawn menu opens.
   // Range 0.5-4.
@@ -1854,14 +1877,16 @@ export const FLIGHT_AUDIO = {
   // offline: -20 dB RMS against -21). Range 0.05-0.6.
   engineGain: 0.22,
   // The turbine's whine (the compressor), one tone per engine: pitch (Hz) at
-  // idle and at military power, its level, and how far the second engine's
-  // spool runs from the first (a ratio; the two beat against each other the way
-  // a twin does). Range: idle 300-1200, mil 1200-3500, gain 0.01-0.3, beat
-  // 1.002-1.05.
-  whineIdle: 620,
-  whineMil: 2100,
-  whineGain: 0.07,
-  whineBeat: 1.013,
+  // idle and at military power, and its level. Each engine follows actual spool.
+  // Range: idle 100-1200, mil 500-3500, gain .01-.3.
+  whineIdle: 780,
+  whineMil: 2400,
+  whineGain: 0.035,
+  // Harmonic colour and quiet idle level. No synthetic engine beating.
+  // Wave is sine/triangle; Q .3-2; idle fraction 0-.4.
+  toneWave: 'sine',
+  toneQ: .65,
+  toneIdle: .12,
   // The core's low rumble: the cutoff (Hz) of its low-pass at idle and at
   // military power, and its level as a multiple of the engine gain. It is
   // brown noise (a rumble, not a hiss) and swells and ebbs slowly. `rumbleFloor`
@@ -1879,24 +1904,20 @@ export const FLIGHT_AUDIO = {
   exhaustIdle: 320,
   exhaustMil: 1000,
   exhaustGain: 0.7,
-  // The afterburner: the level of its roar, the centre (Hz) of its raspy upper
-  // band, the cutoff (Hz) of the deep rumble under it, and the flutter that
-  // breaks that rumble up (rate in Hz and depth, 0-1). When it lights there is
-  // a thump of `burnerKick`. Range: gain 0.05-0.8, freq 300-1500, low 120-500,
-  // flutter 12-60, depth 0-0.8, kick 0-1.5.
+  // Afterburner broad roar and low rumble. No repeating amplitude flutter.
+  // Range: gain .05-.8, band 300-1500 Hz, low 120-500 Hz, optional kick 0-1.5.
   roarGain: 0.4,
   roarFreq: 560,
   burnerLow: 240,
-  burnerFlutter: 29,
-  burnerFlutterDepth: 0.45,
-  burnerKick: 0.8,
+  burnerKick: 0,
   // Wind and airframe noise, rising with the square of airspeed. Level at
   // 340 m/s and the band centre (Hz). Range: gain 0-0.4, freq 400-2400.
   windGain: 0.1,
   windFreq: 900,
   // From the cockpit camera the cabin muffles everything above this (Hz); the
   // other cameras hear it all. Range 600-6000.
-  cabinCutoff: 1500,
+  cabinCutoff: 1100,
+  cabinGain: .48, // Pilot-view engine/wind attenuation, .2-1; warnings bypass it.
   // Stall warning: a two-tone chirp. Pitch (Hz), beeps a second, level.
   // Range: freq 500-1600, rate 2-8, gain 0.05-0.4.
   stallFreq: 880,
@@ -1908,7 +1929,7 @@ export const FLIGHT_AUDIO = {
   boomGain: 0.9,
   boomDelay: 0.12,
   // How fast every sound parameter reaches its target, seconds. Range 0.02-0.15.
-  smoothing: 0.06,
+  smoothing: 0.12,
   // The clunk of a flap lever moving to a detent: its level (0 = none) and its pitch (Hz).
   // Range: gain 0-1.5, freq 40-140.
   clunkGain: 0.8,
@@ -1916,14 +1937,18 @@ export const FLIGHT_AUDIO = {
 };
 
 // What differs by aircraft in the sound: any of the keys above, laid over them. The F-22 has
-// none (it sounds as it always has). The 737 is two big turbofans: a deeper rumble, a higher
+// the default fighter turbine/exhaust voice. The 737 is two big turbofans: a deeper rumble, a lower
 // and quieter fan whine, a softer exhaust and no afterburner. Same ranges as above.
 export const FLIGHT_AUDIO_PROFILES = {
   b737: {
     engineGain: 0.2,
-    whineIdle: 900,
-    whineMil: 2600,
-    whineGain: 0.05,
+    whineIdle: 160,
+    whineMil: 680,
+    whineGain: 0.12,
+    toneWave: 'triangle',
+    toneQ: .55,
+    cabinCutoff: 850,
+    cabinGain: .38,
     rumbleIdle: 90,
     rumbleMil: 300,
     rumbleGain: 1.4,
@@ -2134,7 +2159,7 @@ export const OPEN_WORLD = {
   //                (m back from the threshold, m up), hangarMouth how far in front
   //                of a hangar bay a reset stops (m). Range: 0-400, 800-6000,
   //                300-4000, 8-40.
-  //   zone         the size of a hangar bay, metres: stop inside it to open the
+  //   zone         the size of a hangar bay, metres: stop near it to enter the
   //                Hangar. Range w 24-60, d 26-60 (the fighter is 19 m by 13.6 m).
   //   corridor     the approach corridor cut into the land at both ends of an airport the
   //                data marks `corridor: true` (the major, which sits in a cut in a ridge: an
@@ -2397,18 +2422,14 @@ export const OPEN_WORLD = {
 // ============================================================================
 // THE HANGAR (flight milestone 3)
 // ----------------------------------------------------------------------------
-// Taxi into a hangar bay (the marked rectangle in front of a hangar door) and
-// stop: after `dwell` seconds the Hangar opens. "Stopped" is on the ground,
-// slower than `stopSpeed` (m/s) with the lever at or under `stopLever`. The
-// bay arms again when the aircraft leaves it, so a Hangar closed with Esc does
-// not open again until you have been out and back in, and a reset (which puts
-// you at the mouth of a bay) does not slam a screen over you. `landedAfter` is
-// how long (seconds) you sit stopped on an airport for it to become the one
-// you "last used": the one free flight starts at. Range: dwell 0.5-4, speed
-// 0.1-1, lever 0.04-0.3, landed 1-10.
+// Stop near a Hangar and explicitly choose Enter Hangar. Availability is immediate;
+// no dwell/rearm latch. Speed in m/s (0.1-1), lever (0.04-0.3), airport arrival 1-10 s.
 // ============================================================================
 export const HANGAR = {
-  dwell: 1.5,
+  // Extra approach depth outside the painted bay, covering the Hangar teleport. Range 16-40 m.
+  entryReach: 24,
+  // Clearance beyond the aircraft's bounding turn radius from the Hangar wall. Range 2-10 m.
+  clearance: 4,
   stopSpeed: 0.4,
   stopLever: 0.12,
   landedAfter: 3,
@@ -2512,7 +2533,8 @@ export const FLIGHT_OVERRIDES = {
     pitchRelease: 3.5,
     yawAttack: 1.6,
     yawRelease: 3,
-    throttleRate: 0.18,
+    // Quicker lever travel, still slower than the fighter. Fraction/s, range 0.15-1.
+    throttleRate: 0.35,
     actuatorTau: 0.18,
     // Auto-trim: the tailplane trims the airliner for you, slowly.
     trimRate: 1.6,
@@ -2613,6 +2635,88 @@ export const AUTOPILOT = {
     altRate: 25, hdgRate: 0.0524, spdRate: 2.5, spdMin: 65, spdMax: 175, altMax: 12500,
     kAlt: 0.08, kAltI: 0.0008, vsInt: 2, vsMax: 12.7, kVs: 0.1, pitchMax: 0.25,
     kHdg: 1.2, bankMax: 0.44, kBank: 2, rollMax: 0.6,
-    kSpd: 0.1, aMax: 0.7, kSpdA: 0.5,
+    // Preserve speed-loop lever authority with the quicker manual throttle.
+    // Acceleration error to lever command, range 0.1-0.8.
+    kSpd: 0.1, aMax: 0.7, kSpdA: 0.26,
   },
+};
+
+
+// Milestone 5 damage: game response curves, not real crash-survivability limits.
+export const FLIGHT_DAMAGE = {
+  objectCrashSpeed: 10,  // airport wall normal impact speed that destroys, m/s; game value, range 5 to 20
+  objectDamageOnset: 0.4, // ignore slow resting wall pressure below this m/s; range 0.1 to 2
+  objectDamageRate: 0.08, // health lost per excess m/s in a wall hit; range 0 to 0.5
+  contactSkin: 0.01,     // stand-off before a solid contact, m; range 0.001 to 0.05
+  sweepEpsilon: 1e-9,   // near-zero swept displacement tolerance, m; range 1e-12 to 1e-6
+  apRollTrimRate: 0.18,  // AP stick trim per bank-error radian/second under asymmetric damage; range 0 to 0.5
+  apRollTrimLimit: 0.8,  // maximum AP roll trim; range 0 to 1
+  wingLiftLoss: 0.5,     // lift fraction lost over health 1 to just above 0; zero detaches wing; range 0 to 1
+  wingDrag: 0.025,       // added Cd at zero wing health; range 0 to 0.1
+  gearTravelLoss: 0.65,  // fraction of travel lost at zero health; range 0 to 0.9
+  gearRolling: 0.08,     // added rolling friction at zero health; range 0 to 0.2
+  landingOnset: 0.75,    // fraction of aircraft maxSink before gear damage; range 0.5 to 0.95
+  landingDamage: 0.3,    // gear health lost per excess m/s at touchdown; range 0 to 1
+  skidProtection: 0.5,   // tail skid protects shallow scrapes below this fraction of crash depth; range 0 to 1
+  strikeOnset: 0.8,      // normal closing speed before local strike damage, m/s; range 0 to 3
+  strikeDamage: 0.12,    // health lost per excess m/s on a new hull contact; range 0 to 0.5
+  scrapeRate: 0.00008,   // health per tangential metre while skin slides; range 0 to 0.001
+  scrapeMinSpeed: 1,    // ignore resting contact drift below this m/s; range 0 to 5
+  overspeedMargin: 1.03,// tolerance multiplier above limit; range 1 to 1.1
+  overspeedRate: 0.12,   // health lost/s for fractional excess speed 1; range 0 to 1
+  smoke: 0.6,           // caution/smoke below this health; range 0.3 to 0.9
+  fire: 0.3,            // critical/fire below this health; range 0.05 to 0.5
+  saveInterval: 1,      // seconds between dirty damage saves; range 0.1 to 5
+  surface: {           // relative abrasion/impact severity; each range 0 to 5
+    runway: 1, taxi: 1, apron: 1, tarmac: 1, road: 1,
+    grass: 1.2, sand: 1.4, rock: 2, gravel: 1.5, snow: 1.1, water: 2,
+  },
+};
+
+
+export const DAMAGE_FX = {
+  capacity: 224,          // maximum pool capacity, matching Ultra; range 48 to 500
+  maxDelta: 0.1,          // emission catch-up cap, seconds; range 0.03 to 0.25
+  smokeLife: 3,           // smoke lifetime, seconds; range 1 to 5
+  fireLife: 0.9,          // flame lifetime, seconds; range 0.2 to 1.5
+  smokeSize: 0.35,        // smoke cube size, m; range 0.1 to 2
+  fireSize: 0.65,          // flame cube size, m; range 0.1 to 1
+  smokeGrow: 4,           // smoke expansion multiplier; range 1 to 8
+  fireGrow: 2,            // flame expansion multiplier; range 1 to 4
+  rise: 3,               // upward particle speed, m/s; range 0 to 10
+  inheritVelocity: 0.18,  // fraction of aircraft velocity in smoke; range 0 to 1
+  drag: 0.2,             // particle velocity drag per second; range 0 to 2
+  flameEvery: 3,          // one flame per this many emissions below fire threshold; integer range 2 to 6
+  smokeColor: [0.16, 0.17, 0.18], // linear RGB, each range 0 to 1
+  fireColor: [1, 0.25, 0.015], // linear RGB, each range 0 to 1
+  warningFreq: 740,       // caution chirp frequency, Hz; range 300 to 1200
+  warningGain: 0.09,      // warning gain relative to engine bus; range 0 to 0.3
+  warningTime: 0.25,      // warning duration, seconds; range 0.1 to 1
+  warningCooldown: 2,     // minimum seconds between worsening-condition chirps; range 0.5 to 5
+  engineNoteLoss: 0.18,   // engine frequency reduction at zero health; range 0 to 0.5
+};
+
+// Working cockpit panels: display budgets only, never flight physics.
+export const FLIGHT_INSTRUMENTS = {
+  refreshHz: 30, // physical vector panel updates per second; range 15 to 60
+  maxVertices: 24000, // fixed capacity per surface; range 16000 to 96000
+  navRange: 20000, // landmark navigation radius in metres; range 5000 to 50000
+  hudPitchSpan: 40, // visible HUD pitch degrees; range 20 to 60
+};
+
+// Part C navigation. Distances are world metres, independent of render origin.
+export const FLIGHT_NAV = {
+  // Stored trip limits: 2-64 points, coordinates within the generated world.
+  maxPoints: 24,
+  minLeg: 50, // Reject duplicate/near-identical points, 10-500 m.
+  arrival: 350, // Arrival cylinder radius, 100-1500 m, lateral guidance only.
+  minSpeed: 15, // Do not advance while parked/taxiing, 5-40 m/s.
+  lookAhead: 12, // Seconds ahead for smooth leg interception, 5-30 s.
+  minLookAhead: 700, // Minimum interception distance, 200-3000 m.
+  maxIntercept: .65, // Maximum heading offset from leg, .2-1 rad.
+  ranges: [5000, 10000, 20000, 40000, 80000], // Full map width, 2-120 km.
+  rangeDefault: 2, // Initial range index, 0-4.
+  cacheMs: 2, // Per-frame map generation budget, 1-8 ms.
+  terrainCells: 22, // Bounded vector terrain grid per nav panel, 12-32.
+  trackStride: 8, // Track centreline sample spacing, 2-16 vertices.
 };

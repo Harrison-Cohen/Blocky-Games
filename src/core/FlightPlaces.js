@@ -6,14 +6,14 @@
 //   last        the airport free flight starts at: the one you started at, sent
 //               yourself to, or sat stopped on for a few seconds after a landing.
 //               Remembered (Storage `flight.lastAirport`).
-//   teleportMode  which start the map's "Teleport" uses (apron, runway or airborne).
-//   the bay     taxi into a hangar bay (Airports.zoneAt) and stop: after HANGAR.dwell
-//               seconds it fires. It arms again only when the aircraft leaves the bay.
+//   teleportMode  which start the map's "Teleport" uses (apron, runway, airborne or Hangar).
+//   the bay     stop near a Hangar: availableHangar returns the bay for explicit entry.
+//               No dwell timer or latch; closing never requires leaving the zone.
 
 import { HANGAR } from '../data/tuning.js';
 import * as Storage from './Storage.js';
 
-const MODES = ['apron', 'runway', 'air'];
+const MODES = ['apron', 'runway', 'air', 'hangar'];
 const TIER_ORDER = { major: 0, military: 1, regional: 2, strip: 3, heliport: 4 };
 
 export class FlightPlaces {
@@ -30,8 +30,7 @@ export class FlightPlaces {
 
     // The bay.
     this.zone = null;         // the bay the aircraft is in now, or null
-    this.armed = true;        // may it fire (it has been out of the bay since it last did)
-    this.dwell = 0;           // seconds stopped in an armed bay
+    this._local = {};        // scratch for the Hangar approach query
     // Landed somewhere: sitting stopped on an airport.
     this._sat = null;
     this._satT = 0;
@@ -72,8 +71,15 @@ export class FlightPlaces {
     return best;
   }
 
+  // Canonical, eligible destinations only. A respawn always uses the hangar apron.
+  respawnPose(id) {
+    const ap = this.airports.byId.get(id);
+    if (!ap || !this.eligible(ap, 'hangar').ok) return null;
+    return this.pose(ap, 'hangar');
+  }
+
   // The pose for a start at an airport (a reused object; see Airports.start).
-  pose(ap, mode) { return this.airports.start(ap, mode, this._pose); }
+  pose(ap, mode, departure = null) { return this.airports.start(ap, mode, this._pose, { def: this.def, ...departure }); }
 
   // The next (d = 1) or previous airport in the list, from the one last used.
   step(d) {
@@ -83,7 +89,7 @@ export class FlightPlaces {
 
   // Forget where the aircraft was: it has just been put somewhere, outside any bay.
   rearm() {
-    this.zone = null; this.armed = true; this.dwell = 0;
+    this.zone = null;
     this._sat = null; this._satT = 0;
   }
 
@@ -103,31 +109,30 @@ export class FlightPlaces {
     return what ? `${ap.name}, ${what}` : ap.name;
   }
 
-  // Once a frame, in real time, from the aircraft's state (a physics object). Returns
-  // 'hangar' on the frame the bay fires, else ''. `progress` and `zone` are the HUD's.
+  // Deliberate Hangar entry replaces the old dwell/armed latch. The approach
+  // includes the reset/teleport point outside the painted bay. No moving aircraft.
+  availableHangar(p) {
+    if (!(p.onGround || p.gear?.hullHit > 0) || p.crashed || Math.hypot(p.vx, p.vz) >= HANGAR.stopSpeed || p.throttle > HANGAR.stopLever) return null;
+    const ap = this.airports.at(p.x, p.z);
+    if (!ap || !this.eligible(ap, 'hangar').ok) return null;
+    const loc = ap.toLocal(p.x, p.z, this._local);
+    for (const zone of ap.layout.zones) {
+      if (loc.u >= zone.u0 && loc.u <= zone.u1 && loc.v >= zone.v0 - HANGAR.entryReach && loc.v <= zone.v1) return zone;
+    }
+    return null;
+  }
+
+  // Keep airport arrival bookkeeping independent of entry UI.
   update(dt, p) {
     const speed = Math.hypot(p.vx, p.vz);
-    const zone = this.airports.zoneAt(p.x, p.z);
-    this.zone = zone;
-    let fired = '';
-    if (!zone) {
-      this.armed = true;
-      this.dwell = 0;
-    } else if (this.armed && p.onGround && !p.crashed && speed < HANGAR.stopSpeed && p.throttle <= HANGAR.stopLever) {
-      this.dwell += dt;
-      if (this.dwell >= HANGAR.dwell) { fired = 'hangar'; this.armed = false; this.dwell = 0; }
-    } else {
-      this.dwell = Math.max(0, this.dwell - dt * 2);
-    }
-
+    this.zone = this.availableHangar(p);
     // Sitting stopped on an airport is landing there.
     const ap = p.onGround && speed < 2 ? this.airports.at(p.x, p.z) : null;
     if (ap && ap === this._sat) {
       this._satT += dt;
       if (this._satT > HANGAR.landedAfter) this.setLast(ap);
     } else { this._sat = ap; this._satT = 0; }
-    return fired;
+    return this.zone;
   }
 
-  get progress() { return this.armed && this.zone ? Math.min(1, this.dwell / HANGAR.dwell) : 0; }
 }

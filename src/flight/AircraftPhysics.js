@@ -26,6 +26,9 @@ import { atmosphere, createAtmosphere, calibratedAirspeed } from './Atmosphere.j
 import { Wing, Curve, MachTable } from './Wing.js';
 import { Engine } from './Engine.js';
 import { Gear } from './Gear.js';
+import { createStructureHit } from '../world/AirportCollisions.js';
+import { Damage } from './Damage.js';
+import { FLIGHT_DAMAGE as D } from '../data/tuning.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const smooth = (a, b, x) => {
@@ -98,8 +101,12 @@ export class AircraftPhysics {
     this.surfaces = def.surfaces.map((s) => new Wing(s, curves));
     this.liftMach = new MachTable(def.liftMach);
     this.waveCdA = new MachTable(def.waveCd);
-    this.engines = def.engines.map((e) => new Engine(e));
+    this.engines = def.engines.map((e) => new Engine({ ...e,
+      spoolUp: e.spoolUp * this.F.engineSpoolUpScale,
+      abUp: e.abUp * this.F.engineAbUpScale,
+    }));
     this.gear = new Gear(def.gear.wheels, def.gear.hull, this.F);
+    this.damage = new Damage(def);
     this.stallAlpha = (def.stallAlpha * Math.PI) / 180;
     // The flap detents (data/aircraft.js, `flaps`): per detent the flaps' shift of the
     // wings' zero-lift angle (rad), gain on their lift, drag (a coefficient on the wing
@@ -137,6 +144,9 @@ export class AircraftPhysics {
 
     this.atm = createAtmosphere();
     this.r = new Float64Array(9);
+    this.prevR = new Float64Array(9);
+    this.structureHit = createStructureHit();
+    this.structureVolumes = def.damage.flatMap((part, i) => (part.hits || []).map((h) => ({ x: h[0], y: h[1], z: h[2], radius: h[3], part: i, gear: part.kind === 'gear' })));
     this.defl = new Float64Array(this.surfaces.length);
     this._acc = { fx: 0, fy: 0, fz: 0, tx: 0, ty: 0, tz: 0 };
     this._wout = { fx: 0, fy: 0, fz: 0 };
@@ -151,8 +161,17 @@ export class AircraftPhysics {
   setup(s = {}) {
     if (s.payload != null) this.payload = s.payload;
     if (s.tune) Object.assign(this.tune, s.tune);
+    if (s.damage) this.damage.load(s.damage);
+    this._damageModifiers();
     for (const e of this.engines) e.power = this.tune.power;
     this.mass = this.def.emptyMass + this.payload + this.fuel;
+  }
+
+  // Apply health to reusable force components, including immediately after repair/reset.
+  _damageModifiers() {
+    const damage = this.damage;
+    for (let i = 0; i < this.engines.length; i++) this.engines[i].health = damage.health[damage.enginePart[i]] ?? 1;
+    this.gear.health = damage.health[damage.gear];
   }
 
   // Put the aircraft down. opts: { x, y, z, heading, pitch, bank, speed,
@@ -188,6 +207,8 @@ export class AircraftPhysics {
     this.defl.fill(0);
     for (const e of this.engines) e.reset(this.throttle);
     this.gear.reset();
+    this.damage.resetContacts();
+    this._damageModifiers();
 
     // Readouts.
     this.alpha = 0; this.beta = 0;
@@ -213,6 +234,7 @@ export class AircraftPhysics {
   }
 
   snapshot() {
+    this.prevR.set(this.r);
     this.prevX = this.x; this.prevY = this.y; this.prevZ = this.z;
     this.prevQx = this.qx; this.prevQy = this.qy; this.prevQz = this.qz; this.prevQw = this.qw;
   }
@@ -243,6 +265,7 @@ export class AircraftPhysics {
     // A wreck stays where it fell. The skin's contact is stiff enough that
     // driving on through it at 200 m/s throws the numbers out of range, and
     // there is nothing to fly: the crash flow (milestone 5) takes over.
+    if (!this.crashed && this.damage.health[this.damage.fuselage] === 0) { this.crashed = true; this.crashReason = 'lost its fuselage'; }
     if (this.crashed) {
       this.vx = 0; this.vy = 0; this.vz = 0;
       this.wx = 0; this.wy = 0; this.wz = 0;
@@ -252,6 +275,8 @@ export class AircraftPhysics {
     const d = this.def;
     const F = this.F;
     const r = this.r;
+    this._damageModifiers();
+    const gearBefore = this.gearDown;
 
     // --- 1. the air ------------------------------------------------------
     const atm = atmosphere(this.y, this.atm);
@@ -451,14 +476,20 @@ export class AircraftPhysics {
     const surfaces = this.surfaces;
     for (let i = 0; i < surfaces.length; i++) {
       const s = surfaces[i];
-      if (s.flap) { s.liftScale = wingLift; s.cdAdd = this.flapC; }
-      const target = s.cPitch * pitchOut + fade * (s.cRoll * roll + s.cYaw * yaw) + s.flap * flapAlpha;
+      const part = this.damage.surfacePart[i];
+      const health = this.damage.health[part] ?? 1;
+      const wing = part >= 0 && this.damage.parts[part].kind === 'wing';
+      s.liftScale = (s.flap ? wingLift : 1) * (wing ? (health === 0 ? 0 : 1 - (1 - health) * D.wingLiftLoss) : 1);
+      s.cdAdd = (s.flap ? this.flapC : 0) + (wing ? (1 - health) * D.wingDrag : 0);
+      const target = (s.cPitch * pitchOut + fade * (s.cRoll * roll + s.cYaw * yaw)) * (wing ? 1 : health) + s.flap * flapAlpha;
       this.defl[i] += (target - this.defl[i]) * actK;
       // Velocity of the surface through the air: v + w x r.
       const wx = vbx + (this.wy * s.pz - this.wz * s.py);
       const wy = vby + (this.wz * s.px - this.wx * s.pz);
       const wz = vbz + (this.wx * s.py - this.wy * s.px);
       s.force(wx, wy, wz, atm.rho, liftMach, this.defl[i], out);
+      // A broken-off lifting part no longer supplies passive lift or drag either.
+      if (health === 0) { out.fx = 0; out.fy = 0; out.fz = 0; }
       acc.fx += out.fx; acc.fy += out.fy; acc.fz += out.fz;
       acc.tx += s.py * out.fz - s.pz * out.fy;
       acc.ty += s.pz * out.fx - s.px * out.fz;
@@ -488,7 +519,7 @@ export class AircraftPhysics {
     const abOn = wantAb && !this.abLocked && this.abFuel > 0;
     const fuelOk = this.fuel > 0;
     const tvAuth = clamp(1 - qdyn / F.tvQ, 0, 1);
-    this.nozzle = d.tvMax * tvAuth * pitch;
+    this.nozzle = d.tvMax * tvAuth * pitch * this.damage.health[this.damage.tail];
     const sinN = Math.sin(this.nozzle), cosN = Math.cos(this.nozzle);
     let thrustTotal = 0, flow = 0, abMean = 0;
     for (let i = 0; i < this.engines.length; i++) {
@@ -598,15 +629,40 @@ export class AircraftPhysics {
     }
 
     this.onGround = this.gear.onGround;
-    if (!this.crashed) {
-      if (this.gear.hullImpact > F.crashSpeed) {
-        this.crashed = true; this.crashReason = 'hit the ground';
-      } else if (this.gear.touchdownSink > F.maxSink) {
-        this.crashed = true; this.crashReason = 'landed too hard';
-      } else if (this.gear.hullHit > F.hullCrashDepth) {
-        this.crashed = true; this.crashReason = 'hit the ground';
-      } else if (this.gear.skidImpact > F.skidCrashSpeed || this.gear.skidHit > F.skidCrashDepth) {
-        this.crashed = true; this.crashReason = 'struck its tail on the ground';
+    if (ground.collisions) {
+      const hit = ground.collisions.sweep(this, dt, this.structureHit);
+      if (hit.hit) {
+        // Stop just before contact. Pose interpolation also stops a rotating wing at impact.
+        const fraction = Math.max(0, hit.t - D.contactSkin / Math.max(D.contactSkin, this.speed * dt));
+        this.x = this.prevX + (this.x - this.prevX) * fraction;
+        this.y = this.prevY + (this.y - this.prevY) * fraction;
+        this.z = this.prevZ + (this.z - this.prevZ) * fraction;
+        const sign = this.prevQx * this.qx + this.prevQy * this.qy + this.prevQz * this.qz + this.prevQw * this.qw < 0 ? -1 : 1;
+        this.qx = this.prevQx + (this.qx * sign - this.prevQx) * fraction;
+        this.qy = this.prevQy + (this.qy * sign - this.prevQy) * fraction;
+        this.qz = this.prevQz + (this.qz * sign - this.prevQz) * fraction;
+        this.qw = this.prevQw + (this.qw * sign - this.prevQw) * fraction;
+        const inverse = 1 / Math.hypot(this.qx, this.qy, this.qz, this.qw);
+        this.qx *= inverse; this.qy *= inverse; this.qz *= inverse; this.qw *= inverse;
+        quatToMatrix(this.qx, this.qy, this.qz, this.qw, this.r);
+        this.damage.lose(hit.part, Math.max(0, hit.closing - D.objectDamageOnset) * D.objectDamageRate);
+        if (hit.closing > D.objectCrashSpeed) {
+          this.crashed = true; this.crashReason = 'hit an airport building';
+          this.damage.set('fuselage', 0);
+        }
+        this.vx = 0; this.vy = 0; this.vz = 0;
+        this.wx = 0; this.wy = 0; this.wz = 0;
+      }
+    }
+    this.damage.limits(dt, this, gearBefore);
+    const reason = this.crashed ? '' : this.damage.crashReason(this.gear, F);
+    if (reason) {
+      this.crashed = true; this.crashReason = reason;
+      this.damage.set('fuselage', 0);
+    } else if (!this.crashed) {
+      this.damage.contacts(dt, this.gear, F);
+      if (this.damage.health[this.damage.fuselage] === 0) {
+        this.crashed = true; this.crashReason = 'lost its fuselage';
       }
     }
     if (!(this.x === this.x) || !(this.vx === this.vx) || !(this.qw === this.qw)) {

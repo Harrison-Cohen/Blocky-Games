@@ -85,21 +85,28 @@ try {
   await b.sleep(900);
   await shot('runway-737');
   await b.eval('flight.start("air")');
-  await b.eval('flight.gearLever = true; flight.flapLever = 3; flight.input.state.airbrake = false');
+  // Approach fixture must slow down before deploying landing flaps.
+  await b.eval('const p = flight.physics; const k = 145 * 0.514444 / p.cas; p.vx *= k; p.vy *= k; p.vz *= k; p.snapshot(); flight.gearLever = true; flight.flapLever = 3; flight.airbrakeLever = false; p.throttle = 0.4; 0');
   await steps(900);
   await b.sleep(900);
   await shot('approach-737');
   await b.eval('flight.camera.cfg = { ...flight.camera.cfg, distance: 42, height: 8, speedPullback: 0 }; flight.camera.reset();');
-  // (Set and flown in one call: the input is polled between calls and would let them go.)
-  await b.eval('flight.input.state.airbrake = true; for (let i = 0; i < 400; i++) { flight.input.state.airbrake = true; flight.step(1 / 120); }');
+  // The lever persists across frames and physics steps.
+  await b.eval('flight.airbrakeLever = true; for (let i = 0; i < 400; i++) flight.step(1 / 120);');
   await b.sleep(150);
   await shot('spoilers-737');
-  await b.eval('flight.input.state.airbrake = false; flight.camera.cfg = { ...flight.camera.cfg, distance: 78, height: 19, speedPullback: 30 }; flight.camera.mode = 1; flight._savedCamMode = 1; flight.camera.reset();');
+  await b.eval('flight.airbrakeLever = false; flight.camera.cfg = { ...flight.camera.cfg, distance: 78, height: 19, speedPullback: 30 }; flight.camera.mode = 1; flight._savedCamMode = 1; flight.camera.reset();');
   await b.sleep(900);
   await shot('first-person-737');
   await b.eval('flight.camera.mode = 2; flight._savedCamMode = 2; flight.camera.reset();');
   await b.sleep(900);
   await shot('cockpit-737');
+  for (const [name, yaw, pitch] of [['left', 0.65, 0], ['right', -0.65, 0], ['panel', 0, -0.4]]) {
+    await b.eval(`flight.input._lookMouse = true; flight.input.look.x = ${yaw}; flight.input.look.y = ${pitch}; 0`);
+    await b.sleep(300);
+    await shot(`cockpit-737-${name}`);
+  }
+  await b.eval('flight.input._lookMouse=false; flight.input.look.x=flight.input.look.y=0; 0');
   await b.eval('flight.camera.mode = 0; flight._savedCamMode = 0; flight.camera.reset(); flight.autopilot.engage(flight.physics)');
   await steps(240);
   await b.sleep(900);
@@ -117,6 +124,46 @@ try {
   await b.eval('flight.hangar.close(true)');
   await b.sleep(500);
   await b.eval('flight.resume()');
+
+  // Milestone 5: both aircraft, pooled smoke/fire, detached wing, Repair and respawn map.
+  for (const id of ['f22', 'b737']) {
+    await b.eval(`flight.switchAircraft('${id}'); flight.start('air'); flight.debugDamage('engineL', 0.5); for(let i=0;i<240;i++){flight.step(1/120);flight.damageEffects.update(1/120,flight.aircraft,flight.mesh.origin,'medium');} 0`);
+    await b.sleep(200);
+    await shot(`damage-${id}-smoke`);
+    await b.eval('flight.debugDamage("engineL",0.2); for(let i=0;i<180;i++){flight.step(1/120);flight.damageEffects.update(1/120,flight.aircraft,flight.mesh.origin,"medium");} 0');
+    await b.sleep(200);
+    await shot(`damage-${id}-fire`);
+    await b.eval('flight.debugDamage("wingL",0); flight.damageEffects.clear(); flight.paused=true; 0');
+    await b.sleep(200);
+    await shot(`damage-${id}-broken`);
+    await b.eval('flight.openHangar("pause"); 0');
+    await b.sleep(200);
+    await shot(`damage-${id}-repair`);
+    await b.eval('flight.hangar._repair(null); flight.hangar.close(false); flight.resume(); flight.debugDamage("fuselage",0); flight.step(1/120); flight.openCrash(); 0');
+    for(let i=0;i<100 && !(await b.eval('flight.screens.map._built'));i++)await b.sleep(100);
+    await shot(`damage-${id}-respawn`);
+    await b.eval('flight.respawnAt(flight.places.nearestEligible(flight.physics.x,flight.physics.z,"hangar").id); 0');
+  }
+
+  // A2: physical visit actions, rather than the Fly-menu preview.
+  await b.eval('flight.start("hangar"); for(let i=0;i<480;i++)flight.step(1/120); flight.render(1,1/60); 0');
+  await shot('hangar-enter-button');
+  await b.eval('flight.enterHangar(); flight.hangar._focus(flight.hangar.fields.length-1); flight.hangar._paint(); 0');
+  await b.sleep(250);
+  await shot('hangar-departure-options');
+  await b.eval('flight.hangar.buttons[1].click(); 0');
+  await b.sleep(250);
+  await shot('hangar-runway-departure');
+
+  // B: both physical panels keep working with the external HUD switched off.
+  for(const id of ['f22','b737']) {
+    await b.eval(`flight.switchAircraft('${id}');flight.start('air');flight.camera.mode=2;flight._savedCamMode=2;flight.input._lookMouse=true;flight.input.look.x=0;flight.input.look.y=-.35;flight.hudOn=false;flight.hud.hide();flight.autopilot.engage(flight.physics);flight.render(1,1/30);0`);
+    await shot(`instruments-${id}-cockpit`);
+    await b.eval('flight.units="metric";flight.hud.setUnits("metric");flight.render(1,1/30);0');
+    await shot(`instruments-${id}-metric`);
+    await b.eval('flight.units="aviation";flight.hud.setUnits("aviation");flight.hudOn=true;flight.hud.show();0');
+  }
+  await b.eval('flight.input._lookMouse=false;flight.input.look.x=flight.input.look.y=0;0');
 
   // Out again, to the title, and the car game still there.
   await b.eval('flight.exit()');

@@ -37,10 +37,24 @@ export class Aircraft {
     this._bodyLayers();
   }
 
-  _bodyLayers() { this.built.body.traverse((o) => o.layers.enable(1)); }
+  _bodyLayers() {
+    this.built.body.traverse((o) => o.layers.enable(1));
+    this._cockpitShellLayers();
+  }
+
+  // A continuous exterior shell has no cockpit recess. Draw it in the world
+  // pass, then the recessed interior in the overlay, so it cannot cover panels.
+  _cockpitShellLayers() {
+    if(this.built.cockpitShell)for(const o of this.built.cockpitShell){
+      if(this.interior?.group.visible)o.layers.disable(1);else o.layers.enable(1);
+    }
+  }
 
   // Show the inside of the cockpit (the Cockpit camera) or not.
-  setInterior(on) { if (this.interior) this.interior.group.visible = on; }
+  setInterior(on) {
+    if(!this.interior||this.interior.group.visible===on)return;
+    this.interior.group.visible=on;this._cockpitShellLayers();
+  }
 
   // Repaint: build the body again and put it in the same root, so everything that
   // holds the root (the shock wave, the camera, the scene) keeps holding it.
@@ -66,7 +80,7 @@ export class Aircraft {
 
     // An aircraft with its own animation moves its own parts (the 737); the F-22's are
     // moved below.
-    if (this.built.update) { this.built.update(s, this.physics, dt); return; }
+    if (this.built.update) { this.built.update(s, this.physics, dt); this._damageVisuals(s); return; }
 
     const p = this.parts;
     // The stabilators are the third and fourth surfaces: pull is trailing
@@ -93,10 +107,11 @@ export class Aircraft {
     const ab = s.abLevel;
     const flick = 0.92 + 0.08 * Math.sin(performance.now() * 0.05);
     const heat = Math.max(0, Math.min(1, (s.spool - 0.05) / 0.95));
-    for (const n of p.nozzles) {
+    for (let i = 0; i < p.nozzles.length; i++) {
+      const n = p.nozzles[i];
       n.group.rotation.x = s.nozzle;
       n.hotMat.color.setRGB(0.12 + heat * 1.4 + ab * 0.4, 0.12 + heat * heat * 0.35 + ab * 0.3, 0.12 - heat * 0.08 + ab * 0.1);
-      const on = ab > 0.03;
+      const on = ab > 0.03 && this.physics.engines[i].health > 0;
       n.flame.visible = on;
       n.core.visible = on;
       n.diamonds.visible = on;
@@ -138,6 +153,16 @@ export class Aircraft {
         grp.position.y = part.belly + 0.3 * fold;
       }
     }
+    this._damageVisuals(s);
+  }
+
+  _damageVisuals(s) {
+    const damage = this.physics.damage;
+    const groups = this.built.damageGroups;
+    if (groups) for (const id of Object.keys(groups)) {
+      for (const object of groups[id]) object.visible = damage.get(id) > 0;
+    }
+    for (const part of this.parts.gear) part.group.visible = damage.get('gear') > 0 && s.gear > 0.005;
   }
 
   dispose() {

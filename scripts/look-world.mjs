@@ -270,6 +270,17 @@ try {
     await shot(`${n++}-major-approach-${tag.replace(' ', '')}`, `the major's approach, ${tag} out`);
   }
 
+  // Pilot visibility at the major's approach, through the revised 737 flight deck.
+  if (!only || 'cockpit'.includes(only)) {
+    await b.eval('flight.switchAircraft("b737"); 0');
+    await placeAt(0, 22 + 15 + 3200 * Math.tan(3 * Math.PI / 180) + 10, -3200, 0, -3, 75);
+    for (const [tag, yaw] of [['forward', 0], ['left', 0.65], ['right', -0.65]]) {
+      await b.eval(`flight.camera.mode=2; flight.camera.reset(); flight.input._lookMouse=true; flight.input.look.x=${yaw}; flight.input.look.y=0; 0`);
+      await shot(`${n++}-cockpit-737-approach-${tag}`, '737 pilot view on approach');
+    }
+    await b.eval('flight.input._lookMouse=false; flight.input.look.x=flight.input.look.y=0; flight.camera.mode=0; flight.camera.reset(); 0');
+  }
+
   // A rebase must be invisible. Let the frame settle (car meshes are built a frame
   // at a time, the eye adapts), draw it twice to see how much a frame differs from
   // itself, move the origin a kilometre and more, draw it again, and compare.
@@ -293,6 +304,45 @@ try {
     // per cent of it; what is left is the sun's shadow edges landing a texel
     // differently when the numbers they are made from change by a kilometre.
     if (diff.moved.big > diff.baseline.big + diff.pixels * 0.005) { console.error('a rebase changed the picture'); failed = true; }
+  }
+
+  // Milestone 5: a burning aircraft at the airport, and an actual slow wall contact.
+  if (!only || 'damage'.includes(only)) {
+    await b.eval('flight.switchAircraft("f22"); flight.start("hangar",flight.world.airports.major); flight.debugDamage("engineL",0.2); for(let i=0;i<240;i++){flight.step(1/120);flight.damageEffects.update(1/120,flight.aircraft,flight.mesh.origin,"medium");} flight.paused=true; flight.camera.mode=3; flight.camera.cfg={...flight.camera.cfg,orbitDistance:35,height:9}; flight.input.look.x=0.7; flight.camera.reset(); 0');
+    await settle();
+    await b.shot(`${out}/${n++}-damage-airport-fire.png`);
+    const contact = await b.eval(`(() => {
+      flight.debugDamage('engineL',1);
+      flight.start('hangar',flight.world.airports.major);
+      const ap=flight.world.airports.major, s=ap.layout.structures.find(s=>s.kind==='terminal'), at={};
+      ap.toWorld(s.u-s.w/2-14,s.v,at);
+      flight.physics.reset({x:at.x,y:ap.base+1.75,z:at.z,heading:ap.heading,speed:3,gear:1,throttle:0.1});
+      for(let i=0;i<1200;i++){flight.step(1/120);if(flight.physics.structureHit.hit)break;}
+      flight.paused=true;flight.camera.mode=3;flight.input.look.x=0.8;flight.camera.reset();flight.damageEffects.clear();
+      return {hit:flight.physics.structureHit.hit,crashed:flight.physics.crashed,health:flight.physics.damage.get('fuselage')};
+    })()`);
+    console.log('airport-wall-contact',JSON.stringify(contact));
+    if(!contact.hit || contact.crashed || contact.health>=1) { console.error('slow airport wall contact did not survive with damage'); failed=true; }
+    await settle();
+    await b.shot(`${out}/${n++}-damage-airport-wall.png`);
+  }
+
+  // A2: a real 737 Hangar arrival and an outward taxi departure.
+  if (!only || 'hangar'.includes(only)) {
+    await b.eval('flight.switchAircraft("b737"); flight.start("hangar",flight.world.airports.major); for(let i=0;i<480;i++)flight.step(1/120); flight.camera.mode=3; flight.camera.cfg={...flight.camera.cfg,orbitDistance:65,height:14}; flight.camera.reset(); flight.render(1,1/60); 0');
+    await settle();
+    await b.shot(`${out}/${n++}-737-hangar-arrival.png`);
+    await b.eval('flight.enterHangar(); flight.hangar.buttons[0].click(); for(let i=0;i<480;i++)flight.step(1/120); flight.render(1,1/60); 0');
+    await settle();
+    await b.shot(`${out}/${n++}-737-hangar-facing-out.png`);
+  }
+
+  // B: working cockpit panels at the airport and themed external glass displays.
+  if (!only || 'instruments'.includes(only)) {
+    await b.eval('flight.switchAircraft("b737");flight.start("air",flight.world.airports.major);flight.camera.mode=2;flight._savedCamMode=2;flight.input._lookMouse=true;flight.input.look.x=0;flight.input.look.y=-.35;flight.hudOn=false;flight.hud.hide();flight.render(1,1/30);0');
+    await settle();await b.shot(`${out}/${n++}-instruments-737-cockpit.png`);
+    await b.eval('flight.camera.mode=0;flight._savedCamMode=0;flight.input._lookMouse=false;flight.input.look.x=flight.input.look.y=0;flight.hudOn=true;flight.hud.show();flight.render(1,1/30);0');
+    await settle();await b.shot(`${out}/${n++}-instruments-737-external.png`);
   }
 
   // The pause card, with the view distance slider.

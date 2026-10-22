@@ -1121,6 +1121,7 @@ html, body {
 
 /* The - and + either side of a setting's value, for the mouse. */
 .race-stepper { display: flex; align-items: baseline; gap: 4px; }
+.race-range { width: 96px; min-width: 0; accent-color: var(--signal); align-self: center; cursor: ew-resize; }
 .race-step {
   width: 22px;
   padding: 0;
@@ -1294,13 +1295,14 @@ html, body {
   position: absolute; left: 50%; top: calc(max(14px, env(safe-area-inset-top)) + 46px); transform: translateX(-50%);
   padding: 4px 12px 5px; font-size: 13px; font-weight: 600; background: rgba(14, 26, 43, 0.82);
 }
-.fhud-place[hidden], .fhud-zone[hidden] { display: none; }
-.fhud-zone {
-  position: absolute; left: 50%; top: 40%; transform: translateX(-50%);
-  width: min(300px, calc(100vw - 32px)); padding: 8px 14px 10px; background: var(--ink); border-bottom: 3px solid var(--yellow);
+.fhud-place[hidden], .flight-hangar-enter[hidden] { display: none; }
+.flight-hangar-enter {
+  position: absolute; left: 50%; top: 35%; transform: translateX(-50%);
+  padding: 12px 18px; background: var(--ink); color: var(--offwhite); border: 2px solid var(--yellow);
+  font: 600 15px Archivo, sans-serif; pointer-events: auto; cursor: pointer;
 }
-.fhud-zone-text { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
-.fhud-zone .fhud-bar i { background: var(--yellow); }
+.flight-hangar-enter:focus-visible { outline: 3px solid var(--signal); outline-offset: 3px; }
+.hangar .garage-btn[hidden] { display: none; }
 .race-row.row-off { opacity: 0.45; }
 .fhud-radar { position: absolute; left: max(16px, env(safe-area-inset-left)); top: max(14px, env(safe-area-inset-top)); width: 150px; }
 .fhud-radar-disc { display: block; }
@@ -1404,3 +1406,52 @@ html, body {
   opacity: 0.55;
 }
 .garage-card-note:empty { display: none; }
+
+
+/* Damage state is separate from the central flight warnings. */
+.fhud-damage {
+  position: absolute; right: 16px; top: 150px; max-width: 230px;
+  white-space: pre-line; font-family: var(--mono); font-size: 12px;
+  line-height: 1.6; color: var(--yellow); border-left: 3px solid var(--yellow);
+}
+.fhud-damage.critical { color: var(--signal); border-left-color: var(--signal); }
+.fhud-damage[hidden] { display: none; }
+
+.map-modes[hidden] { display: none; }
+.map-item.map-ineligible .map-meta { color: var(--yellow); }
+.map-go:disabled { opacity: 0.55; cursor: default; }
+
+/* Aircraft-specific vector displays. The primary scene remains clear in the
+   centre; Cockpit uses its physical panels, with only service notices outside. */
+.fhud-instrument { position: absolute; height: auto; background: #081014; border: 1px solid #536d70; }
+.fhud-instrument[hidden], .fhud-instrumented .fhud-radar[hidden] { display: none; }
+.fhud-display-primary { width: min(320px, 27vw); aspect-ratio: 320 / 280; left: 16px; bottom: 16px; }
+.fhud-display-navigation { width: min(220px, 20vw); aspect-ratio: 320 / 280; left: 16px; top: 16px; }
+.fhud-display-engines { width: min(280px, 24vw); aspect-ratio: 320 / 280; right: 16px; bottom: 16px; }
+.fhud-display-systems { width: min(360px, 33vw); aspect-ratio: 2; left: 50%; bottom: 16px; transform: translateX(-50%); }
+.fhud-display-hud { width: min(560px, 50vw); aspect-ratio: 4 / 3; left: 50%; top: 50%; transform: translate(-50%, -50%); background: none; border: none; }
+.fhud-fighter-first .fhud-display-systems { left: 16px; transform: none; }
+.fhud-instrumented .fhud-text-mirror { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.fhud-cockpit .fhud-warn { display: none; }
+.fhud-instrumented .fhud-cam { bottom: auto; top: 16px; left: auto; right: 16px; }
+.fhud-instrumented .fhud-place { top: 16px; max-width: 45vw; }
+.fhud[data-profile="raptor"] .fhud-instrument { border-color: #487258; }
+@media (max-width: 850px) {
+  .fhud-display-primary { width: 29vw; left: 8px; bottom: 8px; }
+  .fhud-display-engines { width: 25vw; right: 8px; bottom: 8px; }
+  .fhud-display-systems { width: 36vw; bottom: 8px; }
+  .fhud-display-navigation { left: 8px; top: 8px; width: 24vw; }
+}
+.fhud-fighter-first .fhud-warn { display: none; }
+
+/* Trip planning is a separate map task from teleport and wreck replacement. */
+.map-planner { overflow-y:auto; min-height:0; flex:1; display:flex; flex-direction:column; gap:5px; }
+.map-planner[hidden] { display:none; }
+.map-planner button,.map-plan-toggle { background:#14283b; color:#edede7; border:1px solid #668398; padding:8px; text-align:left; font:13px Archivo,sans-serif; }
+.map-planner button:focus,.map-plan-toggle:focus { outline:2px solid #f5c518; outline-offset:-2px; }
+.map-planner .map-trip-stop { border-color:#ff92e0; }
+.map-trip-status,.map-candidate { font:12px Martian Mono,monospace; margin:5px 0; }
+.map-canvas:focus { outline:2px solid #f5c518; outline-offset:-3px; }
+.fhud-map-zoom { position:absolute; left:18px; top:218px; height:26px; display:flex; gap:4px; pointer-events:auto; }
+.fhud-map-zoom button { font:11px Archivo,sans-serif; color:#edede7; background:#0e1a2b; border:1px solid #668398; padding:4px; }
+.fhud-cockpit .fhud-map-zoom { display:none; }

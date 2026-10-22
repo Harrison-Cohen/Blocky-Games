@@ -30,6 +30,7 @@ import * as THREE from 'three';
 import { facets, lamps, lampPoints } from './Materials.js';
 import { hexToLinear } from '../world/Biomes.js';
 import { addBox } from '../world/Props.js';
+import { structureBoxes } from '../world/AirportStructures.js';
 import { OPEN_WORLD } from '../data/tuning.js';
 
 const Y_PAVE = 0.04, Y_MARK = 0.07;
@@ -348,42 +349,12 @@ export class AirportMesh {
     return out;
   }
 
-  _hangar(g, s) {
-    const C = this.C, front = s.v - s.d / 2;
-    if (s.shelter) {
-      // A hardened shelter: three tiers, narrowing, like an arch cut in boxes.
-      g.box(s.u, s.v, s.w, s.d, s.h * 0.55, C.wall);
-      g.box(s.u, s.v, s.w * 0.84, s.d, s.h * 0.78, C.wall, 0);
-      g.box(s.u, s.v, s.w * 0.6, s.d, s.h, C.roof, 0);
-    } else {
-      g.box(s.u, s.v, s.w, s.d, s.h, C.wall);
-      g.box(s.u, s.v, s.w + 1.2, s.d + 1.2, 1, C.roof, s.h);
-      g.box(s.u, s.v, s.w * 0.5, s.d * 0.62, 1.8, C.roof, s.h + 1);
-    }
-    // The door, on the side that faces the apron, and a band of signal orange.
-    const dh = s.h * 0.72, dw = s.w * 0.82;
-    g.box(s.u, front - 0.15, dw, 0.3, dh, C.door);
-    g.box(s.u, front - 0.12, s.w * 1.0, 0.26, 1.1, C.accent, Math.min(s.h - 1.4, dh + 0.9));
+  _building(g, s) {
+    for (const b of structureBoxes(s)) g.box(b.u, b.v, b.w, b.d, b.h, this.C[b.material], b.y);
   }
-
-  _tower(g, s) {
-    const C = this.C, h = s.h;
-    g.box(s.u, s.v, s.w * 1.8, s.d * 1.8, h * 0.18, C.wall);
-    g.box(s.u, s.v, s.w, s.d, h * 0.82, C.wall);
-    // The cab: wider than the shaft, a band of glass, a roof, a mast.
-    const cw = s.w * 2.3, cd = s.d * 2.3, cy = h * 0.8;
-    g.box(s.u, s.v, cw * 1.04, cd * 1.04, 0.7, C.roof, cy - 0.7);
-    g.box(s.u, s.v, cw, cd, h * 0.12, C.glass, cy);
-    g.box(s.u, s.v, cw * 1.12, cd * 1.12, 0.8, C.roof, cy + h * 0.12);
-    g.box(s.u, s.v, 0.4, 0.4, 5, C.pole, cy + h * 0.12 + 0.8);
-  }
-
-  _terminal(g, s) {
-    const C = this.C;
-    g.box(s.u, s.v, s.w, s.d, s.h, C.wall);
-    g.box(s.u, s.v - s.d / 2 - 0.1, s.w * 0.96, 0.3, s.h * 0.45, C.glass, s.h * 0.3);
-    g.box(s.u, s.v, s.w + 6, s.d + 8, 1.2, C.roof, s.h);
-  }
+  _hangar(g, s) { this._building(g, s); }
+  _tower(g, s) { this._building(g, s); }
+  _terminal(g, s) { this._building(g, s); }
 
   // --- the lights ---------------------------------------------------------------------------
   _lamps(L) {
