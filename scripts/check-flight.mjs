@@ -15,8 +15,6 @@
 //
 //   npm run flight
 
-import { fileURLToPath } from 'node:url';
-
 const H = await import('./lib/flight-harness.mjs');
 const { F22, AIRCRAFT } = await import(H.R + 'data/aircraft.js');
 const { atmosphere, createAtmosphere, calibratedAirspeed, equivalentAirspeed, ISA } = await import(H.R + 'flight/Atmosphere.js');

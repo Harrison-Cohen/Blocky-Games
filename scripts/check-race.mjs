@@ -76,7 +76,6 @@ function report(track, { race, stats }, verbose) {
   const rows = race.standings.rows;
   const all = rows.every((r) => r.finished);
   if (!all) fail(`${track.data.name}: ${rows.filter((r) => !r.finished).length} car(s) did not finish`);
-  const winner = results[0];
   if (verbose) {
     console.log(`\n${track.data.name}  ${race.laps} laps, ${race.difficulty}, ${race.entries.length} cars, `
       + `${race.contacts} contact steps, fastest lap ${race.standings.fastest ? race.standings.fastest.time.toFixed(2) : '-'}s `

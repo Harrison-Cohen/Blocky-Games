@@ -3,8 +3,8 @@
 > the answers to FLIGHT.md's eight "Open items" (which govern milestone 2 on),
 > the approved flight controls mapping, and the list of things in FLIGHT.md that
 > do not work as written. Where the build differs from it (the auto-trim, the
-> rates, the rudder and several details), `HANDOFF.md` section 10 is the truth.
-> Milestone 1 is built; the next one to build is milestone 2, the open world.
+> rates, the rudder and several details), `HANDOFF.md` (section 5, flight architecture) is the truth.
+> Milestones 1 to 5 are built; see `HANDOFF.md` section 1 for what is next.
 
 # Flight: milestone 1 plan, and a review of FLIGHT.md
 

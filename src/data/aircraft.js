@@ -76,7 +76,7 @@ export const F22 = {
   role: 'fighter',
   // How it is built and drawn: 'fixed' is AircraftPhysics (wings and engines), 'f22'
   // the mesh in render/AircraftBuilder.js, `supersonic` whether the Mach 1 effects
-  // apply, `mapIcon` its silhouette on the map and the radar.
+  // apply, `mapIcon` its silhouette on the map.
   kind: 'fixed',
   model: 'f22',
   instrumentProfile: 'raptor',
@@ -290,7 +290,7 @@ export const B737 = {
     { id: 'fuselage', anchor: [0, 0, 0], hits: [[0, 0, 17, 0.8], [0, 0, 14, 1.6], [0, 0, 10, 1.9], [0, 0, 6, 1.9], [0, 0, 2, 1.9], [0, 0, -2, 1.9], [0, 0, -6, 1.9], [0, 0, -10, 1.8], [0, 0, -14, 1.3]], name: 'Fuselage', kind: 'fuselage', hull: ['nose', 'belly', 'bellyAft', 'canopy'] },
   ],
   // Provisional inherited NG gear limits, m/s CAS. Primary NG verification remains open.
-  // Flap maxima are corroborated by FAA ASCENT Project 23, Table 3 (see FLIGHT_M5_PLAN.md).
+  // Flap maxima are corroborated by FAA ASCENT Project 23, Table 3 (see FLIGHT_M4_PLAN.md).
   damageLimits: { gearExtend: 270 * 0.514444, gearRetract: 235 * 0.514444, gearDown: 320 * 0.514444, gearMach: 0.82 },
 
   id: 'b737',
@@ -458,5 +458,4 @@ export const B737 = {
 };
 
 export const AIRCRAFT = [F22, B737];
-export const DEFAULT_AIRCRAFT = F22.id;
 export const getAircraft = (id) => AIRCRAFT.find((a) => a.id === id) || AIRCRAFT[0];

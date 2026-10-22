@@ -182,7 +182,6 @@ export function landingPilot(ap, { glide = 3, aim = 300, vref = 76, flareAgl = 2
 // `st.off` counts steps with a wheel off the pavement.
 export function taxiPilot(ap, route, { speed = 5, slow = 3, reach = 7 } = {}) {
   const st = { i: 0, done: false, off: 0, maxSpeed: 0 };
-  const w = { x: 0, z: 0 };
   st.step = (p, inp, ground) => {
     if (st.done) { p.throttle = 0; inp.yaw = 0; return; }
     ap.toLocal(p.x, p.z, _loc);

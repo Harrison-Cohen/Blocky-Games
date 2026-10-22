@@ -5,12 +5,10 @@
 // interpolated state. The root takes the physics' position and quaternion
 // directly -- same frame, no conversion -- and the moving parts follow.
 
-import * as THREE from 'three';
 import { AircraftPhysics, createRenderState } from './AircraftPhysics.js';
 import { buildAircraft } from '../render/AircraftBuilder.js';
 import { buildB737 } from '../render/aircraft/b737.js';
 import { buildInterior } from '../render/aircraft/cockpits.js';
-import { FLIGHT } from '../data/tuning.js';
 
 // The mesh of each aircraft, by `def.model` (data/aircraft.js). The F-22's is the first, and
 // the default.

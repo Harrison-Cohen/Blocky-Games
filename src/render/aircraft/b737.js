@@ -212,7 +212,6 @@ export function buildB737(def, livery = null) {
   const wingMeshes = [];
   const wings = [];
   const flapPanels = [], slatPanels = [], spoilerPanels = [], ailerons = [];
-  const LE = [[0, zLE(0)], [SEMI, zLE(SEMI)]];
   const planOuter = [[0, zLE(0)], [SEMI, zLE(SEMI)], [SEMI, zTE(SEMI)], [4.6, zTE(4.6)], [0, zTE(0)]];
   for (const side of [1, -1]) {
     const g = new THREE.Group();

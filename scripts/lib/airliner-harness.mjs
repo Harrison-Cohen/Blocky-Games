@@ -118,7 +118,6 @@ export function stallSpeed(def, { flaps = 0, fuel = 0.5, payload, h = 3000, gear
 // The runway of the test field as an airport would give it, so the F-22's centre line pilot
 // works on it: u along the runway, v across it positive to the left, heading north.
 export const fieldRunway = { heading: 0, cos: 1, sin: 0, base: 0, length: 3500, toLocal(x, z, out) { out.u = z; out.v = x; return out; } };
-const wrapPi = (a) => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
 const _loc = { u: 0, v: 0 };
 
 const vsCache = new Map();

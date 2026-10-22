@@ -36,7 +36,6 @@ try {
     inp.poll = (dt) => {
       const s = orig(dt), q = flight.physics;
       let ground = 0;
-      const sp = Math.max(60, q.tas);
       const dx = -Math.sin(flight.physics.attitude().heading) , dz = Math.cos(flight.physics.attitude().heading);
       for (let k = 0; k <= 8; k++) ground = Math.max(ground, flight.world.height(q.x + dx * 500 * k, q.z + dz * 500 * k));
       const want = ground + 350;

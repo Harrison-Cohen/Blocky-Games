@@ -20,7 +20,6 @@
 //
 //   npm run world
 
-import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const SRC = fileURLToPath(new URL('../src/', import.meta.url));

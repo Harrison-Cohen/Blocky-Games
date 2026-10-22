@@ -8,9 +8,7 @@
 // itself.
 
 import { MAP, OPEN_WORLD } from '../data/tuning.js';
-import { BIOME_INDEX } from './Biomes.js';
 
-const SNOW = BIOME_INDEX.snow;
 const lin2srgb = (v) => Math.round(255 * Math.pow(Math.max(0, Math.min(1, v)), 1 / 2.2));
 const hex = (h) => [(h >> 16) & 255, (h >> 8) & 255, h & 255];
 

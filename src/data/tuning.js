@@ -1734,9 +1734,8 @@ export const FLIGHT = {
     water: { lateral: 0.15, rolling: 0.35 },
   },
 
-  // Until crashes exist (milestone 5), a hit this hard (m/s into the ground
-  // for the skin, m/s of sink for the gear) resets you to the runway.
-  // Range: crashSpeed 2-10, maxSink 3-9. `hullCrashDepth` is how far (m) a point of the
+  // A hit this hard (m/s into the ground for the skin, m/s of sink for the gear)
+  // is a crash. Range: crashSpeed 2-10, maxSink 3-9. `hullCrashDepth` is how far (m) a point of the
   // skin may be pushed into the ground before it is a crash (range 0.1-1).
   crashSpeed: 4,
   maxSink: 5.5,
@@ -1848,20 +1847,6 @@ export const FLIGHT_CAMERA = {
   // After a crash the wreck is shown this many seconds before the respawn menu opens.
   // Range 0.5-4.
   crashMenuDelay: 1.6,
-};
-
-// ============================================================================
-// FLIGHT HUD
-// ============================================================================
-export const FLIGHT_HUD = {
-  // The pitch ladder: a rung every this many degrees, and how many degrees
-  // the horizon area shows top to bottom. Range: step 5-15, span 40-90.
-  ladderStep: 10,
-  ladderSpan: 60,
-  // Colours: the timing palette, so a warning reads like a slower sector.
-  warn: '#F5C518',
-  alert: '#FF7A1A',
-  ok: '#34D17A',
 };
 
 // ============================================================================
@@ -2461,7 +2446,7 @@ export const HANGAR = {
 };
 
 // ============================================================================
-// THE MAP AND THE RADAR (flight milestone 3)
+// THE MAP (flight milestone 3)
 // ----------------------------------------------------------------------------
 // The map is a picture of the world, made once from the same Heightfield and
 // Biomes the terrain is: `resolution` cells a side over the whole 120 km (320 is
@@ -2471,9 +2456,6 @@ export const HANGAR = {
 // You can zoom from `minZoom` to `maxZoom` times the whole map, a notch of the
 // wheel being `zoomStep` times, and the names of the places appear from
 // `labelZoom`. Range: resolution 160-640, shade 0-1, seaDepth 100-600, build 2-20.
-// The radar is the corner disc: `size` pixels, showing `range` metres out to the
-// ring, with the compass round it turning with the heading. Range: size 110-220,
-// range 5000-60000.
 // ============================================================================
 export const MAP = {
   resolution: 320,
@@ -2490,15 +2472,6 @@ export const MAP = {
   airport: 0xffffff,
   track: 0xff7a1a,
   aircraft: 0xf5c518,
-};
-
-export const RADAR = {
-  size: 150,
-  range: 20000,
-  ring: 0xedede7,
-  airport: 0xedede7,
-  track: 0xff7a1a,
-  hostile: 0xff7a1a,
 };
 
 // ============================================================================

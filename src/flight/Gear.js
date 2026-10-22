@@ -1,10 +1,9 @@
 // Landing gear contact, and the hull's contact with the ground.
 //
-// Milestone 1 carries only the contact core, so the F-22 can sit on the field,
-// roll down the runway and lift off: a spring and a damper per wheel against
-// the ground query, the same pattern as VehiclePhysics' suspension, with
-// rolling resistance, a wheel brake and nose wheel steering. Retraction limits,
-// damage and the hangar zone come with milestone 3 and 5.
+// The contact core, so an aircraft can sit on the field, roll down the runway and
+// lift off: a spring and a damper per wheel against the ground query, the same
+// pattern as VehiclePhysics' suspension, with rolling resistance, a wheel brake
+// and nose wheel steering.
 //
 // Headless: plain numbers, no allocation in apply(). The ground is the
 // contract every ground in the game implements:

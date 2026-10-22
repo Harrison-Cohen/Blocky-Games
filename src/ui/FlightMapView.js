@@ -2,7 +2,6 @@
 import {FLIGHT_NAV as N} from '../data/tuning.js';
 export const mapX=(x,cx,range,w)=>w/2+(cx-x)*w/range;
 export const mapY=(z,cz,range,h,w=h)=>h/2+(cz-z)*w/range;
-export const worldAt=(px,py,cx,cz,range,w,h)=>({x:cx-(px-w/2)*range/w,z:cz-(py-h/2)*range/w});
 // Clip strokes so both physical panels and Canvas obey the same map bounds.
 export function mapLine(s,x0,y0,x1,y1,c,width,w,h){
  let t0=0,t1=1;const dx=x1-x0,dy=y1-y0;

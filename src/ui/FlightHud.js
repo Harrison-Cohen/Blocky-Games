@@ -1,6 +1,5 @@
 // Aircraft-themed external instruments and service messages. Physical cockpit
 // panels read the same snapshot and remain live when this overlay is hidden.
-import {Radar} from './Radar.js';
 import {FlightInstrumentView} from './FlightInstrumentDraw.js';
 import {instrumentProfile} from '../data/flightInstruments.js';
 import {FLIGHT_INSTRUMENTS as I} from '../data/tuning.js';
@@ -18,8 +17,6 @@ export class FlightHud {
   this.resetEl=el('div','fhud-reset',this.root);this.resetEl.hidden=true;
   this.camEl=el('div','fhud-cam',this.root);this.camEl.hidden=true;
   this.placeEl=el('div','fhud-place',this.root);this.placeEl.hidden=true;
-  // Retain the landmark registry until the terrain minimap in C replaces it.
-  this.radar=new Radar(this.root);this.radar.root.hidden=true;
   // Text damage mirror retained for assistive inspection and the existing regression API.
   this.damageEl=el('div','fhud-damage fhud-text-mirror',this.root);
   this._cache={};this._noteUntil=0;this._camUntil=0;this.elapsed=Infinity;

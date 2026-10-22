@@ -1,5 +1,4 @@
-// Dev overlay. Not the game HUD: that arrives in milestone 3 as ui/HUD.js and
-// is signage, not telemetry. This one stays for the life of the project as the
+// Dev overlay. Not the game HUD: that is ui/HUD.js and is signage, not telemetry. This one stays for the life of the project as the
 // thing you read while editing tuning.js. Toggle with the backtick key.
 
 import { SIM } from '../data/tuning.js';

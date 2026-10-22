@@ -15,7 +15,7 @@ import { Results } from '../ui/Results.js';
 import { LapTimer } from '../game/LapTimer.js';
 import { Garage } from '../ui/Garage.js';
 import { CHASSIS, getChassis, chassisIndex, realTopSpeed } from '../data/cars.js';
-import { getTrack, DEFAULT_TRACK, TRACKS } from '../data/tracks/index.js';
+import { DEFAULT_TRACK, TRACKS } from '../data/tracks/index.js';
 import { SUSPENSION, GRAPHICS, RACE, CAMERA, AUDIO, GRIP } from '../data/tuning.js';
 import { normalizeCar, carAppearance, normalizeGarage, normalizePresets } from '../data/customization.js';
 import { OPPONENTS } from '../data/opponents.js';
@@ -112,8 +112,8 @@ export class Game {
     this.vehicle = new Vehicle(this.chassisFor(CHASSIS[this.chassisIdx].id), carAppearance(this.car));
     this.scene.add(this.vehicle.root);
 
-    // One opponent, on by default. The full field, the standings and the
-    // contact between cars are milestone 7; this is the pace car you chase.
+    // One opponent, on by default: the pace car you chase in a time trial. The
+    // full field, standings and contact between cars are the race mode.
     this.rivals = [];
     this.rivalsOn = Storage.load('rivals', true);
 

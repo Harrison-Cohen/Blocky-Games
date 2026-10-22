@@ -1217,35 +1217,6 @@ html, body {
   pointer-events: none;
 }
 .fhud[hidden] { display: none; }
-.fhud-panel {
-  position: absolute;
-  padding: 8px 12px 9px;
-  background: rgba(14, 26, 43, 0.82);
-  border-bottom: 3px solid var(--signal);
-  min-width: 150px;
-}
-.fhud-speed { left: max(16px, env(safe-area-inset-left)); top: 50%; transform: translateY(-50%); }
-.fhud-alt { right: max(16px, env(safe-area-inset-right)); top: 50%; transform: translateY(-50%); text-align: right; }
-.fhud-heading { left: 50%; top: max(14px, env(safe-area-inset-top)); transform: translateX(-50%); min-width: 0; text-align: center; padding: 6px 16px 7px; }
-.fhud-label { display: block; font-size: 11px; font-weight: 600; opacity: 0.6; }
-.fhud-big { font-family: var(--mono); font-size: 30px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
-.fhud-mid { font-family: var(--mono); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.fhud-unit { font-family: var(--sans); font-size: 12px; font-weight: 600; margin-left: 6px; opacity: 0.7; }
-.fhud-sub { font-family: var(--mono); font-size: 12px; opacity: 0.8; margin-top: 2px; font-variant-numeric: tabular-nums; }
-.fhud-engine {
-  left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%);
-  width: min(340px, calc(100vw - 32px)); padding: 8px 12px 9px;
-}
-.fhud-row[hidden] { display: none; }
-.fhud-ap { color: var(--green); }
-.fhud-ap[hidden] { display: none; }
-.fhud-row { display: grid; grid-template-columns: 62px 1fr; align-items: center; gap: 8px; margin-bottom: 5px; }
-.fhud-bar { height: 8px; background: rgba(237, 237, 231, 0.12); }
-.fhud-bar i { display: block; height: 100%; width: 0; background: var(--offwhite); }
-.fhud-bar.hot i { background: var(--signal); }
-.fhud-bar.warn i { background: var(--yellow); }
-.fhud-nums { display: flex; justify-content: space-between; margin-top: 6px; font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
-.fhud-num.over { color: var(--yellow); }
 .fhud-warn {
   position: absolute; left: 50%; top: 66%; transform: translateX(-50%);
   padding: 6px 18px 7px; font-size: 22px; font-weight: 700; background: var(--ink);
@@ -1266,13 +1237,6 @@ html, body {
   padding: 5px 10px; font-size: 12px; font-weight: 600; background: rgba(14, 26, 43, 0.82);
 }
 .fhud-note[hidden], .fhud-reset[hidden], .fhud-cam[hidden] { display: none; }
-.fhud-horizon {
-  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-}
-.fhud-horizon[hidden], .fhud-adi[hidden] { display: none; }
-.fhud-adi {
-  position: absolute; right: max(16px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom));
-}
 
 /* While flying, none of the driving HUD is on screen. */
 #ui.flight-mode > .dash,
@@ -1289,8 +1253,6 @@ html, body {
 .flight-controls { width: min(780px, calc(100vw - 48px)); }
 
 /* --- airports on the flight HUD and menus (milestone 3) ----------------------- */
-.fhud-ground { margin-top: 4px; }
-.fhud-ground[hidden] { display: none; }
 .fhud-place {
   position: absolute; left: 50%; top: calc(max(14px, env(safe-area-inset-top)) + 46px); transform: translateX(-50%);
   padding: 4px 12px 5px; font-size: 13px; font-weight: 600; background: rgba(14, 26, 43, 0.82);
@@ -1304,12 +1266,6 @@ html, body {
 .flight-hangar-enter:focus-visible { outline: 3px solid var(--signal); outline-offset: 3px; }
 .hangar .garage-btn[hidden] { display: none; }
 .race-row.row-off { opacity: 0.45; }
-.fhud-radar { position: absolute; left: max(16px, env(safe-area-inset-left)); top: max(14px, env(safe-area-inset-top)); width: 150px; }
-.fhud-radar-disc { display: block; }
-.fhud-radar-text { margin-top: 4px; padding: 3px 8px 4px; background: rgba(14, 26, 43, 0.82); font-family: var(--mono); font-size: 11px; min-height: 0; }
-.fhud-radar-text:empty { display: none; }
-.fhud-radar-name { font-family: var(--sans); font-weight: 600; font-size: 12px; }
-.fhud-radar-sub { opacity: 0.8; font-variant-numeric: tabular-nums; }
 
 /* --- the map (ui/MapScreen.js) ---------------------------------------------------
    A full-screen picture with the list of airports beside it: the same hard edged
@@ -1424,7 +1380,7 @@ html, body {
 /* Aircraft-specific vector displays. The primary scene remains clear in the
    centre; Cockpit uses its physical panels, with only service notices outside. */
 .fhud-instrument { position: absolute; height: auto; background: #081014; border: 1px solid #536d70; }
-.fhud-instrument[hidden], .fhud-instrumented .fhud-radar[hidden] { display: none; }
+.fhud-instrument[hidden] { display: none; }
 .fhud-display-primary { width: min(320px, 27vw); aspect-ratio: 320 / 280; left: 16px; bottom: 16px; }
 .fhud-display-navigation { width: min(220px, 20vw); aspect-ratio: 320 / 280; left: 16px; top: 16px; }
 .fhud-display-engines { width: min(280px, 24vw); aspect-ratio: 320 / 280; right: 16px; bottom: 16px; }

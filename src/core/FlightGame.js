@@ -30,7 +30,6 @@ import { DamageEffects } from '../render/DamageEffects.js';
 import { ShockWave } from '../render/ShockWave.js';
 import { FlightInput } from './FlightInput.js';
 import { FlightPlaces } from './FlightPlaces.js';
-import { mapMarkers } from '../world/MapData.js';
 import { FlightAudio } from './FlightAudio.js';
 import { FlightHud } from '../ui/FlightHud.js';
 import { createFlightTelemetry, updateFlightTelemetry } from '../flight/FlightTelemetry.js';
@@ -38,7 +37,7 @@ import { FlightScreens } from '../ui/FlightScreens.js';
 import { Hangar } from '../ui/Hangar.js';
 import { loadSetup, saveSetup } from './HangarStore.js';
 import { payloadMass } from '../data/loadouts.js';
-import { UNIT_SYSTEMS, normalizeUnits, distanceIn } from '../flight/Units.js';
+import { UNIT_SYSTEMS, normalizeUnits } from '../flight/Units.js';
 import { FLIGHT_DAMAGE as D, OPEN_WORLD, FLIGHT_CAMERA as FC, SHOCK, HANGAR, DEFAULT_GRAPHICS_LEVEL } from '../data/tuning.js';
 import { isUnlocked } from '../data/unlocks.js';
 import * as Storage from './Storage.js';
@@ -93,7 +92,6 @@ export class FlightGame {
     this.hangarButton.hidden = true;
     this.hangarButton.addEventListener('click', () => this.enterHangar());
     this.uiRoot.append(this.hangarButton);
-    this.hud.radar.setLandmarks(this.mapCache.markers);
     this.hud.onRange = dir => { this.navRangeIndex = Math.max(0,Math.min(NAV.ranges.length-1,this.navRangeIndex+dir)); };
     this.screens = new FlightScreens(this.uiRoot);
     this.hangar = new Hangar(this.uiRoot, this.scene.renderer);
@@ -438,8 +436,8 @@ export class FlightGame {
     if (this.hudOn) this.hud.show();
   }
 
-  // R held, or after a crash: back at the mouth of a hangar bay of the airport last
-  // used (the respawn list of milestone 5 will choose the airport).
+  // R held: back at the mouth of a hangar bay of the airport last used. After a crash
+  // the respawn list (openCrash) chooses the airport instead.
   toHangar(note = true) {
     if (this.physics.crashed) { this.openCrash(); return; }
     this.start('hangar');
@@ -867,8 +865,7 @@ export class FlightGame {
     this._damageSaveT += dt;
     if (this._damageSaveT >= D.saveInterval) { this._damageSaveT = 0; this._saveDamage(); }
 
-    // A crash, until there are real ones (milestone 5): let the wreck sit for a moment, then ask
-    // where to start again.
+    // A crash: let the wreck sit for a moment, then ask where to start again.
     if (p.crashed && this._crashT < 0 && !this.paused) {
       this._crashT = 0;
       this.hud.note(`The ${this.def.name} ${p.crashReason}.`, 3);
@@ -942,7 +939,7 @@ export class FlightGame {
     this.aircraft.setInterior(inside);
 
     updateFlightTelemetry(this.telemetry,p,{
-      units:this.units,world:this.world,ap:this.autopilot,landmarks:this.hud.radar.landmarks,
+      units:this.units,world:this.world,ap:this.autopilot,landmarks:this.mapCache.markers,
       flapName:this.flapName(),where:this._where(dt),resetProgress:inp.resetProgress,
     });
     this.telemetry.mapCache=this.mapCache;this.telemetry.route=this.route;this.telemetry.navRange=NAV.ranges[this.navRangeIndex];
