@@ -4,7 +4,10 @@
 // It is built the way the Garage is (the same hard-edged panels, the same
 // classes, one list of fields that the keyboard, a gamepad and the mouse all
 // walk, Save and Discard pinned under it), and does for an aircraft what the
-// Garage does for a car. It is built in JS rather than in index.html so the car
+// Garage does for a car. Its list is in tabs (Aircraft, Repair, Paint, Livery,
+// Loadout, Tuning) changed with Q and E, a pad's bumpers, a click, or Left and
+// Right on the strip that Up from the first row lands on; a tab with nothing in it
+// for this aircraft is left out. It is built in JS rather than in index.html so the car
 // game's markup is untouched.
 //
 // What it edits is the aircraft's SETUP (data/loadouts.js): the livery, the
@@ -18,6 +21,7 @@
 
 import { Aircraft } from '../flight/Aircraft.js';
 import { Turntable } from './Turntable.js';
+import { TabBar } from './Tabs.js';
 import { hexToCss } from '../data/palette.js';
 import { HANGAR } from '../data/tuning.js';
 import {
@@ -35,6 +39,15 @@ const el = (tag, cls, text) => {
   return e;
 };
 const clone = (o) => JSON.parse(JSON.stringify(o));
+
+const TABS = [
+  { id: 'aircraft', name: 'Aircraft' },
+  { id: 'repair', name: 'Repair' },
+  { id: 'paint', name: 'Paint' },
+  { id: 'livery', name: 'Livery' },
+  { id: 'loadout', name: 'Loadout' },
+  { id: 'tuning', name: 'Tuning' },
+];
 const round = (v, places = 3) => Math.round(v * 10 ** places) / 10 ** places;
 
 export class Hangar {
@@ -47,6 +60,7 @@ export class Hangar {
           <h1>Hangar</h1>
           <p class="garage-sub">Each aircraft keeps its own paint, load and tuning.</p>
         </header>
+        <div class="garage-tabs"></div>
         <ul class="garage-rows"></ul>
         <div class="garage-actions">
           <button type="button" class="garage-btn garage-btn-primary">Save aircraft</button>
@@ -76,6 +90,11 @@ export class Hangar {
     this.actionsEl = q('.garage-actions');
     this.buttons = [...this.root.querySelectorAll('.garage-btn')];
     this.turntable = new Turntable(renderer);
+    this.tabBar = new TabBar(q('.garage-tabs'), (i) => this._setTab(i, true));
+    this.tabs = TABS;
+    this.tabAt = 0;
+    this.tab = TABS[0].id;
+    this.tabFocus = false; // the focus is on the tab strip, not on a row
 
     this.visible = false;
     this.defs = [];
@@ -94,7 +113,7 @@ export class Hangar {
       this.button = k;
       this._activate();
     }));
-    this._defaultHint = 'Up and down pick a setting, left and right change it. Enter repairs immediately. Esc discards paint, load and tuning.';
+    this._defaultHint = 'Up and down pick a setting, left and right change it. Enter repairs immediately. Q and E change tab. Esc discards paint, load and tuning.';
     this._onKeyDown = this._onKeyDown.bind(this);
   }
 
@@ -105,23 +124,17 @@ export class Hangar {
   _items() {
     const o = hangarOptions(this.def.id);
     return [
-      { section: 'Aircraft' },
-      { key: 'aircraft', label: 'Aircraft', kind: 'select' },
-      { section: 'Repair' },
-      ...o.damage.map((p) => ({ key: `damage.${p.id}`, label: p.name, kind: 'repair', part: p.id })),
-      { key: 'repairAll', label: 'Repair everything', kind: 'link' },
-      { section: 'Paint' },
-      { key: 'body', label: 'Body', kind: 'swatch' },
-      { key: 'accent', label: 'Accent', kind: 'swatch' },
-      { section: 'Livery' },
-      { key: 'pattern', label: 'Pattern', kind: 'select' },
-      { key: 'number', label: 'Tail number', kind: 'number' },
-      { key: 'insignia', label: 'Insignia', kind: 'select' },
-      { section: 'Loadout' },
-      ...o.loadout.map((it) => ({ key: `loadout.${it.id}`, label: it.name, kind: 'stepper', item: it })),
-      { section: 'Tuning' },
-      ...o.tune.map((k) => ({ key: `tune.${k.id}`, label: k.name, kind: 'stepper', knob: k })),
-      { key: 'stockTune', label: 'Put the tuning back to stock', kind: 'link' },
+      { tab: 'aircraft', key: 'aircraft', label: 'Aircraft', kind: 'select' },
+      ...o.damage.map((p) => ({ tab: 'repair', key: `damage.${p.id}`, label: p.name, kind: 'repair', part: p.id })),
+      { tab: 'repair', key: 'repairAll', label: 'Repair everything', kind: 'link' },
+      { tab: 'paint', key: 'body', label: 'Body', kind: 'swatch' },
+      { tab: 'paint', key: 'accent', label: 'Accent', kind: 'swatch' },
+      { tab: 'livery', key: 'pattern', label: 'Pattern', kind: 'select' },
+      { tab: 'livery', key: 'number', label: 'Tail number', kind: 'number' },
+      { tab: 'livery', key: 'insignia', label: 'Insignia', kind: 'select' },
+      ...o.loadout.map((it) => ({ tab: 'loadout', key: `loadout.${it.id}`, label: it.name, kind: 'stepper', item: it })),
+      ...o.tune.map((k) => ({ tab: 'tuning', key: `tune.${k.id}`, label: k.name, kind: 'stepper', knob: k })),
+      { tab: 'tuning', key: 'stockTune', label: 'Put the tuning back to stock', kind: 'link' },
       { key: 'actions', kind: 'buttons' },
     ];
   }
@@ -129,6 +142,11 @@ export class Hangar {
   _buildRows() {
     this.items = this._items();
     this.fields = this.items.filter((it) => !it.section);
+    // Only the tabs that have something on them for this aircraft.
+    this.tabs = TABS.filter((t) => this.items.some((it) => it.tab === t.id));
+    this.tabAt = Math.max(0, this.tabs.findIndex((t) => t.id === this.tab));
+    this.tab = this.tabs[this.tabAt].id;
+    this.tabBar.setTabs(this.tabs.map((t) => t.name));
     this.rowsEl.replaceChildren();
     this.rowEls = [];
     for (const it of this.items) {
@@ -245,7 +263,7 @@ export class Hangar {
     this.statEls = null;
     this._buildRows();
     this._makeDisplay();
-    this.index = 0;
+    this._focus(0);
     this._paint();
   }
 
@@ -298,9 +316,11 @@ export class Hangar {
 
   _paint() {
     const s = this.setup, o = hangarOptions(this.def.id);
+    this.tabBar.mark(this.tabAt, this.tabFocus);
     this.fields.forEach((it, i) => {
       const li = this.rowEls[i];
-      li.classList.toggle('focused', i === this.index);
+      li.classList.toggle('focused', i === this.index && !this.tabFocus);
+      if (it.kind !== 'buttons') li.hidden = !this._shown(it);
       if (it.kind === 'select') {
         const opt = this._options(it.key).find((x) => x.id === this._get(it.key));
         li._text.textContent = opt ? opt.name : '';
@@ -334,7 +354,7 @@ export class Hangar {
         }
       }
     });
-    const onButtons = this.fields[this.index].kind === 'buttons';
+    const onButtons = this.fields[this.index].kind === 'buttons' && !this.tabFocus;
     this.buttons.forEach((b, k) => b.classList.toggle('focused', onButtons && k === this.button));
 
     this.kickerEl.textContent = { fighter: 'Fighter', airliner: 'Airliner', helicopter: 'Helicopter' }[this.def.role] || 'Aircraft';
@@ -363,15 +383,20 @@ export class Hangar {
       e.fill.style.width = `${Math.min(100, Math.max(3, (100 * f.v) / f.ref)).toFixed(1)}%`;
     });
     this.noteEl.textContent = this.def.role === 'airliner'
-      ? 'Figures in orange differ from the aircraft as fitted. Passengers and cargo are weight. Over the maximum takeoff mass, or over the maximum zero fuel mass (what it weighs with empty tanks), the mass is shown in yellow: it still flies, but the runway it needs is no longer the one it was fitted to. Fuel is not refilled here.'
-      : 'Figures in orange differ from the aircraft as fitted. Missiles, rounds and flares are carried as weight; there is nothing to fire them with until the weapons arrive. Fuel is not refilled here.';
+      ? 'Highlighted figures differ from the aircraft as fitted. Passengers and cargo are weight. Over the maximum takeoff mass, or over the maximum zero fuel mass (what it weighs with empty tanks), the mass is shown in yellow: it still flies, but the runway it needs is no longer the one it was fitted to. Fuel is not refilled here.'
+      : 'Highlighted figures differ from the aircraft as fitted. Missiles, rounds and flares are carried as weight; there is nothing to fire them with until the weapons arrive. Fuel is not refilled here.';
     this.hintEl.textContent = this._note ? this._note.text : this._defaultHint;
   }
 
   // --- moving and editing ---------------------------------------------------------
 
+  _shown(it) { return it.kind === 'buttons' || it.tab === this.tab; }
+
   _focus(i) {
     i = (i + this.fields.length) % this.fields.length;
+    const it = this.fields[i];
+    if (!this._shown(it)) this._setTab(this.tabs.findIndex((t) => t.id === it.tab), false);
+    this.tabFocus = false;
     this.index = i;
     if (this.fields[i].kind === 'number') {
       this.numberInput.focus({ preventScroll: true });
@@ -382,12 +407,34 @@ export class Hangar {
     this.rowEls[i].scrollIntoView({ block: 'nearest' });
   }
 
+  // The stops of the focus in this tab: the tab strip (-1), its rows, and the buttons,
+  // in a ring.
   _move(d) {
-    this._focus(this.index + d);
+    const stops = [-1];
+    this.fields.forEach((it, i) => { if (this._shown(it)) stops.push(i); });
+    const at = stops.indexOf(this.tabFocus ? -1 : this.index);
+    const next = stops[(at + d + stops.length) % stops.length];
+    if (next < 0) {
+      if (document.activeElement === this.numberInput) this.numberInput.blur();
+      this.tabFocus = true;
+    } else this._focus(next);
+    this._paint();
+  }
+
+  // Another tab, the focus on its first row (or kept on the strip).
+  _setTab(t, onStrip = this.tabFocus) {
+    t = (t + this.tabs.length) % this.tabs.length;
+    if (document.activeElement === this.numberInput) this.numberInput.blur();
+    this.tabAt = t;
+    this.tab = this.tabs[t].id;
+    this.index = this.fields.findIndex((it) => it.kind !== 'buttons' && this._shown(it));
+    this.tabFocus = onStrip;
+    this.rowsEl.scrollTop = 0;
     this._paint();
   }
 
   _step(d) {
+    if (this.tabFocus) { this._setTab(this.tabAt + d, true); return; }
     const it = this.fields[this.index];
     const s = this.setup;
     if (it.kind === 'buttons') {
@@ -433,6 +480,7 @@ export class Hangar {
   }
 
   _activate() {
+    if (this.tabFocus) { this._move(1); this._paint(); return; }
     const it = this.fields[this.index];
     if (it.kind === 'buttons') {
       if (this.confirmSave) {
@@ -484,10 +532,12 @@ export class Hangar {
     this._originalEdits = this._edits();
     this._departureButtons();
     this._defaultHint = this.departures
-      ? 'Up and down pick a setting, left and right change it. Enter repairs immediately. Choose Leave hangar or Teleport to runway below; pending changes need Save or Discard.'
-      : 'Up and down pick a setting, left and right change it. Enter repairs immediately. Esc discards paint, load and tuning.';
+      ? 'Up and down pick a setting, left and right change it. Enter repairs immediately. Q and E change tab. Choose Leave hangar or Teleport to runway below; pending changes need Save or Discard.'
+      : 'Up and down pick a setting, left and right change it. Enter repairs immediately. Q and E change tab. Esc discards paint, load and tuning.';
     this.onRepair = state.onRepair;
     this.visible = true;
+    this.tab = TABS[0].id;
+    this.tabFocus = false;
     this.index = 0;
     this.button = 0;
     this._note = null;
@@ -561,6 +611,8 @@ export class Hangar {
     else if (is('ArrowLeft', 'KeyA')) this._step(-1);
     else if (is('ArrowRight', 'KeyD')) this._step(1);
     else if (is('Enter', 'Space')) this._activate();
+    else if (code === 'KeyQ') this._setTab(this.tabAt - 1);
+    else if (code === 'KeyE') this._setTab(this.tabAt + 1);
     else if (code === 'Escape') this._back();
     else return;
     e.preventDefault();
@@ -569,6 +621,8 @@ export class Hangar {
   // Gamepad edges, handed over by the game each frame.
   handlePad(menu) {
     if (!this.visible) return;
+    if (menu.prev) this._setTab(this.tabAt - 1);
+    if (menu.next) this._setTab(this.tabAt + 1);
     if (menu.up) this._move(-1);
     if (menu.down) this._move(1);
     if (menu.left) this._step(-1);

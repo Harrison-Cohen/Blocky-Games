@@ -32,6 +32,7 @@ try {
     await check('!flight.airbrakeLever && !flight.input.state.airbrake && flight.physics.airbrake===0',`${id}: new flight starts with speed brakes retracted`);
     await tap('KeyV','v');
     await b.eval('flight.debugDamage("fuselage",0); flight.step(1/120); flight.respawnAt(flight.places.last.id); 0');
+    await b.eval('game.loading.whenIdle().then(()=>0)');
     await check('!flight.airbrakeLever && !flight.physics.crashed && flight.physics.airbrake===0',`${id}: crash respawn retracts speed brakes`);
   }
   await b.eval('flight.airbrakeLever=true; flight.switchAircraft("f22"); 0');

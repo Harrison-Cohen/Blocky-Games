@@ -40,6 +40,7 @@ import { payloadMass } from '../data/loadouts.js';
 import { UNIT_SYSTEMS, normalizeUnits } from '../flight/Units.js';
 import { FLIGHT_DAMAGE as D, OPEN_WORLD, FLIGHT_CAMERA as FC, SHOCK, HANGAR, DEFAULT_GRAPHICS_LEVEL } from '../data/tuning.js';
 import { isUnlocked } from '../data/unlocks.js';
+import { controlTip } from '../data/controls.js';
 import * as Storage from './Storage.js';
 
 const SYSTEM_NAMES = { aviation: 'Knots, feet and Mach', mph: 'Miles an hour and feet', metric: 'Kilometres an hour and metres' };
@@ -257,7 +258,7 @@ export class FlightGame {
         this.screens.crash.open([
           { label: 'Choose an airport', action: () => this.openCrash() },
           { label: 'Back to the title', action: () => this.exit() },
-        ], { sub: 'Return to the airport list or leave flight.', onBack: () => this.openCrash(),
+        ], { numbered: true, sub: 'Return to the airport list or leave flight.', onBack: () => this.openCrash(),
           onPadStart: () => this.screens.crash.menu._activate() });
       },
     });
@@ -267,15 +268,37 @@ export class FlightGame {
     // Validate again at the spawn boundary, including attempts from a stale UI callback.
     if (!this.physics.crashed || !this.places.respawnPose(id)) return false;
     const ap = this.world.airports.byId.get(id);
-    this.start('hangar', ap);
-    this.hud.note(`Replacement aircraft at ${ap.name}`, 3);
+    this.go('hangar', ap).then(() => this.hud.note(`Replacement aircraft at ${ap.name}`, 3));
     return true;
   }
 
   // --- entering and leaving ---------------------------------------------------
-  // Called from the title's Fly row.
+  // Called from the title's Fly row. (main.js calls enterAsync, behind the loading
+  // panel; this is the same thing in one go.)
   enter() {
     if (this.active) return;
+    this._enterOpen();
+    this._place('apron');
+    this._enterFinish();
+    this.scene.prewarm();
+  }
+
+  // The same, with the world built in slices and the shaders compiled in the
+  // background, while `job` (ui/Loading.js) counts the steps. The first two steps
+  // are main.js's: the flight code and building this object.
+  async enterAsync(job, first) {
+    if (this.active) return;
+    await job.step(first);
+    this._enterOpen();
+    this._place('apron', this.places.last, null, false);
+    await this._primeAsync(job);
+    await job.step(first + 1);
+    this._enterFinish();
+    await this.scene.prewarmAsync();
+  }
+
+  // Everything entering does before the aircraft is placed.
+  _enterOpen() {
     const g = this.game;
     const sc = this.scene;
     this.active = true;
@@ -309,9 +332,11 @@ export class FlightGame {
 
     this.camera.reset();
     this._savedCamMode = this.camera.mode;
-    this._place('apron');
-    // Make the first meshes now, so prewarm below compiles the world's shaders
-    // here and not on the first frame of a start.
+  }
+
+  // And what it does after: the first meshes, so the shaders compiled next are the
+  // world's and not the first frame's, and the Fly menu.
+  _enterFinish() {
     const a0 = this._camAbs;
     a0.x = this.physics.x; a0.y = this.physics.y; a0.z = this.physics.z;
     this.mesh.update(a0, this._fwd, 1, 1 / 60);
@@ -322,7 +347,6 @@ export class FlightGame {
       this.screens.showCard(this.screens.fly, true);
       Storage.save('flight.seenControls', true);
     }
-    sc.prewarm();
   }
 
   exit() {
@@ -366,7 +390,8 @@ export class FlightGame {
   // its apron, engines idling, on the runway, in the air on the centre line, or at the
   // mouth of a hangar bay. A mode the airport cannot take (a heliport has no runway for
   // a fighter) is the air start.
-  _place(mode, airport = this.places.last, departure = null) {
+  // `prime` false leaves the chunks and airports to the caller (_primeAsync).
+  _place(mode, airport = this.places.last, departure = null, prime = true) {
     const p = this.physics;
     this._saveDamage();
     if (p.crashed || p.damage.get('fuselage') === 0) {
@@ -408,7 +433,8 @@ export class FlightGame {
     this.hud.clearNote();
     this._tailNoteT = 0;
     this.camera.reset();
-    this._primeWorld();
+    this._rebase();
+    if (prime) this._primeChunks();
     this.aircraft.updateVisual(1, 1 / 60, this.mesh.origin.ox, this.mesh.origin.oz);
   }
 
@@ -416,15 +442,73 @@ export class FlightGame {
   // start, coarse levels first, so it never begins over a hole, and the airports near
   // it, so it never begins on bare ground.
   _primeWorld() {
+    this._rebase();
+    this._primeChunks();
+  }
+
+  // The origin first: where the aircraft is, so everything is drawn near zero.
+  _rebase() {
+    const p = this.physics;
+    this.mesh.origin.rebaseTo(Math.round(p.x / OPEN_WORLD.lattice) * OPEN_WORLD.lattice, Math.round(p.z / OPEN_WORLD.lattice) * OPEN_WORLD.lattice);
+  }
+
+  _primeChunks() {
     const p = this.physics, m = this.mesh;
-    // The origin first: where the aircraft is, so everything is drawn near zero.
-    m.origin.rebaseTo(Math.round(p.x / OPEN_WORLD.lattice) * OPEN_WORLD.lattice, Math.round(p.z / OPEN_WORLD.lattice) * OPEN_WORLD.lattice);
     m.chunks.prime(p.x, p.y, p.z, 0, 1, m.drawRange);
     m.primeAirports(p.x, p.z, 3500);
   }
 
+  // _primeChunks in slices of job.sliceMs with a yield after each, so the loading
+  // panel keeps updating: the same chunks and airports in the same order.
+  async _primeAsync(job) {
+    const p = this.physics, m = this.mesh, c = m.chunks;
+    const built0 = c.stats.terrain;
+    let total = 0;
+    while (!c.prime(p.x, p.y, p.z, 0, 1, m.drawRange, job.sliceMs)) {
+      // How far through the chunks that are wanted: built so far of built and still to build.
+      const built = c.stats.terrain - built0;
+      total = Math.max(total, built + c.requests.reduce((n, r) => n + (r.props ? 0 : 1), 0));
+      job.progress(total ? built / total : 0);
+      await job.yield();
+    }
+    while (!m.primeAirports(p.x, p.z, 3500, job.sliceMs)) await job.yield();
+  }
+
   start(mode, airport = this.places.last, departure = null) {
     this._place(mode, airport, departure);
+    this._launch();
+  }
+
+  // start() behind the loading panel: the same placing and the same world, built
+  // in slices. Resolves when the flight has started.
+  go(mode, airport = this.places.last, departure = null) {
+    const where = { apron: 'on the apron', runway: 'on the runway', air: 'airborne', hangar: 'at the hangar' }[mode] || '';
+    return this.game.work({
+      title: 'Fly', sub: `${this.def.name}, ${airport.name}, ${where}`, tip: controlTip('flying'),
+      steps: ['Building the world', 'Placing the aircraft'],
+    }, async (job) => {
+      await job.step(0);
+      this._place(mode, airport, departure, false);
+      await this._primeAsync(job);
+      await job.step(1);
+      this._launch();
+    });
+  }
+
+  // Put the aircraft down at an airport and leave the menu it came from up, behind
+  // the loading panel: the airport stepper, a new aircraft that needs a longer runway.
+  placeWorld(mode, airport) {
+    return this.game.work({
+      title: 'Fly', sub: `${this.def.name}, ${airport.name}`, tip: controlTip('flying'),
+      steps: ['Building the world'],
+    }, async (job) => {
+      await job.step(0);
+      this._place(mode, airport, null, false);
+      await this._primeAsync(job);
+    });
+  }
+
+  _launch() {
     this.screens.hideAll();
     this.uiRoot.classList.remove('menu-open');
     this.camera.mode = this._savedCamMode;
@@ -440,8 +524,7 @@ export class FlightGame {
   // the respawn list (openCrash) chooses the airport instead.
   toHangar(note = true) {
     if (this.physics.crashed) { this.openCrash(); return; }
-    this.start('hangar');
-    if (note) this.hud.note(`At the hangar, ${this.places.last.name}`, 2.5);
+    this.go('hangar').then(() => { if (note) this.hud.note(`At the hangar, ${this.places.last.name}`, 2.5); });
   }
 
   // --- the fixed step ---------------------------------------------------------------
@@ -545,7 +628,13 @@ export class FlightGame {
         const rebuilt = this.mesh.setDetail(next);
         Storage.save('flight.detail', next);
         this._applyDetail();
-        if (rebuilt) this._primeWorld();
+        if (rebuilt) {
+          this.game.work({ title: 'Fly', sub: 'Detail changed', tip: controlTip('flying'), steps: ['Building the world'] }, async (job) => {
+            await job.step(0);
+            this._rebase();
+            await this._primeAsync(job);
+          });
+        }
       },
     };
   }
@@ -564,7 +653,7 @@ export class FlightGame {
     return {
       label: ok.ok ? label : `${label}: ${ok.why.toLowerCase()}`,
       cls: ok.ok ? '' : 'row-off',
-      action: () => { if (ok.ok) this.start(mode); },
+      action: () => { if (ok.ok) this.go(mode); },
     };
   }
 
@@ -573,15 +662,15 @@ export class FlightGame {
   _airportRow(rebuild) {
     return {
       label: 'Airport',
-      value: () => {
-        const a = this.places.last, L = a.layout;
-        return `${a.name}, ${a.isHeliport ? 'helipad' : `${L.length.toLocaleString('en-US')} m`}`;
+      hint: () => {
+        const a = this.places.last;
+        return a.isHeliport ? 'helipad' : `${a.layout.length.toLocaleString('en-US')} m`;
       },
+      value: () => this.places.last.name,
       step: (d) => {
         const next = this.places.step(d);
         this.places.setLast(next);
-        this._place('apron', next);
-        rebuild();
+        this.placeWorld('apron', next).then(rebuild);
       },
     };
   }
@@ -603,24 +692,33 @@ export class FlightGame {
     this.uiRoot.classList.add('menu-open');
     this.screens.pause.hide();
     const rebuild = () => this.showFlyMenu(this.screens.fly.menu.index);
+    // The same groups as the title: what you do, the setup, the general settings
+    // and the flying ones. (Graphics is the title's and the pause menu's; it rebuilds
+    // the post chain, which flight sets up for itself.)
     const rows = [
+      { section: 'Fly' },
       this._startRow('apron', 'Start on the apron'),
       this._startRow('runway', 'Start on the runway'),
-      { label: 'Start airborne near the airport', action: () => this.start('air') },
+      { label: 'Start airborne near the airport', action: () => this.go('air') },
       this._airportRow(rebuild),
-      { label: 'Open the hangar', action: () => this.openHangar('fly') },
+      { section: 'Setup' },
+      { label: 'Open the hangar', hint: this.def.name, action: () => this.openHangar('fly') },
       { label: 'Open the map', action: () => this.openMap('fly') },
-      { label: 'Controls', action: () => this.screens.showCard(this.screens.fly) },
+      { label: 'Controls', hint: 'Keyboard, gamepad', action: () => this.screens.showCard(this.screens.fly) },
+      { section: 'General' },
+      this._volumeRow(),
+      { section: 'Flying' },
       this._unitsRow(),
       this._fovRow(),
       this._renderRow(),
       this._detailRow(),
       this._timeRow(),
-      this._volumeRow(),
+      this._invertRow(),
       { label: 'Back to the title', action: () => this.exit() },
     ];
     this.screens.fly.open(rows, {
       focus,
+      numbered: true,
       sub: `${this.def.name}, at ${this.places.last.name}. The world is 120 km across.`,
       onBack: () => { if (!this.screens.card.hidden) this.screens.card.hidden = true; else this.exit(); },
       onPadStart: () => this.screens.fly.menu._activate(),
@@ -637,23 +735,27 @@ export class FlightGame {
     const resume = () => this.resume();
     const restart = { apron: 'Restart on the apron', runway: 'Restart on the runway', air: 'Restart airborne', hangar: 'Back to the hangar' }[this.lastStart];
     const rows = [
+      { section: 'Flight' },
       { label: 'Resume', action: resume },
-      { label: restart, action: () => this.start(this.lastStart) },
+      { label: restart, action: () => this.go(this.lastStart) },
       // Only in a hangar bay: the hangar is where the aircraft is, not a menu.
       ...(this.places.availableHangar(this.physics) ? [{ label: 'Open the hangar', action: () => this.openHangar('pause') }] : []),
       { label: 'Open the map', action: () => this.openMap('pause') },
-      { label: 'Controls', action: () => this.screens.showCard(this.screens.pause) },
+      { label: 'Controls', hint: 'Keyboard, gamepad', action: () => this.screens.showCard(this.screens.pause) },
+      { section: 'General' },
+      this._volumeRow(),
+      { section: 'Flying' },
       this._unitsRow(),
       this._fovRow(),
       this._renderRow(),
       this._detailRow(),
       this._timeRow(),
       this._invertRow(),
-      this._volumeRow(),
       { label: 'Back to the title', action: () => this.exit() },
     ];
     this.screens.pause.open(rows, {
       focus,
+      numbered: true,
       sub: `${this.def.name}${this.places.where(this.physics) ? ', ' + this.places.where(this.physics) : ', over the open world'}`,
       onBack: resume,
       onPadStart: resume,
@@ -733,7 +835,7 @@ export class FlightGame {
           this._savedDamageRevision = this.physics.damage.revision;
         }
       },
-      onClose: (result, departure = 'hangar') => {
+      onClose: async (result, departure = 'hangar') => {
         let moved = null;
         if (result) {
           for (const [id, st] of Object.entries(result.setups)) saveSetup(id, st);
@@ -743,7 +845,7 @@ export class FlightGame {
             const was = this.places.last;
             moved = this.switchAircraft(result.id, result.setups[result.id]);
             this.places.setLast(moved);
-            if (!visit) this._place('apron', moved);
+            if (!visit) await this.placeWorld('apron', moved);
             this._moveNote = moved !== was ? `${this.def.name} needs a longer runway: moved to ${moved.name}` : '';
           } else {
             this.setup = result.setups[this.def.id];
@@ -752,12 +854,13 @@ export class FlightGame {
         }
         if (visit) {
           const airport = moved || visit.airport;
-          this.start(departure === 'runway' ? 'runway' : 'hangar', airport, {
+          const note = this._moveNote || (departure === 'runway' ? 'At the runway, ready for takeoff' : 'Outside the hangar, facing out to taxi');
+          this._moveNote = '';
+          await this.go(departure === 'runway' ? 'runway' : 'hangar', airport, {
             outward: departure !== 'runway', zone: airport === visit.airport ? visit.zone : null,
             preserveFuel: !moved,
           });
-          this.hud.note(this._moveNote || (departure === 'runway' ? 'At the runway, ready for takeoff' : 'Outside the hangar, facing out to taxi'), 3);
-          this._moveNote = '';
+          this.hud.note(note, 3);
         } else if (from === 'fly') this.showFlyMenu();
         else if (from === 'pause') this.openPause();
         else {
@@ -786,6 +889,7 @@ export class FlightGame {
     const p = this.physics;
     map.open({
       world: this.world, places: this.places, units: this.units, defName: this.def.name,
+      planSpeed: this.def.airStart.speed,
       route: this.route, onTripChange: () => { saveTrip(this.route.record()); if(this.autopilot.mode==='Route'){this.autopilot.mode='Hold';this.autopilot.hdg=p.attitude().heading;} },
       onRange: dir => this.hud.onRange(dir),
       state: () => ({ x: p.x, z: p.z, heading: p.attitude().heading }),
@@ -795,7 +899,7 @@ export class FlightGame {
         else if (this._mapFrom === 'crash') this.openCrash();
         else this.resume();
       },
-      onTeleport: (ap, mode) => this.start(mode, ap),
+      onTeleport: (ap, mode) => this.go(mode, ap),
     });
   }
 

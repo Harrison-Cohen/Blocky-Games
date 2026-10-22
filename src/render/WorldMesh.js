@@ -313,17 +313,24 @@ export class WorldMesh {
   }
 
   // Build, now, every airport within `range` metres of (x, z): what a start needs
-  // so it never begins on bare ground.
-  primeAirports(x, z, range) {
+  // so it never begins on bare ground. With `ms` it stops after about that long
+  // and returns false; call it again to carry on (true: all built).
+  primeAirports(x, z, range, ms = Infinity) {
+    const t0 = performance.now();
     for (const a of this.world.airports.list) {
       if (Math.max(0, Math.hypot(x - a.px, z - a.pz) - a.radius) > range) continue;
       if (!this.airportViews.has(a.id)) this._startAirport(a);
       const view = this.airportViews.get(a.id);
       if (view.group) continue;
       this.streamer.remove(`airport:${a.id}`);
-      for (let r = view.gen.next(); !r.done; r = view.gen.next());
+      let r = view.gen.next();
+      while (!r.done) {
+        if (performance.now() - t0 > ms) return false;
+        r = view.gen.next();
+      }
       this._airportBuilt(view);
     }
+    return true;
   }
 
   _airports(camAbs) {

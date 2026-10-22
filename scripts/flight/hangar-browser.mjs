@@ -7,7 +7,7 @@ const b=await launch({url,width:1440,height:900,port:9356});
 let count=0;
 const check=async(expr,name)=>{if(!await b.eval(expr))throw new Error(name);console.log(`ok ${name}`);count++;};
 const run=async(s)=>b.eval(`${s}; 0`);
-const settle=async()=>run('for(let i=0;i<480;i++)flight.step(1/120); flight.render(1,1/60)');
+const settle=async()=>{await b.eval('game.loading.whenIdle().then(()=>0)');await run('for(let i=0;i<480;i++)flight.step(1/120); flight.render(1,1/60)');};
 const tap=async(code,key=code)=>{await b.key('keyDown',code,key);await run('flight.render(1,1/60)');await b.key('keyUp',code,key);};
 const shot=async(name)=>b.shot(`${out}/${name}.png`);
 try {
@@ -30,6 +30,7 @@ try {
         await run('testPad.buttons[0]={pressed:false,value:0}; flight.render(1,1/60); navigator.getGamepads=realPads; delete window.testPad; delete window.realPads');
       } else if(visit===1) {await run('flight.hangar._focus(flight.hangar.fields.length-1); flight.hangar.button=0');await tap('Enter');}
       else await run('flight.hangar.buttons[0].click()');
+      await b.eval('game.loading.whenIdle().then(()=>0)');
       await check('!flight.hangar.visible && !flight.paused && flight.physics.throttle===0 && !flight.autopilot.on && Math.hypot(flight.physics.vx,flight.physics.vz)===0 && Math.cos(flight.physics.attitude().heading-entryHeading)<-0.999',`${id}: departure ${visit+1} stationary and facing outward`);
       await settle();
       await check('!flight.physics.crashed && !flight.hangar.visible && !flight.hangarButton.hidden',`${id}: departure ${visit+1} clear and immediately re-enterable`);
@@ -44,6 +45,7 @@ try {
     await run('flight.hangar.buttons[2].click()');
     await check('flight.hangar.visible && !flight.hangar.confirmSave',`${id}: Keep editing cancels departure`);
     await run('flight.hangar.buttons[1].click(); flight.hangar.buttons[1].click()');
+    await b.eval('game.loading.whenIdle().then(()=>0)');
     await check('flight.lastStart==="runway" && !flight.paused && flight.setup.livery.body===paintBefore && flight.physics.damage.get("engineL")===0.7 && flight.physics.fuel===fuelBefore',`${id}: Discard keeps paint, survivor damage and fuel through runway departure`);
     await check('(()=>{const at=flight.places.pose(flight.places.last,"runway");return Math.hypot(flight.physics.x-at.x,flight.physics.z-at.z)<0.001 && Math.cos(flight.physics.attitude().heading-at.heading)>0.999})()',`${id}: runway departure aligned at canonical runway start`);
     await run('flight.start("hangar")');await settle();
@@ -59,7 +61,7 @@ try {
     await check('!flight.enterHangar()',`${id}: airborne aircraft cannot enter`);
     await run('flight.debugDamage("fuselage",0); flight.step(1/120)');
     await check('!flight.enterHangar()',`${id}: wreck cannot enter`);
-    await run('flight.respawnAt(flight.places.last.id)');await settle();
+    await run('flight.respawnAt(flight.places.last.id)');await b.eval('game.loading.whenIdle().then(()=>0)');await settle();
     await check('!flight.physics.crashed && !flight.hangarButton.hidden && Object.values(flight.physics.damage.record()).every(v=>v===1)',`${id}: wreck respawn remains repaired and eligible for explicit entry`);
   }
   // Bay choice, airport eligibility, map persistence and preview return.
@@ -72,8 +74,10 @@ try {
   await run('flight.enterHangar(); flight.hangar.buttons[0].click()');await settle();
   await check('flight.places.availableHangar(flight.physics)===bay && flight.places.last===bayAirport','physical visit retains second bay and actual airport');
   await run('flight.openMap(); flight.screens.map._setMode("hangar"); flight.screens.map._select(flight.screens.map.items.findIndex(a=>!flight.places.eligible(a,"hangar").ok)); window.beforeX=flight.physics.x; flight.screens.map._teleport()');
+  await b.eval('game.loading.whenIdle().then(()=>0)');
   await check('flight.screens.map.visible && flight.screens.map.goEl.disabled && flight.physics.x===beforeX','map rejects incompatible Hangar teleport');
   await run('flight.screens.map._select(flight.screens.map.items.findIndex(a=>a!==flight.places.last&&flight.places.eligible(a,"hangar").ok)); window.mapAirport=flight.screens.map.items[flight.screens.map.sel]; flight.screens.map._teleport()');await settle();
+  await b.eval('game.loading.whenIdle().then(()=>0)');
   await check('flight.places.last===mapAirport && flight.lastStart==="hangar" && !flight.hangar.visible && !flight.hangarButton.hidden','map Hangar teleport uses selected airport and offers entry');
   await run('flight.openMap(); flight.screens.map._select(flight.screens.map.items.findIndex(a=>flight.places.eligible(a,"hangar").ok)); for(let i=0;i<80;i++)flight.screens.map.tick(); flight.render(1,1/60)');
   await shot('map-hangar-mode');

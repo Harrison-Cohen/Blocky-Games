@@ -2693,3 +2693,10 @@ export const FLIGHT_NAV = {
   terrainCells: 22, // Bounded vector terrain grid per nav panel, 12-32.
   trackStride: 8, // Track centreline sample spacing, 2-16 vertices.
 };
+
+// MENUS: the loading step panel (ui/Loading.js). Display and scheduling only, never gameplay.
+export const MENU = {
+  loadingDelay: 150, // ms a wait must last before the panel starts to fade in, so short waits show nothing; range 0 to 400
+  loadingFade: 100, // ms the panel takes to fade in and out; range 60 to 400
+  sliceMs: 30, // ms of loading work done between two yields to the browser, so the steps and the percentage keep updating; range 8 to 80
+};

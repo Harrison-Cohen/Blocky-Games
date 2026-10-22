@@ -41,7 +41,7 @@ export class Turntable {
     this.disc = new THREE.Mesh(new THREE.CylinderGeometry(0.94, 1, 0.16, 44), flat(0x1b2836));
     this.disc.position.y = -0.08;
     this.scene.add(this.disc);
-    this.ring = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.09, 0.05, 44), flat(0xff7a1a));
+    this.ring = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.09, 0.05, 44), flat(0xd8c8a0));
     this.ring.position.y = -0.155;
     this.scene.add(this.ring);
 

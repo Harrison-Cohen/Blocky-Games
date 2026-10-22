@@ -140,8 +140,10 @@ export class FlightInput {
   }
 
   _onKeyDown(e) {
-    if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
-    if (e.repeat || this.suspended) return;
+    // Not in a text box (the map's stop search): there a space is a space.
+    const typing = e.target && e.target.tagName === 'INPUT' && e.target.type === 'text';
+    if (!typing && (e.code === 'Space' || e.code.startsWith('Arrow'))) e.preventDefault();
+    if (typing || e.repeat || this.suspended) return;
     this.keys.add(e.code);
     const A = this.actions;
     switch (e.code) {

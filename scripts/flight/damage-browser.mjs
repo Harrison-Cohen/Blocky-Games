@@ -35,10 +35,12 @@ try {
   await b.eval('flight.hangar.close(false); flight.switchAircraft("f22"); flight.start("air"); 0');
   await test('flight.physics.damage.get("wingL") === 0.5', 'switching back restores damage');
   await b.eval('flight.debugDamage("gear",0); flight.toHangar(); for(let i=0;i<240;i++)flight.step(1/120); 0');
+  await b.eval('game.loading.whenIdle().then(()=>0)');
   await test('!flight.physics.crashed && flight.physics.damage.get("gear") === 0 && flight.physics.gear.weightOnWheels === 0', 'returning to hangar with collapsed gear survives without silently repairing');
   await b.eval('flight.debugDamage("fuselage",0); flight.step(1/120); 0');
   await test('flight.physics.crashed', 'destroyed fuselage enters crash flow');
   await b.eval('flight.respawnAt(flight.places.last.id); 0');
+  await b.eval('game.loading.whenIdle().then(()=>0)');
   await test('Object.values(flight.physics.damage.record()).every(h=>h===1)', 'crash replacement restores all parts');
   await b.eval('flight.debugDamage("tail",0.55); flight.exit(); location.reload(); 0');
   await b.sleep(1000);

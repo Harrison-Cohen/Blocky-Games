@@ -28,6 +28,7 @@ try {
     await check('flight.screens.map.visible && flight.screens.map.respawn && flight.screens.map.mode==="hangar" && flight.screens.map.modesEl.hidden && flight.paused', `${id}: crash opens the paused respawn map with apron-only start`);
     await check('flight.screens.map.items[flight.screens.map.sel]===flight.places.nearestEligible(flight.physics.x,flight.physics.z,"hangar")', `${id}: nearest compatible airport is selected`);
     await b.eval('window.savedRespawnCallback=flight.screens.map.ctx0.onTeleport; flight.screens.map.ctx0.onTeleport=()=>false; flight.screens.map._teleport(); flight.screens.map.ctx0.onTeleport=savedRespawnCallback; delete window.savedRespawnCallback; 0');
+    await b.eval('game.loading.whenIdle().then(()=>0)');
     await check('flight.screens.map.visible && flight.physics.crashed', `${id}: a rejected spawn callback leaves the airport list usable`);
     // Keyboard and pad may inspect a disabled destination but cannot confirm it.
     await b.eval('flight.screens.map._select(flight.screens.map.items.findIndex(a=>!flight.places.eligible(a,"hangar").ok)); flight.screens.map.handlePad({confirm:true}); 0');
@@ -43,6 +44,7 @@ try {
     await b.eval('window.chosenRespawn = flight.screens.map.items.find(a=>flight.places.eligible(a,"hangar").ok && a!==flight.places.last); if(!chosenRespawn)chosenRespawn=flight.places.last; flight.screens.map._select(flight.screens.map.items.indexOf(chosenRespawn)); 0');
     if(id==='f22') { await b.key('keyDown','Enter','Enter'); await b.key('keyUp','Enter','Enter'); }
     else await b.eval('flight.screens.map.handlePad({start:true}); 0');
+    await b.eval('game.loading.whenIdle().then(()=>0)');
     await check(`flight.def.id==='${id}' && !flight.physics.crashed && !flight.paused && flight.places.last===chosenRespawn && Object.values(flight.physics.damage.record()).every(h=>h===1)`, `${id}: Enter/Start respawns the same aircraft fully repaired at the chosen airport`);
     await check('(()=>{const at=flight.places.pose(chosenRespawn,"hangar");return Math.hypot(flight.physics.x-at.x,flight.physics.z-at.z)<0.1 && Math.hypot(flight.physics.vx,flight.physics.vz)<0.1})()', `${id}: spawn is stationary at the exact hangar apron`);
     await check('flight.damageEffects.pool.alive===0', `${id}: respawn clears old smoke/fire`);

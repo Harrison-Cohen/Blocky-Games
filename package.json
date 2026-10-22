@@ -16,6 +16,7 @@
     "fx": "node scripts/check-effects.mjs",
     "specs": "node scripts/check-specs.mjs",
     "drag": "node scripts/check-drag.mjs",
+    "controls": "node scripts/check-controls.mjs",
     "flight": "node --expose-gc scripts/check-flight.mjs",
     "look": "node scripts/look.mjs",
     "world": "node --expose-gc scripts/check-world.mjs",

@@ -352,6 +352,12 @@ export class Scene {
     this.renderer.compile(this.scene, this.camera);
   }
 
+  // The same, without a stall: resolves once the programs have linked, which the
+  // browser does on another thread. For the loading panel's shader step.
+  prewarmAsync() {
+    return this.renderer.compileAsync(this.scene, this.camera);
+  }
+
   // --- flight -------------------------------------------------------------
   // The flight game borrows this renderer, its post chain and its two lights.
   // Entering hides the car world -- the track's lamps, the cars, the particles,

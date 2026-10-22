@@ -50,7 +50,9 @@ try{
   await run('flight.input.look.x=0;flight.input.look.y=-.35;flight.setNight(true);flight.render(1,1/30)');await shot(`${id}-night-panel`);
   await run('flight.setNight(false);flight.input.look.x=flight.input.look.y=0;window.headingBefore=flight.telemetry.headingDeg;flight.mesh.origin.rebaseTo(flight.mesh.origin.ox+1000,flight.mesh.origin.oz-2000);flight.render(1,1/30)');
   await check('flight.telemetry.headingDeg===headingBefore&&flight.telemetry.nearest.metres>=0',`${id}: instrument/navigation values survive origin rebasing`);
-  await run('flight.debugDamage("fuselage",0);flight.step(1/120);flight.respawnAt(flight.places.last.id);flight.camera.mode=2;flight.render(1,1/30)');
+  await run('flight.debugDamage("fuselage",0);flight.step(1/120);flight.respawnAt(flight.places.last.id)');
+  await b.eval('game.loading.whenIdle().then(()=>0)');
+  await run('flight.camera.mode=2;flight.render(1,1/30)');
   await check('!flight.telemetry.apOn&&!flight.physics.crashed&&flight.telemetry.damageRows.every(r=>r.health===1)',`${id}: respawn clears old AP and damage instrument states`);
  }
  // Repeated switches must dispose old physical buffers and keep exactly one panel set.

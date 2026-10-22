@@ -16,9 +16,10 @@ import { LapTimer } from '../game/LapTimer.js';
 import { Garage } from '../ui/Garage.js';
 import { CHASSIS, getChassis, chassisIndex, realTopSpeed } from '../data/cars.js';
 import { DEFAULT_TRACK, TRACKS } from '../data/tracks/index.js';
-import { SUSPENSION, GRAPHICS, RACE, CAMERA, AUDIO, GRIP } from '../data/tuning.js';
+import { SUSPENSION, GRAPHICS, GRAPHICS_LEVELS, RACE, CAMERA, AUDIO, GRIP } from '../data/tuning.js';
 import { normalizeCar, carAppearance, normalizeGarage, normalizePresets } from '../data/customization.js';
 import { OPPONENTS } from '../data/opponents.js';
+import { getAircraft } from '../data/aircraft.js';
 import { RacingLine } from '../ai/RacingLine.js';
 import { AIDriver } from '../ai/AIDriver.js';
 import * as Storage from './Storage.js';
@@ -26,6 +27,9 @@ import { Race } from './Race.js';
 import { RaceHud } from '../ui/RaceHud.js';
 import { RaceResults } from '../ui/RaceScreens.js';
 import { MenuScreen, TrackSelect } from '../ui/Screens.js';
+import { ControlsChart } from '../ui/ControlsChart.js';
+import { Loading } from '../ui/Loading.js';
+import { controlTip } from '../data/controls.js';
 import { Drag } from '../game/Drag.js';
 import { DragHud, DragSlip } from '../ui/DragScreens.js';
 import { HeadlightPool } from '../render/HeadlightPool.js';
@@ -193,6 +197,8 @@ export class Game {
     this.hud.show();
     this.uiRoot = uiRoot;
     this.controlsCard = uiRoot.querySelector('.controls-card');
+    this.controlsChart = new ControlsChart(this.controlsCard);
+    this.loading = new Loading(uiRoot);
     this.autoBadge = uiRoot.querySelector('.auto-badge');
     this.speedo = new Speedo(uiRoot);
     this.speedo.setStyle(this.speedoStyle);
@@ -247,7 +253,27 @@ export class Game {
 
   start() { this.loop.start(); }
 
+  // Runs `fn(job)` behind the loading panel (ui/Loading.js) with the loop stopped,
+  // so nothing steps or draws a half-built scene, then starts the loop again.
+  async work(opts, fn) {
+    if (this.loading.busy) return this.loading.run(opts, fn);
+    const was = this.loop.running;
+    if (was) this.loop.stop();
+    try {
+      return await this.loading.run(opts, fn);
+    } finally {
+      if (was) this.loop.start();
+    }
+  }
+
   loadTrack(data) {
+    this._trackBuild(data);
+    this._trackLine();
+    this._trackFinish(data);
+  }
+
+  // loadTrack in three pieces, so the loading panel can show each as a step.
+  _trackBuild(data) {
     this._clearDrag();
     if (this.trackMesh) this.trackMesh.dispose();
     Storage.save('lastTrack', data.id);
@@ -259,9 +285,15 @@ export class Game {
     this.vehicle.setHeadlights(!!data.headlights, GRAPHICS.headlightShadows);
     // Everybody else's beams share a few real lights; see HeadlightPool.
     this.headlights.setCount(data.headlights ? GRAPHICS.rivalHeadlights : 0);
-    // The racing line belongs to the track and costs about 50 ms to solve, so
-    // it is built here, once, and shared by every driver on it.
+  }
+
+  // The racing line belongs to the track and costs about 50 ms to solve, so
+  // it is built here, once, and shared by every driver on it.
+  _trackLine() {
     this.line = new RacingLine(this.track);
+  }
+
+  _trackFinish(data) {
     // A timer belongs to a track: its records, its checkpoints, its sectors.
     this.timer = new LapTimer(this.track, this.vehicle.chassis.id);
     // Skid marks belong to the road they were laid on.
@@ -807,9 +839,19 @@ export class Game {
   // because which track you are on is where you are rather than a change you
   // might want to discard.
   nextTrack() {
-    if (this.race) return;
+    if (this.race || this.loading.busy) return;
     this.trackIdx = (this.trackIdx + 1) % TRACKS.length;
-    this.loadTrack(TRACKS[this.trackIdx]);
+    const data = TRACKS[this.trackIdx];
+    return this.work({
+      title: 'Track', sub: data.name, tip: controlTip('driving'),
+      steps: ['Building the road', 'Solving the racing line', 'Building the cars', 'Compiling shaders'],
+    }, async (job) => {
+      await job.step(0); this._trackBuild(data);
+      await job.step(1); this._trackLine();
+      await job.step(2); this._trackFinish(data);
+      await job.step(3); await this.scene.prewarmAsync();
+      this._prewarm = false;
+    });
   }
 
   // Rebuild the player's car from a config, keeping it where it stands.
@@ -920,6 +962,20 @@ export class Game {
     this.vehicle.setHeadlights(night, GRAPHICS.headlightShadows);
     this.headlights.setCount(night ? GRAPHICS.rivalHeadlights : 0);
     this._prewarm = true;
+  }
+
+  // setGraphics from a menu row: the new level's shaders are compiled now, behind
+  // the loading panel, instead of stalling the first frame after it.
+  changeGraphics(id) {
+    this.setGraphics(id);
+    this._prewarm = false;
+    return this.work({
+      title: 'Graphics', sub: GRAPHICS_LEVELS.find((l) => l.id === this.graphicsLevel)?.name ?? this.graphicsLevel,
+      tip: controlTip('driving'), steps: ['Compiling shaders'],
+    }, async (job) => {
+      await job.step(0);
+      await this.scene.prewarmAsync();
+    });
   }
 
   // --- gearbox --------------------------------------------------------------
@@ -1106,20 +1162,49 @@ export class Game {
     };
   }
 
+  // The general settings, shown in every menu that has settings: the volume
+  // and the graphics level. What belongs to one mode (the speedometer, the
+  // flight units) sits beside them in that mode's own menus.
+  _generalRows() {
+    const ids = GRAPHICS_LEVELS.map((l) => l.id);
+    return [
+      { section: 'General' },
+      this._volumeRow(),
+      {
+        label: 'Graphics',
+        value: () => GRAPHICS_LEVELS.find((l) => l.id === this.graphicsLevel)?.name ?? this.graphicsLevel,
+        step: (d) => this.changeGraphics(ids[(ids.indexOf(this.graphicsLevel) + d + ids.length) % ids.length]),
+      },
+    ];
+  }
+
+  // `focus` is which choice the cursor starts on: 0 time trial, 1 race, 2 drag
+  // race, 3 fly, 4 garage, 5 controls.
   showTitle(focus = 0) {
     this._holdFor('title');
     this._tourFrom = this.track.startSample * this.track.ds - 60;
+    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const flyId = Storage.load('flight.aircraft', null);
     const rows = [
-      { label: 'Time trial', action: () => this.openTrackSelect('trial', 'Back to the title', () => this.showTitle(0)) },
-      { label: 'Race', action: () => this.openTrackSelect('race', 'Back to the title', () => this.showTitle(1)) },
-      { label: 'Drag race', action: () => this.openTrackSelect('drag', 'Back to the title', () => this.showTitle(2)) },
-      { label: 'Fly', action: () => { if (this.onFly) this.onFly(); } },
-      { label: 'Garage', action: () => this.openGarage(() => this.showTitle(4)) },
-      { label: 'Controls', action: () => this._showControls(this.title) },
-      this._volumeRow(),
+      { section: 'Play' },
+      { label: 'Time trial', hint: () => this.track.data.name,
+        action: () => this.openTrackSelect('trial', 'Back to the title', () => this.showTitle(0)) },
+      { label: 'Race', hint: () => `${plural(this.raceSettings.laps, 'lap')}, ${plural(this.raceSettings.opponents, 'rival')}`,
+        action: () => this.openTrackSelect('race', 'Back to the title', () => this.showTitle(1)) },
+      { label: 'Drag race', hint: 'Quarter mile',
+        action: () => this.openTrackSelect('drag', 'Back to the title', () => this.showTitle(2)) },
+      { label: 'Fly', hint: getAircraft(flyId).name, action: () => { if (this.onFly) this.onFly(); } },
+      { section: 'Setup' },
+      { label: 'Garage', hint: () => this.vehicle.chassis.name, action: () => this.openGarage(() => this.showTitle(4)) },
+      { label: 'Controls', hint: 'Keyboard, gamepad', action: () => this._showControls(this.title),
+        // Left and right on this row flip the chart between driving and flying.
+        step: (d) => { if (!this.controlsCard.hidden) this.controlsChart.cycleTab(d); } },
+      ...this._generalRows(),
     ];
+    const order = ['Time trial', 'Race', 'Drag race', 'Fly', 'Garage', 'Controls'];
     this.title.open(rows, {
-      focus,
+      focus: Math.max(0, rows.findIndex((r) => r.label === order[focus])),
+      numbered: true,
       // Esc on the title puts the controls away, if they are out.
       onBack: () => { this.controlsCard.hidden = true; },
       onPadStart: () => this.title.menu._activate(),
@@ -1164,14 +1249,16 @@ export class Game {
         toTitle,
       ];
     }
-    rows.push(this._volumeRow());
+    rows.push(...this._generalRows());
     this.pauseMenu.open(rows, {
       focus,
       sub: `${this.track.data.name}, ${mode}`,
+      numbered: true,
       onBack: () => this._resume(),
       onPadStart: () => this._resume(),
     });
-    // The brief puts a short controls card on the pause screen.
+    // The pause screen shows the driving controls beside its menu.
+    this.controlsChart.setTab('driving');
     this._showControls(this.pauseMenu, true);
   }
 
@@ -1202,7 +1289,9 @@ export class Game {
   // rebuilt if it changed. Whatever was running before ends here, and a time
   // trial with laps in it shows its results first.
   startSession(pick) {
-    this._endTrialSession(() => this._startSession(pick));
+    let done;
+    this._endTrialSession(() => { done = this._startSession(pick); });
+    return done;
   }
 
   _startSession(pick) {
@@ -1226,24 +1315,40 @@ export class Game {
       Storage.save('ghost', this.ghostOn);
     }
     const idx = Math.max(0, TRACKS.findIndex((t) => t.id === pick.trackId));
-    const moved = TRACKS[idx] !== this.track.data;
+    const data = TRACKS[idx];
+    const moved = data !== this.track.data;
     this._resume();
-    if (moved) {
-      this.trackIdx = idx;
+    const steps = ['Building the cars', 'Compiling shaders'];
+    if (moved) steps.unshift('Building the road', 'Solving the racing line');
+    const title = pick.mode === 'race' ? 'Race' : pick.mode === 'drag' ? 'Drag race' : 'Time trial';
+    return this.work({
+      title, sub: `${data.name}, ${this.chassisFor(this.car.chassis).name}`, tip: controlTip('driving'), steps,
+    }, async (job) => {
+      let at = 0;
+      if (moved) {
+        this.trackIdx = idx;
+        await job.step(0); this._trackBuild(data);
+        await job.step(1); this._trackLine();
+        at = 2;
+      }
+      await job.step(at);
       // Builds the pace car, or on a strip stages the drag race.
-      this.loadTrack(TRACKS[idx]);
-    }
-    if (pick.mode === 'race') {
-      this.startRace(this.raceSettings);
-    } else if (pick.mode === 'drag') {
-      if (!moved) this.startDrag(this.dragSettings);
-    } else if (!moved) {
-      this.buildRivals();
-      this.resetVehicle();
-      this.timer.reset();
-      this.hud.show();
-    }
-    this.scene.settle();
+      if (moved) this._trackFinish(data);
+      if (pick.mode === 'race') {
+        this.startRace(this.raceSettings);
+      } else if (pick.mode === 'drag') {
+        if (!moved) this.startDrag(this.dragSettings);
+      } else if (!moved) {
+        this.buildRivals();
+        this.resetVehicle();
+        this.timer.reset();
+        this.hud.show();
+      }
+      this.scene.settle();
+      await job.step(at + 1);
+      await this.scene.prewarmAsync();
+      this._prewarm = false;
+    });
   }
 
   // Leaving a time trial that has laps in it: its results first, then on.

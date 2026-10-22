@@ -29,11 +29,16 @@ export class MenuScreen {
   get visible() { return this.menu.visible; }
 
   // rows as Menu takes them. onBack is Esc and the pad's B, onPadStart the
-  // pad's Start.
-  open(rows, { focus = 0, sub = null, onBack = null, onPadStart = null } = {}) {
+  // pad's Start. `numbered` numbers the lines that are choices (a row with an
+  // action and no value) 01, 02 and so on, in order.
+  open(rows, { focus = 0, sub = null, onBack = null, onPadStart = null, numbered = false } = {}) {
     if (this.subEl && sub !== null) this.subEl.textContent = sub;
     this.menu.onBack = onBack;
     this.menu.onPadStart = onPadStart;
+    if (numbered) {
+      let n = 0;
+      for (const r of rows) if (r.action && !r.value && !r.no) r.no = String(++n).padStart(2, '0');
+    }
     this.menu.setRows(rows, focus);
     this.menu.show();
   }
@@ -104,10 +109,13 @@ export class TrackSelect {
     const start = () => { if (this.onStart) this.onStart(this._pick()); };
     const ids = CHASSIS.map((c) => c.id);
     const onOff = (v) => (v ? 'On' : 'Off');
-    const rows = [{ section: list.length > 1 ? 'Track' : 'Strip' }];
-    for (const t of list) {
-      rows.push({ label: t.name, track: t, cls: 'ts-track', value: () => this._bestText(t.id, s.chassisId), action: start });
-    }
+    // The tracks are a table: number, name, length, surface, light, your best.
+    const rows = [{ head: [list.length > 1 ? 'Track' : 'Strip', 'Length', 'Surface', 'Light', 'Your best'], cls: 'ts-head' }];
+    list.forEach((t, i) => {
+      const f = this._facts(t);
+      rows.push({ label: t.name, no: String(i + 1).padStart(2, '0'), track: t, cls: 'ts-track',
+        cols: [f.length, f.surface, f.light], value: () => this._bestText(t.id, s.chassisId), action: start });
+    });
     const g = s.drag;
     const two = () => g.players === 2;
     rows.push({ section: mode === 'drag' ? 'Drivers' : 'Car' });
@@ -137,8 +145,8 @@ export class TrackSelect {
       rows.push({ label: 'Pace car', value: () => onOff(tt.pace), step: () => { tt.pace = !tt.pace; } });
       rows.push({ label: 'Ghost of your best lap', value: () => onOff(tt.ghost), step: () => { tt.ghost = !tt.ghost; } });
     }
-    rows.push({ label: m.start, action: start });
-    rows.push({ label: opts.back || 'Back', action: () => { if (this.onBack) this.onBack(); } });
+    rows.push({ label: m.start, cls: 'btn primary', action: start });
+    rows.push({ label: opts.back || 'Back', cls: 'btn', action: () => { if (this.onBack) this.onBack(); } });
 
     // Open on the track you are on, so Enter twice from the title drives it.
     const focus = rows.findIndex((r) => r.track && r.track.id === s.trackId);
@@ -181,6 +189,28 @@ export class TrackSelect {
     return t;
   }
 
+  // What a track is like, as the table and the card both say it. `surface`
+  // names only what is not tarmac in the card (`loose`), and `climb` is in feet.
+  _facts(data) {
+    const t = this._track(data.id);
+    let lo = Infinity, hi = -Infinity;
+    const surfaces = new Set();
+    for (let i = 0; i < t.count; i++) {
+      lo = Math.min(lo, t.py[i]);
+      hi = Math.max(hi, t.py[i]);
+      surfaces.add(t.surface[i]);
+    }
+    const loose = [...surfaces].filter((x) => x !== 'tarmac');
+    return {
+      t,
+      length: data.drag ? '1/4 mi' : `${(t.length / 1609.344).toFixed(2)} mi`,
+      climb: `${Math.round((hi - lo) * 3.28084)} ft`,
+      loose,
+      surface: loose.length ? 'Mixed' : 'Tarmac',
+      light: data.headlights ? 'Night' : 'Day',
+    };
+  }
+
   _choose(id) {
     this.s.trackId = id;
     for (const row of this.menu.rows) {
@@ -193,25 +223,18 @@ export class TrackSelect {
   // every car has set on it, the car you have picked marked.
   _paintCard() {
     const data = TRACKS.find((d) => d.id === this.s.trackId);
-    const t = this._track(data.id);
+    const f = this._facts(data);
+    const t = f.t;
     this.nameEl.textContent = data.name;
     this.blurbEl.textContent = data.description || '';
 
-    let lo = Infinity, hi = -Infinity;
-    const surfaces = new Set();
-    for (let i = 0; i < t.count; i++) {
-      lo = Math.min(lo, t.py[i]);
-      hi = Math.max(hi, t.py[i]);
-      surfaces.add(t.surface[i]);
-    }
-    const loose = [...surfaces].filter((x) => x !== 'tarmac');
     const facts = data.drag
       ? [['Length', 'Quarter mile'], ['Surface', 'Tarmac'], ['Lanes', 'Two']]
       : [
-        ['Length', `${(t.length / 1609.344).toFixed(2)} mi`],
-        ['Climb', `${Math.round((hi - lo) * 3.28084)} ft`],
-        ['Surface', loose.length ? `Tarmac and ${loose.join(' and ')}` : 'Tarmac'],
-        ['Lighting', data.headlights ? 'Night' : 'Day'],
+        ['Length', `${f.length}  (${Math.round(t.length).toLocaleString('en-US')} m)`],
+        ['Climb', f.climb],
+        ['Surface', f.loose.length ? `Tarmac and ${f.loose.join(' and ')}` : 'Tarmac'],
+        ['Lighting', f.light],
       ];
     this.factsEl.replaceChildren();
     for (const [k, v] of facts) {
@@ -231,10 +254,19 @@ export class TrackSelect {
       if (c.id === this.s.chassisId) li.className = 'you';
       const name = document.createElement('span');
       name.textContent = c.name;
+      // A bar against the fastest time: the quickest car's is full.
+      const bar = document.createElement('span');
+      bar.className = 'ts-bar';
+      if (time !== null && fastest !== null) {
+        const fill = document.createElement('i');
+        if (time === fastest) fill.className = 'fastest';
+        fill.style.width = `${Math.round((fastest / time) * 100)}%`;
+        bar.append(fill);
+      }
       const val = document.createElement('span');
       val.className = time !== null && time === fastest ? 'num fastest' : 'num';
       val.textContent = this._bestText(data.id, c.id);
-      li.append(name, val);
+      li.append(name, bar, val);
       this.bestsEl.append(li);
     }
     this.menu.rows.forEach((row) => { if (row._value) row._value.textContent = row.value(); });
@@ -305,7 +337,7 @@ export class TrackSelect {
     const i0 = t.startSample;
     const lx = t.lx[i0], lz = t.lz[i0];
     const half = 9 * dpr;
-    ctx.strokeStyle = '#ff7a1a';
+    ctx.strokeStyle = '#d8c8a0';
     ctx.lineWidth = 3 * dpr;
     ctx.lineCap = 'butt';
     ctx.beginPath();
@@ -317,7 +349,7 @@ export class TrackSelect {
     const tx = t.tx[ahead], tz = t.tz[ahead];
     const nx = t.lx[ahead], nz = t.lz[ahead];
     const a = 7 * dpr;
-    ctx.fillStyle = '#ff7a1a';
+    ctx.fillStyle = '#d8c8a0';
     ctx.beginPath();
     ctx.moveTo(ax + tx * a, ay + tz * a);
     ctx.lineTo(ax - tx * a + nx * a * 0.8, ay - tz * a + nz * a * 0.8);

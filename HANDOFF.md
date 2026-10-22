@@ -15,6 +15,21 @@ finished work (`FLIGHT_M3_PROMPT.md`, `FLIGHT_M4_PROMPT.md`, `FLIGHT_M5_PROMPT.m
 
 ## 1. Where things stand (2026-10-22)
 
+- **Menu redesign (the dash display), in batches; read `MENU_REDESIGN_PLAN.md`.** Batches 1 to 4 are built and WAITING ON THE USER'S TEST; the redesign is complete once they are accepted.
+  Batch 4: the Fly menu and the flight pause card are in groups (Fly, Setup, General, Flying) with numbered choices and the shared
+  Controls chart on its Flying tab; the map is a dash panel with two tabs, Airports (teleport) and Plan a trip, the trip laid out the
+  way a map app does it (lettered stops, a leg between each pair with its distance and time, a search box that adds an airport or a
+  race track, a summary, Start route) and drawn on the real map with lettered pins.
+  Batch 3: the Garage (Car, Paint, Parts, Gearbox, Stats) and the Hangar (Aircraft, Repair, Paint, Livery, Loadout, Tuning) are in tabs
+  (`ui/Tabs.js`), with the pointer and row numbers; the Garage's Stats tab is a table of all seven cars that picks the car.
+  Batch 1:
+  the new theme (off white double-line frame, numbered rows, `>` pointer, warm sand `--accent` `#D8C8A0` instead of orange in
+  every menu, the map screens, the garage and the Hangar), the shared `Menu`, the title (grouped Play, Setup, General), pause, track
+  select as a table with a best-laps bar chart, the session and race results, and the Controls chart (Driving and Flying tabs,
+  `src/data/controls.js`, guarded by `npm run controls`). Batch 2 is the loading step panel (`ui/Loading.js`: Fly, every session
+  start, the flight starts, the Graphics and Detail steppers) and shorter waits (see the Menus architecture bullet and the numbers in
+  the plan). The HUD and the map's track markers keep their orange (assumed, unconfirmed). `Claude.md`'s type and no-caps rules were lifted.
+
 - **Branches.** `Flight_test` (Claude Code's) and `Codex_test` (Codex's) were both at `b9338aa` and pushed when
   the cleanup of 2026-10-22 began. `initial-build` (`00d6bb0`) is the draft PR's base: draft pull request
   `Harrison-Cohen/Blocky-Games#1` is `Flight_test` into `initial-build`. Commit only when the user asks in words
@@ -87,6 +102,7 @@ npm run race    # full field races every track cleanly (contact <= 5% per car), 
 npm run fx      # ghost replays exactly, gearbox never hunts, a tune is felt, skid marks on the road, pools bounded
 npm run specs   # every real car does its real 0-60, quarter mile, top speed, skidpad, turning circle (scaled by STREET)
 npm run drag    # drag timing: reaction, splits, ET, trap, red lights, fouls
+npm run controls  # the controls chart (data/controls.js) shows only keys the input code really listens for
 npm run flight  # the aircraft model (about 450 checks): atmosphere, signs, trim, stalls, published figures, ground,
                 # damage, collisions, cockpit geometry, instruments, navigation, input, frame-rate invariance, no allocation
 npm run world   # the open world: car ground and meshes unchanged (hashes), heightfield, chunks and seams, airports,
@@ -111,6 +127,10 @@ dev server URL and an output folder: `node scripts/flight/<name> <url> [outdir]`
 
 | Script | What it covers |
 |---|---|
+| `scripts/menu-browser.mjs` | the car menus by key press: title groups and numbers, Controls chart tabs, General settings, track select table, pause, the loading panel on Fly and on a race start (38) |
+| `scripts/flight/menus-browser.mjs` | the Fly menu and pause card groups, the chart, the map's tabs, the planner (lettered stops, legs, typing in the search box, results, stop buttons, Start route), the crash menu (30) |
+| `scripts/garage-browser.mjs` | the Garage and Hangar tabs by key press, click and pad edge: strip, Q/E, Stats picking a car, a dropdown on a tab, Save (40) |
+| `scripts/menu-waits.mjs` | every click's wait in a real Chrome: time to ready, worst frame gap, long tasks, whether the panel showed; run it before and after touching a loading path |
 | `cockpit-a-browser.mjs` | toggle speed brakes, cockpit views, V and pad B edges, 737 and F-22 (19 checks) |
 | `hangar-browser.mjs` | explicit Enter hangar, departures, Save/Discard, repair, map Hangar mode (57) |
 | `damage-browser.mjs`, `damage-b-browser.mjs` | damage persistence, repair, smoke/fire/broken parts, respawn, warning audio (11, 29) |
@@ -204,6 +224,49 @@ Stack: Vite plus vanilla ES modules plus Three.js r185; no other runtime depende
   pause, track select), `RaceScreens.js` (the shared `Menu`), `DragScreens.js`, `Garage.js` (sectioned list, dropdowns,
   presets, per-chassis cars under `garage`, gearbox tune), `Results.js`, `DebugHud.js`. Markup in `index.html`, styles in
   `src/ui/styles.css`. `Game.js` owns everything: `step(dt)` is the fixed step, `render(alpha, frameDelta)` the rest.
+- **Menus** (the dash display, 2026-10-22). Every card is a `Menu` (`RaceScreens.js`): a list of rows with one focus. A row is a
+  setting `{label, value(), step(d)}`, a choice `{label, action()}`, a heading `{section}` or column titles `{head: [...]}`; optional
+  `no` (the number before the label), `cols` (fixed table columns), `hint` (a dim note on the right), and `cls` (`btn` and `btn primary`
+  make a framed button, `ts-track` and `ts-head` the track table). `MenuScreen.open(rows, {numbered: true})` numbers the choices.
+  Theme tokens are CSS variables in `styles.css` (`--accent` sand, `--frame-shadow` the inset line of the double frame, `--line`):
+  menus use the accent and orange stays on the HUD. The title's rows are keyed by `showTitle(focus)` (0 time trial to 5 controls),
+  not by row index. `Game._generalRows()` is the general settings block (Volume, Graphics) shown on the title and the pause menu.
+  The Controls chart is `ui/ControlsChart.js` drawing `data/controls.js` (`[label, KeyboardEvent.code]` pairs); `npm run controls`
+  fails if a printed key is not in `Input.js` or `FlightInput.js`. The flight menus use the same chart (`FlightScreens.chart`, always on
+  its Flying tab).
+- **Flight menus and the map** (batch 4). `FlightGame.showFlyMenu` and `openPause` build rows with `{section}` headings and
+  `numbered: true`; there is no Graphics row in flight (it rebuilds the post chain, which flight configures for itself), Volume is
+  the general setting. `MapScreen` (`ui/MapScreen.js`): the panel has a `TabBar` (no Q/E keys); the second tab button is
+  `planToggle`, which the pad's Up above the first airport focuses (DOM focus), and `_planning(on)` switches the tabs. The planner
+  is drawn again by `_planner()` into `mpTop`, `mpRoute` and `mpRest` (the search box between them keeps what is typed); every
+  focusable button goes in `planButtons`, in order, and `planFocus` is the one the keyboard and pad are on (`_planFocus`); the
+  mouse-only up, down and remove buttons on a stop are `tabIndex -1` and are not in it. `_addStop(p)` is the one place a stop is added
+  (refuses a stop within `NAV.minLeg` or past `NAV.maxPoints`); the search (`_results`) lists airports and race tracks by name or
+  kind, nearest first, and Enter in the box adds the highlighted one. Times use `ctx.planSpeed` (the aircraft's `airStart.speed`).
+  The map draws the legs with an ink edge and their lengths, and the stops as lettered pins (`_drawLegs`, `_drawPins`); the pink
+  route and the yellow leg being flown are the cockpit panels' colours. `FlightInput._onKeyDown` no longer swallows Space or the
+  arrows while a text box has the focus. The crash map (respawn) has no tabs.
+- **Garage and Hangar tabs** (batch 3). Both keep ONE list of fields (`FIELDS` / `hangar.fields`, indices stable; the last is the
+  buttons row) and each field has a `tab`; `_shown(it)` hides the fields of other tabs, so `_focus(i)` on a field of another tab
+  opens that tab (the scripts rely on it). `tabFocus` is true while the focus is on the strip (`ui/Tabs.js` `TabBar` only draws):
+  `_move` walks a ring of the strip, the shown rows and the buttons; `_step` on the strip changes tab; `_setTab(i, onStrip)`
+  puts the focus on the tab's first row (on Stats, the row of the current car). Q and E and the pad menu's new `prev` and `next`
+  edges (LB and RB, `Input._pollMenuPad`) change tab. The Garage's `ITEMS` carry `tab`, a `section` is a heading inside a tab,
+  `head` the Stats table's header and `note` its footnote; the Stats rows are `carrow` fields, and focusing one sets the chassis.
+  `CAR_COLS` is the Stats table's columns (the best of each is bold). The Hangar leaves out a tab with no fields for the aircraft.
+  The pointer and number on a row are CSS (`.garage-row::before/::after`, a counter on `.garage-rows`); the side card stays.
+- **Loading** (batch 2). `Game.work(opts, fn)` runs `fn(job)` behind `ui/Loading.js` with the loop stopped (nothing steps or draws a
+  half-built scene) and restarts it after; `opts` is `{title, sub, steps: [labels], tip}` and the job has `step(i)` (marks the step,
+  yields), `progress(f)`, `yield()`, `sub(text)` and `sliceMs`. The panel goes in on the click frame but fades in after
+  `MENU.loadingDelay` (a CSS animation delay, so a shorter wait shows nothing), swallows keys (a capture listener) and clicks (it covers
+  the screen) while up, and fades out from however opaque it got. Users: `main.js onFly` (the flight code is fetched on idle at the
+  title, `FlightGame.enterAsync`), `Game._startSession` and `nextTrack` (`_trackBuild`, `_trackLine`, `_trackFinish` are `loadTrack`
+  in pieces), `Game.changeGraphics`, and in flight `go(mode, airport)` (start behind the panel), `placeWorld` (airport stepper,
+  longer-runway move) and the Detail stepper. `FlightGame.start()` and `_primeWorld()` stay synchronous (the scripts use them);
+  `_primeAsync` is the same priming in `MENU.sliceMs` slices (`Chunks.prime` and `WorldMesh.primeAirports` take a `ms` budget).
+  Shaders are compiled with `Scene.prewarmAsync()` (`renderer.compileAsync`, off the main thread). `respawnAt`, `toHangar` and a
+  hangar departure now go through `go()`, so they finish a few frames later: a script must `await game.loading.whenIdle()` before it
+  reads the result (the browser scripts do). `controlTip(kind)` (data/controls.js) gives the panel a tip from the real chart.
 - **Graphics levels** (Low, Medium, High, Ultra; stored `graphics`): `GraphicsLevel.js` writes a level onto `GRAPHICS` and
   `WORLD`, keeping the declared values so Ultra restores them; `Scene.applyGraphics` rebuilds the post chain, shadow map
   and lamp pool live. Measured at 2880 x 1800, dynamic resolution off: Low 3.5, Medium 10.6, High 19.8, Ultra 23.9 ms on
@@ -409,7 +472,8 @@ a second pad is player 2 in a two-player drag race (triggers, stick, RB/LB, D-pa
 
 Menus: ↑ ↓ ← → (or W A S D), Enter, Esc on the keyboard; D-pad or left stick, A and B on a gamepad, Start (starts on the title,
 resumes from pause). Settings rows also have − and + for the mouse. In the garage, digits type the driver number and
-Delete/Backspace (pad X) deletes one of your own presets.
+Delete/Backspace (pad X) deletes one of your own presets. In the Garage and the Hangar, Q and E (a pad's LB and RB) change
+tab, and Up from the first row lands on the tab strip, where Left and Right change tab.
 
 ### Flight
 

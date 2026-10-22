@@ -31,6 +31,7 @@ npm run race    # a full field races every track to the flag, cleanly
 npm run fx      # the ghost replays exactly, the gearbox never hunts, a gearbox tune is felt, skid marks sit on the road
 npm run specs   # every real car does its 0-60, quarter mile, top speed, grip and turning circle (real, scaled by STREET)
 npm run drag    # drag passes are timed right: reaction, splits, ET, trap speed, red lights and fouls
+npm run controls  # the controls chart shows only keys the input code really listens for
 ```
 
 The check scripts run headless against the real Track, VehiclePhysics and
@@ -79,12 +80,19 @@ any package, including dev dependencies.
 - No textures and no PBR anywhere. Phong is one specular term, not a PBR
   model, and it is only ever used on cars.
 - Never construct a material outside `src/render/Materials.js`.
-- Type: Martian Mono for timing and speed readouts, Archivo for menus and
-  labels. Two families total.
-- Palette: ink `#0E1A2B`, signal orange `#FF7A1A`, off white `#EDEDE7`, and
-  the timing colors `#B57BFF` purple, `#34D17A` green, `#F5C518` yellow.
-- HUD panels are hard edged rectangles. No rounded card grid, no drop
-  shadows, no glass blur, no all caps labels, no arrows after button text.
+- Type: Martian Mono for timing, speed readouts, tables and key caps, Archivo
+  for menus and labels. Use whatever fits a screen; the old two-family and
+  no-all-caps rules were lifted on 2026-10-22. Fonts stay self-hosted woff2.
+- Palette: ink `#0E1A2B`, off white `#EDEDE7`, the timing colors `#B57BFF`
+  purple, `#34D17A` green, `#F5C518` yellow, signal orange `#FF7A1A` for the
+  driving and flying HUD, and the menu accent, warm sand `#D8C8A0` (the
+  `--accent` CSS variable), for the pointer, the selected row and the main
+  button in menus. Menus do not use orange.
+- Menus (the dash display): flat ink panels in an off white double-line frame,
+  numbered rows, tables and charts wherever data has columns, a `>` pointer
+  on the selected row. See `MENU_REDESIGN_PLAN.md`.
+- Panels are hard edged rectangles. No rounded card grid, no drop shadows, no
+  glass blur, no arrows after button text.
 - Buttons say what happens: "Start lap", "Save car", "Back to garage".
 
 ## Performance
