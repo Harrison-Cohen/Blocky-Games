@@ -15,6 +15,12 @@
 // once. Colour presets are a library rather than a setting, so saving or
 // deleting one takes effect straight away.
 //
+// The list is split into tabs (Car, Paint, Parts, Gearbox, Stats) so nothing scrolls
+// and each is one short table. Q and E, a pad's bumpers or a click change tab; Up
+// from the first row (or Down from the last button) lands on the tab strip, where
+// Left and Right change tab too. Stats is a table of every car, and picking a row
+// in it picks that car.
+//
 // Navigation is one list of fields. Up and down move between them. Enter (A on
 // a pad) opens a field's dropdown, where up and down preview each option live
 // and Enter takes it; left and right step a closed field straight through its
@@ -37,6 +43,7 @@ import { GRAPHICS_LEVELS, GEARBOX } from '../data/tuning.js';
 import { normalizeGraphicsLevel } from '../render/GraphicsLevel.js';
 import { voiceFor, normalizeTune, isStockTune, tunedChassis, stockTune } from '../game/Gearbox.js';
 import { straightLine } from '../game/Performance.js';
+import { TabBar } from './Tabs.js';
 
 // Radians per second. Slow enough to read the car, fast enough that you do not
 // wait for the far side to come round.
@@ -65,35 +72,54 @@ for (let k = 1; k <= MAX_GEARS; k++) {
 }
 const MPH = 2.236936;
 
-// The list, top to bottom. Sections are headings; everything else takes focus.
+const TABS = [
+  { id: 'car', name: 'Car' },
+  { id: 'paint', name: 'Paint' },
+  { id: 'parts', name: 'Parts' },
+  { id: 'gearbox', name: 'Gearbox' },
+  { id: 'stats', name: 'Stats' },
+];
+
+// Every car side by side, for the Stats tab: the figures the card gives for one car,
+// in columns, with the best of each column marked. `lower`: less is better.
+const CAR_COLS = [
+  { head: 'Top', title: 'Top speed, mph', get: (c) => gameSpecs(c).topSpeedMph, show: (v) => String(Math.round(v)) },
+  { head: '0-60', title: '0-60 mph, seconds', get: (c) => gameSpecs(c).zeroToSixty, show: (v) => v.toFixed(2), lower: true },
+  { head: '\u00bc mi', title: 'Quarter mile, seconds', get: (c) => gameSpecs(c).quarterMile, show: (v) => v.toFixed(2), lower: true },
+  { head: 'Power', title: 'Power, hp', get: (c) => c.specs?.hp ?? null, show: (v) => String(v) },
+  { head: 'Mass', title: 'Mass, kg', get: (c) => c.mass, show: (v) => String(v), lower: true },
+  { head: 'Grip', title: 'Cornering grip, g', get: (c) => gameSpecs(c).skidpadG, show: (v) => v.toFixed(2) },
+];
+
+// The list, top to bottom, each on its tab. A `section` is a heading inside a tab;
+// everything else takes focus.
 const ITEMS = [
-  { section: 'Car' },
-  { key: 'chassis', label: 'Chassis', kind: 'select' },
-  { section: 'Paint' },
-  { key: 'preset', label: 'Preset', kind: 'select' },
-  { key: 'primary', label: 'Primary', kind: 'select' },
-  { key: 'secondary', label: 'Secondary', kind: 'select' },
-  { key: 'wheelColor', label: 'Wheel colour', kind: 'select' },
-  { key: 'savePreset', label: 'Save these colours as a preset', kind: 'savePreset' },
-  { section: 'Parts' },
-  { key: 'livery', label: 'Livery', kind: 'select' },
-  { key: 'wheelStyle', label: 'Wheel style', kind: 'select' },
-  { key: 'spoiler', label: 'Spoiler', kind: 'select' },
-  { key: 'roofItem', label: 'Roof item', kind: 'select' },
-  { key: 'headlight', label: 'Headlights', kind: 'select' },
-  { key: 'number', label: 'Driver number', kind: 'number' },
-  { section: 'Gearbox' },
-  { key: 'gearbox', label: 'Gearbox', kind: 'select' },
-  { key: 'finalDrive', label: 'Final drive', kind: 'stepper' },
-  { key: 'shiftUp', label: 'Automatic changes up at', kind: 'stepper' },
-  ...GEAR_ROWS,
-  { key: 'stockGearbox', label: 'Put the gearbox back to stock', kind: 'link' },
-  { section: 'Settings' },
-  { key: 'speedo', label: 'Speedometer', kind: 'select' },
-  { key: 'graphics', label: 'Graphics', kind: 'select' },
+  { tab: 'car', key: 'chassis', label: 'Chassis', kind: 'select' },
+  { tab: 'car', section: 'Dash and display' },
+  { tab: 'car', key: 'speedo', label: 'Speedometer', kind: 'select' },
+  { tab: 'car', key: 'graphics', label: 'Graphics', kind: 'select' },
+  { tab: 'paint', key: 'preset', label: 'Preset', kind: 'select' },
+  { tab: 'paint', key: 'primary', label: 'Primary', kind: 'select' },
+  { tab: 'paint', key: 'secondary', label: 'Secondary', kind: 'select' },
+  { tab: 'paint', key: 'wheelColor', label: 'Wheel colour', kind: 'select' },
+  { tab: 'paint', key: 'savePreset', label: 'Save these colours as a preset', kind: 'savePreset' },
+  { tab: 'parts', key: 'livery', label: 'Livery', kind: 'select' },
+  { tab: 'parts', key: 'wheelStyle', label: 'Wheel style', kind: 'select' },
+  { tab: 'parts', key: 'spoiler', label: 'Spoiler', kind: 'select' },
+  { tab: 'parts', key: 'roofItem', label: 'Roof item', kind: 'select' },
+  { tab: 'parts', key: 'headlight', label: 'Headlights', kind: 'select' },
+  { tab: 'parts', key: 'number', label: 'Driver number', kind: 'number' },
+  { tab: 'gearbox', key: 'gearbox', label: 'Gearbox', kind: 'select' },
+  { tab: 'gearbox', key: 'finalDrive', label: 'Final drive', kind: 'stepper' },
+  { tab: 'gearbox', key: 'shiftUp', label: 'Automatic changes up at', kind: 'stepper' },
+  ...GEAR_ROWS.map((r) => ({ tab: 'gearbox', ...r })),
+  { tab: 'gearbox', key: 'stockGearbox', label: 'Put the gearbox back to stock', kind: 'link' },
+  { tab: 'stats', head: true },
+  ...CHASSIS.map((c) => ({ tab: 'stats', key: `car.${c.id}`, label: c.name, kind: 'carrow', id: c.id })),
+  { tab: 'stats', note: 'Top speed in mph, 0-60 and quarter mile in seconds, power in hp, mass in kg, grip in g. The best of each is bright.' },
   { key: 'actions', kind: 'buttons' },
 ];
-const FIELDS = ITEMS.filter((it) => !it.section);
+const FIELDS = ITEMS.filter((it) => !it.section && !it.head && !it.note);
 
 // The chassis card: what the car does in this game, which `npm run specs`
 // holds the physics to -- the real car's figures scaled by STREET in
@@ -130,6 +156,9 @@ export class Garage {
 
     this.visible = false;
     this.index = 0;       // into FIELDS
+    this.tabAt = 0;       // into TABS
+    this.tab = TABS[0].id;
+    this.tabFocus = false; // the focus is on the tab strip, not on a row
     this.button = 0;      // which of the two buttons, on the last row
     this.list = null;     // the open dropdown, if there is one
     this.naming = false;  // typing a new preset's name
@@ -147,6 +176,8 @@ export class Garage {
     this.onClose = null;
     this.onPresets = null;
 
+    this.tabBar = new TabBar(this.el.querySelector('.garage-tabs'), (i) => this._setTab(i, true));
+    this.tabBar.setTabs(TABS.map((t) => t.name));
     this._buildScene();
     this._buildRows();
     this._buildStats();
@@ -195,7 +226,7 @@ export class Garage {
     this.disc = new THREE.Mesh(new THREE.CylinderGeometry(0.94, 1, 0.16, 44), flat(0x1b2836));
     this.disc.position.y = -0.08;
     this.scene.add(this.disc);
-    this.ring = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.09, 0.05, 44), flat(0xff7a1a));
+    this.ring = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.09, 0.05, 44), flat(0xd8c8a0));
     this.ring.position.y = -0.155;
     this.scene.add(this.ring);
 
@@ -241,16 +272,23 @@ export class Garage {
   _buildRows() {
     this.rowsEl.replaceChildren();
     this.rowEls = [];
+    this.otherEls = []; // headings, the table's header and the note: shown with their tab
     for (const it of ITEMS) {
       if (it.kind === 'buttons') {
         this.rowEls.push(this.el.querySelector('.garage-actions'));
         continue;
       }
       const li = document.createElement('li');
-      if (it.section) {
-        li.className = 'garage-section';
-        li.textContent = it.section;
+      if (it.section || it.head || it.note) {
+        if (it.section) { li.className = 'garage-section'; li.textContent = it.section; }
+        else if (it.note) { li.className = 'garage-tabnote'; li.textContent = it.note; }
+        else {
+          li.className = 'garage-carhead';
+          const cell = (t, title) => { const c = document.createElement('span'); c.textContent = t; if (title) c.title = title; return c; };
+          li.append(cell('Car'), ...CAR_COLS.map((col) => cell(col.head, col.title)));
+        }
         this.rowsEl.append(li);
+        this.otherEls.push({ it, li });
         continue;
       }
       li.className = `garage-row garage-row-${it.kind}`;
@@ -258,6 +296,23 @@ export class Garage {
       label.className = 'garage-label';
       label.textContent = it.label;
       li.append(label);
+
+      if (it.kind === 'carrow') {
+        const chassis = CHASSIS.find((c) => c.id === it.id);
+        li.append(...CAR_COLS.map((col) => {
+          const v = col.get(chassis);
+          const c = document.createElement('span');
+          c.className = 'garage-carval';
+          c.textContent = v == null ? '-' : col.show(v);
+          const all = CHASSIS.map((x) => col.get(x)).filter((x) => x != null);
+          if (v != null && v === (col.lower ? Math.min(...all) : Math.max(...all))) c.classList.add('best');
+          return c;
+        }));
+        li.addEventListener('click', () => { this._focus(FIELDS.indexOf(it)); this._paint(); });
+        this.rowsEl.append(li);
+        this.rowEls.push(li);
+        continue;
+      }
 
       if (it.kind === 'select') {
         // A button so it reads as one to assistive tech, but out of the tab
@@ -371,7 +426,7 @@ export class Garage {
     if (!this.tuneNoteEl) {
       this.tuneNoteEl = document.createElement('p');
       this.tuneNoteEl.className = 'garage-card-note';
-      this.tuneNoteEl.textContent = 'Figures in orange are with this gearbox tune.';
+      this.tuneNoteEl.textContent = 'Highlighted figures are with this gearbox tune.';
       this.statsEl.after(this.tuneNoteEl);
     }
   }
@@ -383,6 +438,7 @@ export class Garage {
   // Rows that do not apply to this chassis are hidden: gears it does not have,
   // and on a one-speed car the shift point and the gears altogether.
   _shown(it) {
+    if (it.kind !== 'buttons' && it.tab !== this.tab) return false;
     const n = this._gears();
     if (it.gear) return n > 1 && it.gear <= n;
     if (it.key === 'shiftUp') return n > 1;
@@ -513,11 +569,16 @@ export class Garage {
 
   _paint() {
     const stock = isStockTune(this.chassisId, this.tune);
+    this.tabBar.mark(this.tabAt, this.tabFocus);
+    this.el.dataset.tab = this.tab;
+    for (const { it, li } of this.otherEls) li.hidden = it.tab !== this.tab;
     FIELDS.forEach((it, i) => {
       const el = this.rowEls[i];
-      el.classList.toggle('focused', i === this.index);
+      el.classList.toggle('focused', i === this.index && !this.tabFocus);
       if (it.kind !== 'buttons') el.hidden = !this._shown(it);
-      if (it.kind === 'stepper') {
+      if (it.kind === 'carrow') {
+        el.classList.toggle('current', it.id === this.chassisId);
+      } else if (it.kind === 'stepper') {
         el._text.textContent = this._tuneText(it);
       } else if (it.kind === 'link') {
         el.classList.toggle('stock', stock);
@@ -535,7 +596,7 @@ export class Garage {
         el.classList.toggle('naming', this.naming);
       }
     });
-    const onButtons = FIELDS[this.index].kind === 'buttons';
+    const onButtons = FIELDS[this.index].kind === 'buttons' && !this.tabFocus;
     this.buttons.forEach((b, k) => b.classList.toggle('focused', onButtons && k === this.button));
 
     const c = this.chassis;
@@ -558,8 +619,11 @@ export class Garage {
 
   _focus(i) {
     i = (i + FIELDS.length) % FIELDS.length;
+    const it = FIELDS[i];
+    if (it.kind !== 'buttons' && it.tab !== this.tab) this._setTab(TABS.findIndex((t) => t.id === it.tab), false);
     if (this.list && this.list.index !== i) this._closeList(false);
-    if (this.naming && FIELDS[i].kind !== 'savePreset') this._endNaming();
+    if (this.naming && it.kind !== 'savePreset') this._endNaming();
+    this.tabFocus = false;
     this.index = i;
     // Landing on the number puts the caret in it with the number selected, so
     // typing replaces it, the way the old row took digits.
@@ -570,20 +634,52 @@ export class Garage {
       this.numberInput.blur();
     }
     this.rowEls[i].scrollIntoView({ block: 'nearest' });
+    // On the Stats tab the focused car is the car: it turns on the turntable as the
+    // focus passes over it.
+    if (it.kind === 'carrow' && it.id !== this.chassisId) this._set('chassis', it.id);
   }
 
-  // Skipping the rows this chassis does not have.
+  // The stops of the focus in this tab: the tab strip (-1), the rows this chassis
+  // has, and the buttons, in a ring.
   _move(d) {
-    let i = this.index;
-    do { i = (i + d + FIELDS.length) % FIELDS.length; } while (!this._shown(FIELDS[i]));
-    this._focus(i);
+    const stops = [-1];
+    FIELDS.forEach((it, i) => { if (this._shown(it)) stops.push(i); });
+    const at = stops.indexOf(this.tabFocus ? -1 : this.index);
+    const next = stops[(at + d + stops.length) % stops.length];
+    if (next < 0) {
+      if (this.list) this._closeList(false);
+      if (this.naming) this._endNaming();
+      if (document.activeElement === this.numberInput) this.numberInput.blur();
+      this.tabFocus = true;
+    } else this._focus(next);
+    this._paint();
+  }
+
+  // Another tab. The focus goes to its first row, or on the Stats tab to the row of
+  // this car; `onStrip` keeps it on the tab strip.
+  _setTab(t, onStrip = this.tabFocus) {
+    t = (t + TABS.length) % TABS.length;
+    if (this.list) this._closeList(false);
+    if (this.naming) this._endNaming();
+    if (document.activeElement === this.numberInput) this.numberInput.blur();
+    this.tabAt = t;
+    this.tab = TABS[t].id;
+    this.index = FIELDS.findIndex((it) => this.tab === 'stats' ? it.id === this.chassisId : it.kind !== 'buttons' && this._shown(it));
+    this.tabFocus = onStrip;
+    this.rowsEl.scrollTop = 0;
     this._paint();
   }
 
   _step(d) {
+    if (this.tabFocus) { this._setTab(this.tabAt + d, true); return; }
     const it = FIELDS[this.index];
     if (it.kind === 'buttons') {
       this.button = d < 0 ? 0 : 1;
+      this._paint();
+    } else if (it.kind === 'carrow') {
+      const at = CHASSIS.findIndex((c) => c.id === this.chassisId);
+      const next = CHASSIS[(at + d + CHASSIS.length) % CHASSIS.length].id;
+      this._focus(FIELDS.findIndex((f) => f.id === next));
       this._paint();
     } else if (it.kind === 'number') {
       this.car.number = Math.min(NUMBER_MAX, Math.max(NUMBER_MIN, this.car.number + d));
@@ -613,9 +709,10 @@ export class Garage {
 
   // pad: a gamepad cannot type, so a preset it saves gets a name made up.
   _activate(pad = false) {
+    if (this.tabFocus) { this._move(1); return; }
     const it = FIELDS[this.index];
     if (it.kind === 'select') this._openList();
-    else if (it.kind === 'number' || it.kind === 'stepper') this._move(1);
+    else if (it.kind === 'number' || it.kind === 'stepper' || it.kind === 'carrow') this._move(1);
     else if (it.kind === 'link') this._resetTune();
     else if (it.kind === 'savePreset') {
       if (pad) this._savePreset('');
@@ -850,6 +947,9 @@ export class Garage {
     };
     this.presets = normalizePresets(state.presets);
     this.visible = true;
+    this.tabAt = 0;
+    this.tab = TABS[0].id;
+    this.tabFocus = false;
     this.index = 0;
     this.button = 0;
     this.list = null;
@@ -918,6 +1018,8 @@ export class Garage {
     else if (is('ArrowLeft', 'KeyA')) this._step(-1);
     else if (is('ArrowRight', 'KeyD')) this._step(1);
     else if (is('Enter', 'Space')) this._activate();
+    else if (code === 'KeyQ') this._setTab(this.tabAt - 1);
+    else if (code === 'KeyE') this._setTab(this.tabAt + 1);
     else if (is('Escape', 'KeyG')) this.close(false);
     else return;
     e.preventDefault();
@@ -939,6 +1041,8 @@ export class Garage {
       else if (menu.back) this._endNaming();
       return;
     }
+    if (menu.prev) this._setTab(this.tabAt - 1);
+    if (menu.next) this._setTab(this.tabAt + 1);
     if (menu.up) this._move(-1);
     if (menu.down) this._move(1);
     if (menu.left) this._step(-1);

@@ -728,6 +728,8 @@ export const GRAPHICS = {
 export const GRAPHICS_LEVELS = [
   {
     id: 'low',
+    damageParticles: 48, // total live damage particles; range 0 to 300
+    damageEmit: 12, // total emissions per second; range 0 to 100
     name: 'Low',
     note: 'Lower resolution, no post effects',
     // No post chain at all: no occlusion, no bloom, no eye adaptation. The
@@ -740,6 +742,8 @@ export const GRAPHICS_LEVELS = [
   },
   {
     id: 'medium',
+    damageParticles: 96, // total live damage particles; range 0 to 300
+    damageEmit: 24, // total emissions per second; range 0 to 100
     name: 'Medium',
     note: 'No ambient shading, smaller shadows',
     // Ambient occlusion off, the single biggest cost, but bloom and 2x MSAA
@@ -753,6 +757,8 @@ export const GRAPHICS_LEVELS = [
   },
   {
     id: 'high',
+    damageParticles: 160, // total live damage particles; range 0 to 300
+    damageEmit: 40, // total emissions per second; range 0 to 100
     name: 'High',
     note: 'Full resolution, lighter anti-aliasing',
     // Occlusion worked out at 40% of the screen rather than half: about a
@@ -762,6 +768,8 @@ export const GRAPHICS_LEVELS = [
   },
   {
     id: 'ultra',
+    damageParticles: 224, // total live damage particles; range 0 to 300
+    damageEmit: 56, // total emissions per second; range 0 to 100
     name: 'Ultra',
     note: 'Everything at full quality',
     // Nothing overridden: exactly the GRAPHICS and WORLD blocks above.
@@ -1446,4 +1454,1249 @@ export const AUDIO = {
   beepLength: 0.22,      // seconds. Range 0.08-0.5
   goLength: 0.6,         // seconds. Range 0.2-1.2
   beepGain: 0.3,         // Range 0-0.8
+};
+
+// ============================================================================
+// FLIGHT
+// ----------------------------------------------------------------------------
+// The aircraft model's feel and its aids (src/flight, src/data/aircraft.js).
+// What an aircraft IS -- its mass, wings, engines, gear and the figures it was
+// fitted to -- lives in aircraft.js. This block is what the pilot feels of it:
+// how the stick ramps, how much the flight computer helps, how hard the ground
+// grips. Units are SI. Every aid is a knob, and `aids` is the master switch
+// that takes them all away so you can feel the difference.
+//
+// Body axes are the cars': +x LEFT, +y up, +z nose. Pull is nose up, roll
+// right is right wing down, yaw right is nose right.
+// ============================================================================
+export const FLIGHT = {
+  // Master switch for the aids below (levelling, auto-trim, angle-of-attack
+  // softening, the g limiter). false is the bare airframe. true/false.
+  aids: true,
+
+  // Roll self-levelling when the roll stick is centred: aileron command per
+  // radian of bank, the most the aid may command (a fraction of full), and
+  // the pitch (rad) past which it stands off so it cannot fight a loop.
+  // OFF by default (0): the first version used 0.9 and levelled the wings the
+  // moment you let go of the roll key, which made it impossible to hold a
+  // turn. Range: strength 0-3, limit 0.1-0.6, maxPitch 0.5-1.4.
+  levelStrength: 0,
+  levelLimit: 0.3,
+  levelMaxPitch: 1.1,
+
+  // Auto-trim: with the pitch stick centred the trim integrates until the
+  // flight path stops curving, so a speed change does not pitch the aircraft.
+  // Rate is trim (a fraction of full) per rad/s of path curvature per second;
+  // limit is how much trim it may hold; minSpeed (m/s) is where it switches on;
+  // filter (s) smooths the path rate it reads. It holds only a shallow path:
+  // past maxPath (rad of climb or dive) it lets go and the trim relaxes toward
+  // neutral over `relax` seconds, so the airframe's own stability brings the
+  // nose back up in a dive instead of holding it into the ground.
+  // Rate was 0.7, which took about 10 s to find the trim after a change of
+  // speed, and the aircraft climbed away meanwhile (through Mach 1 it was
+  // thirty degrees nose up by the time the trim caught up); 4 finds it in two.
+  // Range: rate 0.1-6, limit 0.3-0.9, minSpeed 30-90, filter 0.1-0.6,
+  // maxPath 0.15-0.8, relax 2-20.
+  trimRate: 4,
+  trimLimit: 0.6,
+  trimMinSpeed: 50,
+  trimFilter: 0.25,
+  trimMaxPath: 0.35,
+  // The climb has its own, much higher limit: let go of a climb and the nose
+  // keeps coming up (the airframe is not balanced at zero trim at speed), so
+  // the trim holds the path in any climb short of nearly vertical. Dives keep
+  // the short limit above. Range: 0.4-1.45.
+  trimMaxClimb: 1.2,
+  trimRelax: 5,
+  // And when the stick is held steadily instead of centred -- the flight path
+  // is not curving, so it is back pressure holding level -- the trim takes the
+  // pressure up: trimHold per second per unit of stick, while the path rate is
+  // under trimSteady (rad/s). This is the pilot trimming off the stick force.
+  // Range: hold 0-1, steady 0.001-0.02.
+  trimHold: 0.35,
+  trimSteady: 0.004,
+
+  // Angle-of-attack softening. Pull fades out between softAlpha and 1 times
+  // the stall angle and the nose is pushed down by softPush (a fraction of
+  // full) at the stall, so it mushes down rather than snapping into a spin.
+  // warnAlpha is where the stall warning starts, as a fraction of the stall.
+  // Range: softAlpha 0.6-0.98, softPush 0-1, warnAlpha 0.5-0.95.
+  softAlpha: 0.88,
+  softPush: 0.7,
+  warnAlpha: 0.8,
+
+  // Sideslip limiter: the rudder fades between half this angle (rad) and all
+  // of it, down to betaFloor of its authority, so a held pedal settles at a
+  // sideslip near the limit instead of skidding the whole aircraft sideways or
+  // swinging back through it. Range: limit 0.1-0.5, floor 0.1-0.8.
+  betaLimit: 0.22,
+  betaFloor: 0.35,
+
+  // The g limits are a safety net over a stick that already settles a full pull
+  // at about 8.5 g and a full push at about -2 g (see dampPitch, pushAuthority).
+  // Each is a cap on the stick that integrates: cut at gCutRate (a fraction of
+  // the stick, per g past the limit, per second) and given back at gRelease (a
+  // fraction a second) once under. The limit is the aircraft's (aircraft.js gLimit
+  // 9, gLimitNeg -3); gLead (s) looks ahead along the load factor's rate. A limit
+  // that fades the stick in proportion to the load had a loop gain of five with
+  // the airframe's short period in it, and made the stabilators chatter two or
+  // three times a second. Range: cut 0.2-3, release 0.2-3, lead 0-0.2.
+  gCutRate: 2,
+  gRelease: 1.0,
+  gLead: 0.05,
+  // How much of the pull's authority a push has: a full push settles at about
+  // -2 g and the nose is not hurled down (it was -5 to -6 g, and the nose then
+  // sprang back from fifteen degrees of negative incidence). Range 0.3-1.
+  pushAuthority: 0.4,
+
+  // Tail strike protection, the flight computer's. Pull is faded out as the nose
+  // approaches the attitude at which the tail would touch the ground (worked out
+  // from the tail point, and the height of the aircraft over the ground), and
+  // pushed back past it. tailMargin is the clearance (m) kept; tailBand the
+  // attitude (rad) over which the pull fades; tailLead (s) looks ahead along the
+  // pitch rate so a fast rotation does not carry through; tailGuardHeight is the
+  // height (m, centre of mass over the ground) above which it stops looking.
+  // Range: margin 0-0.6, band 0.02-0.15, lead 0-0.6, guard 8-30.
+  tailMargin: 0.08,
+  tailBand: 0.05,
+  tailLead: 0.3,
+  tailGuardHeight: 14,
+  // A tail that does touch is scraped, not wrecked: only a strike this hard (m/s
+  // into the ground) or this deep (m) is a crash. Range: speed 4-14, depth 0.2-1.
+  skidCrashSpeed: 9,
+  skidCrashDepth: 0.6,
+
+  // The parking hold. With the throttle at or under parkThrottle, the weight on
+  // the wheels and the aircraft slower than parkSpeed (m/s) it stands still, as
+  // it would on its brakes: idle thrust is more than the tyres' rolling
+  // resistance, and left alone the aircraft crept off down the runway and
+  // reached 20 m/s. (The taxi governor below makes the lever a speed from here
+  // up: 0.05 asks for 2 m/s, so the dead band of the lever is small.) Range:
+  // throttle 0.02-0.25, speed 0.1-2.
+  parkThrottle: 0.04,
+  parkSpeed: 0.5,
+
+  // Control authority of the stick, the damping and the rudder is full below
+  // this dynamic pressure (Pa) and fades as qFadeRef / q above it, never below
+  // qFadeMin, so the aircraft stays tame at speed. Lower is gentler fast. The
+  // pitch trim is not faded (see AircraftPhysics): it only keeps the airframe
+  // balanced. Was 14000, which left a full pull at Mach 1+ at 18-22 degrees a
+  // second and the stick dead feeling. Range: ref 6000-30000, min 0.03-0.4.
+  qFadeRef: 22000,
+  qFadeMin: 0.1,
+
+  // Rate damping, in stick (a fraction of full) per rad/s. This is most of
+  // what the aircraft feels like, and in effect it sets the fastest the
+  // aircraft will turn on each axis: full stick against the damping gives a
+  // roll of about 1/dampRoll rad/s. More is steadier and slower to start, less
+  // is twitchier (the first version, 0.12, rolled at 250 degrees a second).
+  // Pitch is 0.7: at 0.4 a snapped full stick overshot its 9 g by 2 to 3 and
+  // rang, and the limiter ringing with it was the stabilator chatter; at 0.7 the
+  // load rises straight to its plateau, seven g in 0.3 to 0.5 s.
+  // Range: pitch 0.05-1, roll 0.03-0.6, yaw 0.1-0.9.
+  dampPitch: 0.7,
+  // How the pitch damping fades with dynamic pressure, as a power of the stick's
+  // fade: 1 fades it with the stick (the first version), 0 not at all. The
+  // airframe's stiffness grows with q, so at 1 the short-period motion was
+  // barely damped at speed. Range 0-1.
+  dampFadePow: 0.5,
+  dampRoll: 0.35,
+  dampYaw: 1.6,
+
+  // Keyboard stick ramp, units/second (full deflection is 1). Analog input
+  // (a pad, the mouse) skips it. Range: attack 1.5-8, release 2-14.
+  stickAttack: 2.0,
+  stickRelease: 10.0,
+  // The pitch key has its own, quicker ramp: a tap on the pitch key moved the
+  // nose a couple of degrees at the old 2.0, which felt dead. Range: attack
+  // 1.5-10, release 2-14.
+  pitchAttack: 4.5,
+  pitchRelease: 10.0,
+  // The rudder's own ramp: pedals are quick. Range: attack 2-10, release 3-12.
+  yawAttack: 6.0,
+  yawRelease: 7.0,
+
+  // The throttle lever: how fast a held key or the stick moves it, fraction of
+  // travel per second. Range 0.15-1.
+  throttleRate: 0.65,
+  // Power arrives sooner after advancing the lever, without raising rated thrust.
+  // Multipliers on the aircraft's engine time constants. Range 0.3-1.5.
+  engineSpoolUpScale: 0.55,
+  engineAbUpScale: 0.65,
+
+  // Lag on the control surfaces, seconds. Range 0.02-0.2.
+  actuatorTau: 0.07,
+
+  // Thrust vectoring fades out as dynamic pressure (Pa) rises toward this and
+  // the surfaces take over. Range 4000-30000.
+  tvQ: 12000,
+
+  // Fuel burned per second as a fraction of the real figure; 0 is endless.
+  // Range 0-1.
+  fuelBurn: 0.35,
+
+  // The afterburner's own tank: seconds of full burner it holds, seconds to
+  // refill from empty, and the level (0-1) it must refill to before it may be
+  // lit again after running dry. Range: duration 20-180, refill 30-300,
+  // relight 0.05-0.5.
+  abDuration: 60,
+  abRefill: 90,
+  abRelight: 0.2,
+
+  // The scheduled flaps come up between flapUp (m/s calibrated airspeed) and
+  // flapUp less flapUpBand: fully down below the lower speed, fully up above
+  // flapUp. Range: up 90-200, band 20-100.
+  flapUp: 130,
+  flapUpBand: 50,
+
+  // Seconds for the gear to travel, and for the airbrake. Range 1.5-8, 0.5-3.
+  gearTime: 4,
+  airbrakeTime: 1.2,
+
+  // Ground spoilers (an airliner's, off for the fighter): with the weight on the
+  // wheels above autoSpoilerWow of the aircraft's weight and the throttle lever under
+  // autoSpoilerLever, the airbrake comes out by itself and dumps the wings' lift, so
+  // the weight goes onto the wheels and the brakes bite. A real airliner's landing
+  // distance assumes it. Range: wow 0.1-0.6, lever 0.05-0.3.
+  autoSpoilers: false,
+  autoSpoilerWow: 0.3,
+  autoSpoilerLever: 0.12,
+
+  // Nose wheel steering: the most lock (rad) and the speed (m/s) at which it
+  // has faded to half. Range: max 0.3-1.0, speed 10-60.
+  noseSteerMax: 0.6,
+  noseSteerSpeed: 25,
+
+  // The ground assists (milestone 3), all of them off with the master switch
+  // groundAssist. The nose wheel turns at most noseSteerRate rad/s (a tapped key
+  // used to snap it to full lock), and its lock is limited so the side force it
+  // asks of the tyres stays under noseSteerLatG (in g): the wheelbase makes the
+  // turn, v squared times tan(lock) over the wheelbase, and a full lock at 25 m/s
+  // asked for two or three g and scraped a wingtip. Range: rate 0.4-3, latG 0.1-0.6.
+  groundAssist: true,
+  noseSteerRate: 1.3,
+  noseSteerLatG: 0.4,
+
+  // The taxi governor. A fighter's idle thrust is more than its tyres' rolling
+  // resistance, so there is no speed to hold with the lever alone: a real pilot
+  // rides the brakes. On its wheels, with the lever at or under taxiLeverMax and
+  // slower than taxiSpeedMax (m/s), the lever asks for a speed (taxiSpeedPerLever
+  // times the lever: 0.1 holds 4 m/s, 0.25 holds 10) and the wheel brakes hold the
+  // aircraft to it, a taxiBrakeGain of brake per m/s over, at most taxiBrakeMax.
+  // Lever 0 stops it. It never touches the steering, and off the band (above the
+  // lever or the speed, or in afterburner) it does nothing, so a takeoff roll and
+  // a landing roll are the pilot's. The brake has to be able to hold the thrust the
+  // lever gives (66 kN at 0.25, 80 at 0.3, against about 5 of rolling resistance:
+  // the engine's lever is steep). Range: lever 0.15-0.5, per lever 20-80, speed
+  // 10-40, gain 0.1-1.5, max 0.4-1.
+  taxiLeverMax: 0.3,
+  taxiSpeedPerLever: 40,
+  taxiSpeedMax: 22,
+  taxiBrakeGain: 0.6,
+  taxiBrakeMax: 0.8,
+
+  // Standing on the brakes: with the wheel brake past parkBrake the aircraft does
+  // not move while the lever is under parkBrakeThrottle and it is slower than
+  // parkSpeed, as a real one holds a run-up on its brakes. Range: brake 0.05-0.5,
+  // throttle 0.3-1.
+  parkBrake: 0.15,
+  parkBrakeThrottle: 0.85,
+
+  // The gear lever cannot raise the wheels while they carry the aircraft (the
+  // weight on wheels, above gearLockWow of it), and short final with the gear up
+  // is a warning: below gearWarnAgl metres of ground, slower than gearWarnCas
+  // (m/s calibrated). Range: wow 0.05-0.5, agl 80-500, cas 60-200.
+  gearLock: true,
+  gearLockWow: 0.2,
+  gearWarnAgl: 220,
+  gearWarnCas: 110,
+
+  // The ground. slipSpeed is how fast (m/s) a tyre must slide before its
+  // friction is fully used. brakeFriction is the extra rolling drag at full
+  // wheel brake, as a fraction of the load. hullFriction is a skin dragging
+  // along the ground. wheelRadius is for the spin only. Range: slip 0.2-1.5,
+  // brake 0.3-1, hull 0.2-0.9.
+  slipSpeed: 0.5,
+  brakeFriction: 0.6,
+  hullFriction: 0.5,
+  wheelRadius: 0.42,
+  // Per surface: lateral is the tyre's side grip, rolling its rolling
+  // resistance, both as a fraction of the load. Range: lateral 0.2-1.2,
+  // rolling 0.01-0.2.
+  surfaces: {
+    tarmac: { lateral: 1.0, rolling: 0.02 },
+    runway: { lateral: 1.0, rolling: 0.02 },
+    grass: { lateral: 0.55, rolling: 0.07 },
+    sand: { lateral: 0.4, rolling: 0.14 },
+    rock: { lateral: 0.6, rolling: 0.09 },
+    snow: { lateral: 0.3, rolling: 0.1 },
+    gravel: { lateral: 0.5, rolling: 0.1 },
+    water: { lateral: 0.15, rolling: 0.35 },
+  },
+
+  // A hit this hard (m/s into the ground for the skin, m/s of sink for the gear)
+  // is a crash. Range: crashSpeed 2-10, maxSink 3-9. `hullCrashDepth` is how far (m) a point of the
+  // skin may be pushed into the ground before it is a crash (range 0.1-1).
+  crashSpeed: 4,
+  maxSink: 5.5,
+  hullCrashDepth: 0.35,
+};
+
+// The flat test field of milestone 1: a plain with a runway on it, to learn
+// the aircraft on before there is a world. Dimensions in metres.
+export const FIELD = {
+  // Half the side of the square plain. Range 5000-80000.
+  half: 40000,
+  // The runway: length, width, and the heading it points (0 is north, +z).
+  // Range: length 1500-5000, width 30-90.
+  runwayLength: 3500,
+  runwayWidth: 60,
+  // Distance from the near end of the runway the aircraft starts at, m.
+  startOffset: 80,
+  // Fog start and end, metres. The end sets how far you can see. Range:
+  // near 1500-16000, far 6000-60000.
+  fogNear: 8000,
+  fogFar: 32000,
+  // Spacing of the speed-reference pylons, metres, and how many rings of them.
+  // Range: spacing 300-2000, rings 3-20.
+  pylonSpacing: 800,
+  pylonRings: 9,
+  // Ground and sky colours, packed 0xRRGGBB.
+  ground: 0x6f8f56,
+  groundAlt: 0x7a9a5e,
+  runway: 0x35383f,
+  marking: 0xedede7,
+  sky: 0x9cc4e6,
+  skyTop: 0x3f78b8,
+  sun: 0xfff1d6,
+};
+
+// ============================================================================
+// FLIGHT CAMERA
+// ----------------------------------------------------------------------------
+// The chase camera follows the aircraft's own orientation, smoothed, so it
+// banks and lags through a turn and swings behind you in a loop.
+// ============================================================================
+export const FLIGHT_CAMERA = {
+  buildingClearance: 1.5, // external camera stand-off from airport solids, m; range 0.3 to 3
+  // Chase: metres behind and above the aircraft, and how much further back it
+  // pulls at speed (m at 340 m/s). Range: distance 18-70, height 3-20,
+  // pullback 0-40.
+  distance: 38,
+  height: 9,
+  speedPullback: 18,
+
+  // How fast the camera position and its heading follow the aircraft, per
+  // second. Lower lags more. Range: position 2-12, orient 1.5-10.
+  positionSpring: 6,
+  orientSpring: 3.2,
+
+  // How much the camera's up vector leans toward the world's up rather than
+  // the aircraft's, so a roll does not whip the horizon around. 0 rolls with
+  // the aircraft, 1 stays level. Range 0-1.
+  upBlend: 0.65,
+
+  // Field of view at rest and at 340 m/s, degrees. Range 55-100.
+  fovMin: 64,
+  fovMax: 84,
+  fovSpring: 2.5,
+  // Player-selected vertical field of view, degrees, shared by flight camera views.
+  // Menu bounds 40-120, default within bounds, step 1-5. No speed-driven zoom when selected.
+  userFovMin: 55,
+  userFovMax: 110,
+  userFovDefault: 78,
+  userFovStep: 1,
+
+  // Far orbit: distance (m) and the look-at height. Range 40-200.
+  orbitDistance: 90,
+
+  // Free look turning rate with the mouse (rad per pixel) and the right
+  // stick (rad/s). Range: mouse 0.001-0.008, stick 1-5.
+  lookMouse: 0.0035,
+  lookStick: 2.6,
+  // Free look eases back to centre at this rate when released. Range 1-12.
+  lookReturn: 5,
+
+  // The near plane grows with height above the ground so depth precision holds
+  // over a long view: near = nearMin + nearPerMetre * height, never past
+  // nearMax. Far is the field's fog end plus farMargin. Range: nearMin
+  // 0.15-1, nearPerMetre 0.001-0.01, nearMax 4-40.
+  nearMin: 0.3,
+  nearPerMetre: 0.004,
+  nearMax: 20,
+  farMargin: 3000,
+  // The pilot's eye. First person view: the field of view (degrees, at least) and the most the
+  // near plane may grow to (m; the nose of the aircraft is a few metres off). Range: 60-95,
+  // 0.5-5. Cockpit view: the field of view, and the near and far planes of the second pass that
+  // draws the inside of the cockpit (m). Range: 60-100, 0.02-0.2, 30-300.
+  firstFov: 72,
+  firstNearMax: 2,
+  cockpitFov: 78,
+  cockpitNear: 0.04,
+  cockpitFar: 120,
+
+  // Shake from the afterburner and from the airframe in the stall, metres.
+  // Range 0-0.3.
+  shakeBurner: 0.04,
+  shakeStall: 0.12,
+  // First person and Cockpit retain 20% of positional shake and Mach-1 FOV kick.
+  // External camera effects keep their original amplitude. Range 0-1.
+  eyeShakeScale: 0.2,
+  eyeKickScale: 0.2,
+
+  // After a crash the wreck is shown this many seconds before the respawn menu opens.
+  // Range 0.5-4.
+  crashMenuDelay: 1.6,
+};
+
+// ============================================================================
+// FLIGHT AUDIO
+// ----------------------------------------------------------------------------
+// Synthesised, no files (core/FlightAudio.js). It plays into the car engine's
+// master gain, so the one volume slider and the mute key govern it too.
+// ============================================================================
+export const FLIGHT_AUDIO = {
+  // Overall level of the engine sound, 0-1. Was 0.28 for the old white-noise
+  // voices; the new ones carry more energy for the same number, so it is
+  // brought down to leave the afterburner about as loud as it was (measured
+  // offline: -20 dB RMS against -21). Range 0.05-0.6.
+  engineGain: 0.22,
+  // The turbine's whine (the compressor), one tone per engine: pitch (Hz) at
+  // idle and at military power, and its level. Each engine follows actual spool.
+  // Range: idle 100-1200, mil 500-3500, gain .01-.3.
+  whineIdle: 780,
+  whineMil: 2400,
+  whineGain: 0.035,
+  // Harmonic colour and quiet idle level. No synthetic engine beating.
+  // Wave is sine/triangle; Q .3-2; idle fraction 0-.4.
+  toneWave: 'sine',
+  toneQ: .65,
+  toneIdle: .12,
+  // The core's low rumble: the cutoff (Hz) of its low-pass at idle and at
+  // military power, and its level as a multiple of the engine gain. It is
+  // brown noise (a rumble, not a hiss) and swells and ebbs slowly. `rumbleFloor`
+  // cuts the sub-bass under it (Hz): a laptop's speakers cannot play it and it
+  // only eats the headroom. Range: idle 60-250, mil 200-700, gain 0.2-2.5,
+  // floor 30-150.
+  rumbleFloor: 80,
+  rumbleIdle: 110,
+  rumbleMil: 380,
+  rumbleGain: 1.2,
+  // The exhaust, the broad roar of the jet itself: the centre (Hz) of its band
+  // at idle and at military power, and its level. It rises steeply with the
+  // spool. Pink noise, which falls off with pitch as a jet does. Range: idle
+  // 200-700, mil 600-2000, gain 0.1-1.5.
+  exhaustIdle: 320,
+  exhaustMil: 1000,
+  exhaustGain: 0.7,
+  // Afterburner broad roar and low rumble. No repeating amplitude flutter.
+  // Range: gain .05-.8, band 300-1500 Hz, low 120-500 Hz, optional kick 0-1.5.
+  roarGain: 0.4,
+  roarFreq: 560,
+  burnerLow: 240,
+  burnerKick: 0,
+  // Wind and airframe noise, rising with the square of airspeed. Level at
+  // 340 m/s and the band centre (Hz). Range: gain 0-0.4, freq 400-2400.
+  windGain: 0.1,
+  windFreq: 900,
+  // From the cockpit camera the cabin muffles everything above this (Hz); the
+  // other cameras hear it all. Range 600-6000.
+  cabinCutoff: 1100,
+  cabinGain: .48, // Pilot-view engine/wind attenuation, .2-1; warnings bypass it.
+  // Stall warning: a two-tone chirp. Pitch (Hz), beeps a second, level.
+  // Range: freq 500-1600, rate 2-8, gain 0.05-0.4.
+  stallFreq: 880,
+  stallRate: 4.5,
+  stallGain: 0.22,
+  // The sonic boom at Mach 1: its level, and the seconds between the crossing
+  // and the sound (the boom arrives a moment after the aircraft does). Range:
+  // gain 0-1.5, delay 0-1.
+  boomGain: 0.9,
+  boomDelay: 0.12,
+  // How fast every sound parameter reaches its target, seconds. Range 0.02-0.15.
+  smoothing: 0.12,
+  // The clunk of a flap lever moving to a detent: its level (0 = none) and its pitch (Hz).
+  // Range: gain 0-1.5, freq 40-140.
+  clunkGain: 0.8,
+  clunkFreq: 90,
+};
+
+// What differs by aircraft in the sound: any of the keys above, laid over them. The F-22 has
+// the default fighter turbine/exhaust voice. The 737 is two big turbofans: a deeper rumble, a lower
+// and quieter fan whine, a softer exhaust and no afterburner. Same ranges as above.
+export const FLIGHT_AUDIO_PROFILES = {
+  b737: {
+    engineGain: 0.2,
+    whineIdle: 160,
+    whineMil: 680,
+    whineGain: 0.12,
+    toneWave: 'triangle',
+    toneQ: .55,
+    cabinCutoff: 850,
+    cabinGain: .38,
+    rumbleIdle: 90,
+    rumbleMil: 300,
+    rumbleGain: 1.4,
+    exhaustIdle: 260,
+    exhaustMil: 800,
+    exhaustGain: 0.5,
+    windGain: 0.14,
+    boomGain: 0,
+    burnerKick: 0,
+  },
+};
+
+// ============================================================================
+// THE SOUND BARRIER
+// ----------------------------------------------------------------------------
+// What happens as the aircraft goes through Mach 1 (render/ShockWave.js, the
+// boom in core/FlightAudio.js, a kick of the camera in render/FlightCamera.js):
+// rings of condensed air that spread out from where it crossed and are left
+// behind, a sleeve of vapour round the airframe while it is in the transonic
+// band, and a boom. Pure effect: nothing here touches the physics.
+// ============================================================================
+export const SHOCK = {
+  // The Mach number that fires it going up, and the number the aircraft must
+  // fall back under before it can fire again (so hovering on the line does not
+  // stutter). Range: mach 0.9-1.2, rearm 0.85-0.99.
+  mach: 1.0,
+  rearm: 0.96,
+  // The rings: how many, seconds apart, how long each lives, the radius (m)
+  // they start at and spread to, how far (m) they slide back along the aircraft
+  // while they do, and how bright the first is (0-1; each is a little fainter
+  // than the last). They ride with the aircraft, because the chase camera sits
+  // behind it and a ring left in the air would be behind the camera at once.
+  // Range: count 1-5, gap 0.05-0.3, life 0.6-3, start 2-10, end 30-150, travel
+  // 20-150, opacity 0.1-0.9.
+  rings: 3,
+  ringGap: 0.11,
+  ringLife: 1.5,
+  ringStart: 4,
+  ringEnd: 70,
+  ringTravel: 80,
+  ringOpacity: 0.55,
+  // The vapour sleeve: how bright it is at its best (0-1), how far either side
+  // of Mach 1 it reaches (it is thickest on the line and gone at the edge), and
+  // how big (m): the length along the airframe and the radius at its rear.
+  // Range: opacity 0-0.8, band 0.02-0.2, length 6-20, radius 3-12.
+  coneOpacity: 0.38,
+  coneBand: 0.07,
+  coneLength: 13,
+  coneRadius: 7,
+  // The jolt: the field of view jumps by this many degrees and eases back at
+  // this rate (per second), and the camera shakes for a moment (metres, as the
+  // afterburner's does). Range: kick 0-12, decay 2-12, shake 0-0.4.
+  kickFov: 6,
+  kickDecay: 5,
+  shake: 0.22,
+};
+
+// ============================================================================
+// FLIGHT INPUT
+// ----------------------------------------------------------------------------
+// Keyboard, gamepad and mouse flight (core/FlightInput.js). Stick deadzone and
+// response curve are INPUT's, shared with the cars.
+// ============================================================================
+export const FLIGHT_INPUT = {
+  // Mouse flight: the mouse moves a virtual stick. Sensitivity is stick
+  // deflection per pixel (1 / this many pixels is full deflection), the
+  // deadzone is the part of the travel around the centre that reads zero, and
+  // the stick drifts back toward the centre at `return` per second (0 leaves it
+  // where you put it). Range: sensitivity 0.001-0.008, deadzone 0-0.2,
+  // return 0-3.
+  mouseSensitivity: 0.0032,
+  mouseDeadzone: 0.05,
+  mouseReturn: 0.9,
+
+  // The wheel moves the throttle this much per notch in mouse flight.
+  // Range 0.02-0.2.
+  wheelStep: 0.06,
+
+  // The right stick's throttle: how fast it moves the lever, as a multiple of
+  // the keys' rate. Range 0.5-3.
+  stickThrottle: 1.6,
+
+  // Reset to the hangar is a hold, so it cannot be hit by accident: seconds.
+  // Range 0.4-3.
+  resetHold: 1.0,
+
+  // The wheel brake on the keyboard is not a switch: held, it comes on at
+  // brakeAttack of full a second and goes off at brakeRelease. (A pad's trigger
+  // is analog and is not ramped.) Range: attack 1-10, release 3-20.
+  brakeAttack: 2.5,
+  brakeRelease: 8,
+
+  // Triggers and the cannon: how far a trigger must be pulled to fire.
+  // Range 0.1-0.8.
+  triggerFire: 0.3,
+};
+
+// ============================================================================
+// OPEN WORLD
+// ----------------------------------------------------------------------------
+// The world flight is flown in (src/world, src/render/WorldMesh.js): seeded
+// terrain streamed in chunks, a floating origin, biomes, and the six race
+// tracks placed in it as flyover scenery with AI cars lapping them. (WORLD, far
+// above, is the car game's terrain and render block; this is a different thing.)
+//
+// Everything is deterministic from `seed`: the same coasts, mountains, areas and
+// airports are in the same places on every launch. Changing any shape knob in
+// the first half of this block changes the whole map, so the track areas move
+// with it -- they are placed by looking at the land, not at fixed coordinates.
+// ============================================================================
+export const OPEN_WORLD = {
+  // --- the map ----------------------------------------------------------------
+  // Side of the square world, metres, and the seed every noise layer is cut
+  // from. Nothing that costs time or memory scales with the area. The chunk
+  // tree covers 131,072 m, so size can go up to that. Range: size 40000-131000.
+  size: 120000,
+  seed: 195,
+
+  // Land and sea. A slow fractal pattern, `continentScale` metres across, is
+  // pushed through a threshold: above `seaThreshold` it is land, below it sea,
+  // and `continentGain` is how fast the coast shelves. A higher threshold is
+  // more ocean. The sea floor falls to `seaDepth` metres, and the last
+  // `rimWidth` metres before the edge of the world are pushed under the sea by
+  // `rimStrength` so nobody flies off the end of a plain.
+  // Range: scale 12000-60000, threshold 0.40-0.55, gain 2-6, depth 100-800,
+  // rim 4000-20000, strength 1-4.
+  continentScale: 26000,
+  seaThreshold: 0.475,
+  continentGain: 3.4,
+  seaDepth: 420,
+  rimWidth: 9000,
+  rimStrength: 2.4,
+
+  // The coastal plain land rises to before anything else is added, metres, and
+  // the lowest any land goes (hills and canyons never cut below it, so there
+  // are no accidental lakes). Range: plain 20-200, floor 1-20.
+  plainHeight: 60,
+  landFloor: 3,
+
+  // The ranges, hills and canyons are read through coordinates pushed about by a
+  // slow noise, `warpAmount` metres at most, `warpScale` metres across, so the
+  // value noise's square cells do not show in the crests. Range: scale 3000-20000,
+  // amount 500-6000.
+  warpScale: 9000,
+  warpAmount: 2600,
+
+  // Mountain ranges: where they are (`rangeScale` metres across, present where
+  // the pattern is above `rangeThreshold`), how wide a ridge system is
+  // (`mountainScale`) and how tall the highest crest gets, metres. Range:
+  // rangeScale 15000-60000, threshold 0.4-0.65, mountainScale 4000-20000,
+  // height 800-4000.
+  rangeScale: 34000,
+  rangeThreshold: 0.52,
+  mountainScale: 9000,
+  mountainHeight: 2300,
+
+  // Rolling hills and surface break-up: wavelength and amplitude (peak to
+  // trough is twice the amplitude), metres. The detail layer is what the
+  // finest chunks (16 m cells) show. Range: hillScale 1200-6000, hillHeight
+  // 30-300, detailScale 80-500, detailHeight 3-30.
+  hillScale: 2600,
+  hillHeight: 120,
+  detailScale: 240,
+  detailHeight: 11,
+
+  // Canyons: a narrow cut where a slow pattern crosses its middle, present
+  // only in some regions (`canyonRegionScale`), `canyonDepth` metres deep.
+  // Range: region 15000-60000, scale 2000-12000, depth 40-400.
+  canyonRegionScale: 30000,
+  canyonScale: 6500,
+  canyonDepth: 150,
+
+  // --- airports ---------------------------------------------------------------------
+  // What each kind of airport IS (its runway, taxiways, apron, hangars, lights) is
+  // data, src/data/airports.js, with the home runway of milestone 2 as the major
+  // airport; these are how they are placed, flattened, cleared and drawn.
+  //   seedSalt     changes where the airports with no hint go, without touching the
+  //                land. Any integer.
+  //   candidates   seeded places tried for each one (the best fit wins), and
+  //   headings     runway headings tried at each place, evenly round the circle on
+  //                whole tens of degrees. Range: candidates 30-400, headings 4-16.
+  //   spacing      the least gap between two airports' flattened zones, metres.
+  //                Range 2000-15000.
+  //   areaClear    the least gap between an airport's flattened zone and a race
+  //                track's area, metres, and stripAllowance the room an area keeps
+  //                for its own airstrip on top of that. Range: clear 1000-8000,
+  //                allowance 1000-5000.
+  //   stripGap     how far (metres) a track's airstrip's flat ground stands from the
+  //                track's graded apron: beyond the track's own ground (areaInner),
+  //                so the two never share a hillside. Range 700-3000.
+  //   stripReliefCost, stripApproachCost  what a metre of relief across a strip's
+  //                platform and a blocked step of its approach are worth, in metres of
+  //                setback from its track: it takes the nearest spot, but prefers a
+  //                level one with a clear approach. Range 0-100, 0-3000.
+  //   minLand      the lowest ground under an airport's platform, metres above the
+  //                sea, and ringLand the lowest in the ring its blend reaches.
+  //                Range: minLand 4-40, ringLand 1-15.
+  //   approach*    the land under each runway's extended centre line, out to
+  //                approachLength metres (checked every approachStep), stays under
+  //                the runway's height plus approachSlope times the distance plus
+  //                approachMargin metres: ICAO's approach surface is 2 to 2.5%.
+  //                Range: slope 0.01-0.04, length 2000-10000, step 100-500, margin
+  //                0-80.
+  //   propMargin   no scenery (trees, rocks) within this many metres of an airport's
+  //                flat ground. Range 0-300.
+  //   startOffset  how far down the runway "start on the runway" puts the aircraft
+  //                (m), airDistance and airHeight where "start airborne" puts it
+  //                (m back from the threshold, m up), hangarMouth how far in front
+  //                of a hangar bay a reset stops (m). Range: 0-400, 800-6000,
+  //                300-4000, 8-40.
+  //   zone         the size of a hangar bay, metres: stop near it to enter the
+  //                Hangar. Range w 24-60, d 26-60 (the fighter is 19 m by 13.6 m).
+  //   corridor     the approach corridor cut into the land at both ends of an airport the
+  //                data marks `corridor: true` (the major, which sits in a cut in a ridge: an
+  //                airliner needs the ground clear of its glide path). From the end of the
+  //                platform the ground is cut down to a ramp that rises `slope` (rise over
+  //                run: 0.035 is 2 degrees, which stays under a 3 degree glide path with a
+  //                15 m crossing height from the first metre) and is left alone beyond
+  //                `length` metres (it fades out over the last third, and in over the first `onset`
+  //                metres, so there is no step where it meets the platform). The cut is `halfWidth`
+  //                metres either side of the centre line at the platform, widening by `widen`
+  //                per metre out, and its sides come back up to the land over `edge` metres.
+  //                Land already below the ramp is not touched. Range: slope 0.02-0.05,
+  //                length 3000-9000, onset 100-800, halfWidth 150-600, widen 0-0.15, edge 150-800.
+  //   buildDistance how near (m) an airport's meshes are built and kept (dropped
+  //                beyond 1.4 times it). Range 8000-60000.
+  //   lampDay, lampNight  how bright the lights are by day and at night, as the
+  //                multiplier on their colour (above 1 the bloom pass picks them
+  //                out). Range 0-1, 1-8.
+  //   sink         how far (as a fraction of a chunk's cell) the ground under the
+  //                pavement is lowered, for the coarse chunks far away, so pavement
+  //                is never buried. 0 is off. Range 0-0.2.
+  //   colors       the pavement, the paint and the buildings (packed 0xRRGGBB, in
+  //                the game's palette: off white, signal orange, timing yellow), and
+  //                the lamps, whose brightness lampDay and lampNight set.
+  airports: {
+    seedSalt: 138,
+    candidates: 120,
+    headings: 8,
+    spacing: 4000,
+    areaClear: 1500,
+    stripAllowance: 1200,
+    stripGap: 1100,
+    stripReliefCost: 25,
+    stripApproachCost: 400,
+    minLand: 8,
+    ringLand: 3,
+    approachSlope: 0.02,
+    approachLength: 6000,
+    approachStep: 250,
+    approachMargin: 25,
+    corridor: { slope: 0.035, length: 7000, onset: 300, halfWidth: 300, widen: 0.06, edge: 600 },
+    propMargin: 60,
+    startOffset: 80,
+    airDistance: 2600,
+    airHeight: 1500,
+    hangarMouth: 16,
+    zone: { w: 30, d: 34 },
+    buildDistance: 24000,
+    lampDay: 0.4,
+    lampNight: 3,
+    sink: 0,
+    colors: {
+      runway: 0x3a3e45, taxiway: 0x484c54, apron: 0x8a8e95, pad: 0x666b73,
+      white: 0xedede7, yellow: 0xf5c518,
+      wall: 0xd9dbdd, roof: 0x707a86, door: 0x2a3037, accent: 0xff7a1a, glass: 0x233a52, pole: 0x5b626b,
+      lampWhite: 0xffffff, lampRed: 0xff2a14, lampGreen: 0x14ff50, lampBlue: 0x2a52ff, lampAmber: 0xffa010,
+    },
+  },
+
+  // --- the night preview -------------------------------------------------------------
+  // Until the day and night cycle of milestone 9, "Time of day" on the Fly menu is
+  // a switch between the day and one night, so the airports' lights can be judged
+  // in the dark: the horizon and the top of the sky, the moon's colour and
+  // strength (it is the sun's light, dimmed), the ambient light (sky and ground),
+  // the stars, how much the biome tints the fog (a daylight colour: most of it
+  // goes), and the bloom that makes a lamp glow. Range: intensities 0.1-1.5,
+  // stars 0-3000, tint 0-0.5, bloom 0.2-1.
+  night: {
+    haze: 0x0a1424, skyTop: 0x02050b, moon: 0xaec4ee,
+    sunIntensity: 0.5, hemiIntensity: 0.8, hemiSky: 0x2a3f66, hemiGround: 0x1c2e24,
+    stars: 1400, tint: 0.08, bloom: 0.65,
+  },
+
+  // --- wind (a stub until milestone 9) --------------------------------------------------
+  // A constant wind: `speed` in m/s and `from`, the compass bearing it blows FROM (0 is
+  // from the north, 90 from the east), in degrees. It moves the air the aircraft flies in
+  // and nothing else (the ground does not move), so a crosswind is felt on the runway and
+  // on the approach. It is the same everywhere and at every time, so the checks stay
+  // deterministic; zero, as shipped, changes nothing at all. Range: speed 0-20, from 0-360.
+  wind: { speed: 0, from: 0 },
+
+  // --- chunks ---------------------------------------------------------------------
+  // The terrain is a quadtree of square chunks over the whole map. The smallest
+  // is `chunkSize` metres across, each is `chunkCells` cells a side (so its
+  // facets are chunkSize / chunkCells metres: 16 m at the finest), and each
+  // level up is twice as big with the same number of cells. A chunk splits into
+  // four finer ones while the camera is closer than `splitFactor` times its
+  // size; a bigger factor is a sharper world further out and more chunks to
+  // draw. Skirts, `skirt` cells deep, hang from every chunk edge so the seams
+  // between levels never show daylight. Range: chunkSize 256-1024, cells 16-48,
+  // splitFactor 1.6-4, skirt 0.5-3.
+  chunkSize: 512,
+  chunkCells: 32,
+  splitFactor: 2.4,
+  skirt: 1.4,
+
+  // How much of each frame building chunks may take, milliseconds (a chunk costs
+  // roughly 1.5-3 ms; at least one is built a frame while any are wanted), and
+  // how many chunks that are no longer in view are kept for when they are wanted
+  // again. Range: budget 0.5-6, cache 50-1200.
+  chunkBudgetMs: 2,
+  chunkCache: 300,
+
+  // --- render distance -----------------------------------------------------------------
+  // How far you can see, metres: the settings slider's range and default, and
+  // the most each graphics level allows. The distance sets the fog, the camera's
+  // far plane and which chunks are drawn together. Fog starts at `fogNear` of
+  // it. Chunks are drawn a little past the fog (`drawMargin`) so the edge is
+  // never seen. Range: min 3000-15000, max 20000-100000, default 8000-60000,
+  // step 1000-8000, fogNear 0.1-0.7, drawMargin 1-1.4.
+  renderDistance: { min: 8000, max: 60000, default: 30000, step: 4000 },
+  levelCaps: { low: 12000, medium: 24000, high: 40000, ultra: 60000 },
+  fogNear: 0.3,
+  drawMargin: 1.12,
+
+  // --- detail ---------------------------------------------------------------------------
+  // How much the world is drawn WITH, as against how far: the second slider, on
+  // the same cards as the view distance. Each step is a name and five numbers,
+  // all relative to today's (the step named `detailDefault` is exactly what the
+  // game was before the slider, 1 and 1 and 1 and 1 and 1, with 32 cells):
+  //   lod      how far out each size of terrain chunk is kept (a multiple of
+  //            `splitFactor`): more is sharper ground in the middle distance,
+  //            and more chunks, so more draw calls and more video memory
+  //   cells    cells a side of every chunk: its facets are 512 / cells metres at
+  //            the finest, so 64 is 8 m ground to 16 m. Costs triangles (and the
+  //            time to build a chunk) with its square, but no draw calls
+  //   props    how many trees, rocks and buildings (the lattice they stand on is
+  //            made finer by this)
+  //   shadow   how wide the sun's shadow is (a multiple of the car world's
+  //            `shadowRadius`): the shadow map is the same size, so wider is
+  //            coarser, but the trees and hills around you cast onto the ground
+  //   scale    the most the picture may be rendered at, as a multiple of the
+  //            resolution the screen asks for. Above 1 it is supersampling,
+  //            which the frame-rate controller (GRAPHICS.dynamicResolution) climbs
+  //            to by itself while the frame has room to spare, and gives back
+  //            when it has not; below 1 it is a ceiling.
+  // Range per number: lod 0.5-3, cells 16-96, props 0.25-4, shadow 0.5-4, scale
+  // 0.5-2. Memory is the limit above Ultra: a chunk is cells x cells x 216 bytes.
+  detailDefault: 2,
+  detailSteps: [
+    { name: 'Low',      lod: 0.7,  cells: 24, props: 0.5,  shadow: 0.7, scale: 0.8 },
+    { name: 'Medium',   lod: 0.85, cells: 32, props: 0.75, shadow: 0.85, scale: 1 },
+    { name: 'High',     lod: 1,    cells: 32, props: 1,    shadow: 1,   scale: 1 },
+    { name: 'Higher',   lod: 1.25, cells: 40, props: 1.6,  shadow: 1.5, scale: 1.25 },
+    { name: 'Ultra',    lod: 1.5,  cells: 48, props: 2.4,  shadow: 2.2, scale: 1.5 },
+    { name: 'Maximum',  lod: 1.8,  cells: 64, props: 3.4,  shadow: 3,   scale: 1.75 },
+  ],
+
+  // --- how it looks ------------------------------------------------------------------------
+  // Which biome the land is when no race track says otherwise. Two slow
+  // patterns, temperature and moisture, `scale` metres across: hotter than `hot`
+  // is desert, wetter than `wet` is forest, drier than `dry` is flat dry
+  // ground, grassland between, each blending over `edge`. The snow line is the
+  // biome's own (src/data/biomes.js) raised by `snowTemp` metres for the hottest
+  // land and lowered by as much for the coldest, fading in over `snowBand`
+  // metres. Range: scale 15000-80000, thresholds 0.2-0.8, edge 0.03-0.3,
+  // snowTemp 0-2500, snowBand 50-600.
+  biome: { scale: 36000, hot: 0.6, wet: 0.56, dry: 0.34, edge: 0.1, snowTemp: 900, snowBand: 220 },
+
+  // The slope (the face normal's y, 1 is flat) steeper than which bare rock
+  // shows, how much each facet's colour differs from its neighbours (a fraction
+  // of its brightness: it is what makes the hills read as facets), and the
+  // height above the sea (metres) that is still beach. Range: slope 0.5-0.9,
+  // jitter 0-0.15, beach 1-10.
+  rockSlope: 0.74,
+  faceJitter: 0.07,
+  beachHeight: 4,
+
+  // Slow patches of lighter and darker ground, so a plain is not one flat green:
+  // how much (a fraction of brightness) and how big, metres. Range: patch 0-0.3,
+  // scale 200-3000.
+  patch: 0.13,
+  patchScale: 900,
+
+  // How much a track's own ground colour tints the biome around it, 0 to 1.
+  // Range: mix 0-0.6.
+  paletteMix: 0.22,
+
+  // Sky and light, packed 0xRRGGBB: the horizon, the top of the sky, the sun,
+  // the sea. The sun's direction is behind and above an aircraft flying north.
+  haze: 0x9cc4e6,
+  skyTop: 0x3f78b8,
+  sun: 0xfff1d6,
+  sunDirection: { x: -0.35, y: 0.8, z: -0.45 },
+  sea: 0x2b729c,
+  // The sea is the terrain's own faces, cut at the waterline (src/world/Chunks.js).
+  // Past the edge of the map there are no chunks, so a plane stands in, this far
+  // under the waterline (metres) and drawn behind it in depth, so it never fights
+  // the faces that are there. Range 0.2-5.
+  seaDrop: 0.5,
+
+  // How much each biome tints the fog toward its own horizon colour, 0 for one
+  // fog everywhere, and how often (seconds apart) the sky's horizon is
+  // recoloured to follow it. Range: tint 0-0.6, interval 0.1-2.
+  fogTint: 0.3,
+  fogInterval: 0.25,
+
+  // --- props ------------------------------------------------------------------------------------
+  // Trees, rocks and buildings. A prop may stand on every lattice cell of
+  // `propCell` metres; only the first `propLevels` levels of chunks have any,
+  // and each shows only the fraction of them in `propDensity` (finest first).
+  // The render distance slider thins them further, in proportion. Range: cell
+  // 20-80, levels 1-4, density 0-1.
+  propCell: 38,
+  propLevels: 3,
+  propDensity: [1, 0.42, 0.15],
+  // Metres from a track's graded apron inside which the world puts no props (the
+  // track brings its own). Range 0-200.
+  propClear: 60,
+
+  // --- track areas -----------------------------------------------------------------------------------
+  // Each race track is an area: a tube round its centreline. Out to `areaInner`
+  // metres past the track's graded apron the ground is the track's own
+  // (TrackGround, the hills the car game shows), then it blends into the world's
+  // over `areaBlend`. Biome colour and props follow over `biomeBand`, which is
+  // wider. Terrain chunks near a track are lowered by `trackSink` of their cell
+  // size, fading out at the apron's edge, so a coarse facet never buries the
+  // road. Range: inner 200-1200, blend 300-2500, band 800-4000, sink 0-0.4.
+  areaInner: 520,
+  areaBlend: 950,
+  biomeBand: 1900,
+  trackSink: 0.14,
+
+  // Placement. Areas are kept at least `areaMinSpacing` metres apart, tried at
+  // `areaCandidates` seeded places each (best fit wins), no nearer the home field
+  // than `areaFromHome[0]` and no further than `areaFromHome[1]`. Range: spacing
+  // 3000-15000, candidates 40-400, from home 3000-60000.
+  areaMinSpacing: 7000,
+  areaCandidates: 220,
+  areaFromHome: [7000, 40000],
+
+  // How near the camera (metres) a track's mesh is built and kept, how near its
+  // scenery is drawn, and how near its cars get meshes at all. Range: build
+  // 4000-40000, props 1500-12000, cars 1000-8000.
+  trackBuildDistance: 16000,
+  trackPropDistance: 5000,
+
+  // --- the floating origin -----------------------------------------------------------------------------
+  // Everything drawn is placed relative to a point on a lattice of `lattice`
+  // metres; when the camera is more than `rebase` metres from that point it
+  // moves to the nearest lattice point and everything is shifted by the
+  // difference. Physics never sees it. Range: lattice 500-2000, rebase 1000-4000.
+  lattice: 1000,
+  rebase: 2000,
+
+  // --- cars on the tracks ----------------------------------------------------------------------------------
+  // `cars` lap every track area. A car is replayed from a recording while it is
+  // far away and driven by the real physics inside `liveRadius` metres; it goes
+  // back to the recording past `liveRadius` times `liveHysteresis`. A full-state
+  // keyframe is kept every `keyEvery` physics steps, which is also the most a
+  // hand-over ever has to catch up. Range: cars 0-6, radius 200-2000,
+  // hysteresis 1.1-2, keyEvery 30-480, meshRadius 1000-8000.
+  cars: 3,
+  liveRadius: 700,
+  liveHysteresis: 1.5,
+  keyEvery: 120,
+  meshRadius: 4000,
+};
+
+// ============================================================================
+// THE HANGAR (flight milestone 3)
+// ----------------------------------------------------------------------------
+// Stop near a Hangar and explicitly choose Enter Hangar. Availability is immediate;
+// no dwell/rearm latch. Speed in m/s (0.1-1), lever (0.04-0.3), airport arrival 1-10 s.
+// ============================================================================
+export const HANGAR = {
+  // Extra approach depth outside the painted bay, covering the Hangar teleport. Range 16-40 m.
+  entryReach: 24,
+  // Clearance beyond the aircraft's bounding turn radius from the Hangar wall. Range 2-10 m.
+  clearance: 4,
+  stopSpeed: 0.4,
+  stopLever: 0.12,
+  landedAfter: 3,
+  // The Hangar's tuning knobs (the list of them is data/loadouts.js). Each is a
+  // scale on one thing and 1 is the aircraft as fitted, which is what every figure
+  // `npm run flight` holds it to is measured at. Power scales thrust and fuel flow
+  // (range 0.5-1.5). Response scales the stick's authority and the rate damping
+  // together (0.5-1.5); the load limits and the tail guard still act after it.
+  // Assist scales the auto trim and the roll self levelling (FLIGHT.levelStrength,
+  // which is 0, off, as shipped) (0.1-2); not below 0.1, since with no trim at all
+  // the aircraft has to be flown on the stick alone.
+  tune: {
+    power: { min: 0.8, max: 1.2, step: 0.05 },
+    response: { min: 0.7, max: 1.3, step: 0.05 },
+    assist: { min: 0.2, max: 1.5, step: 0.1 },
+  },
+  // The turntable. How fast it turns (rad/s, 0-1), the camera's field of view
+  // (degrees, 20-50), and how much room the aircraft is given in the open space
+  // between the panel and the card (a scale on the framing: 1 fits the longest
+  // diagonal of the whole footprint, 0.8 fits the aircraft's own turning circle
+  // and no more; range 0.7-1.4).
+  turnRate: 0.3,
+  fov: 34,
+  fitRoom: 0.9,
+  // How full the tank is when the aircraft is put down at an airport, a fraction
+  // of the tank (0.1-1). The Hangar's card quotes the mass at it. Fuel is never
+  // refilled in the Hangar.
+  startFuel: 0.6,
+};
+
+// ============================================================================
+// THE MAP (flight milestone 3)
+// ----------------------------------------------------------------------------
+// The map is a picture of the world, made once from the same Heightfield and
+// Biomes the terrain is: `resolution` cells a side over the whole 120 km (320 is
+// a cell every 375 m), the ground in its biome's colours, hill-shaded by `shade`
+// (0 flat, 1 strong), the sea darker with depth over `seaDepth` metres. It is
+// drawn a few milliseconds a frame (`buildMs`) the first time the map opens.
+// You can zoom from `minZoom` to `maxZoom` times the whole map, a notch of the
+// wheel being `zoomStep` times, and the names of the places appear from
+// `labelZoom`. Range: resolution 160-640, shade 0-1, seaDepth 100-600, build 2-20.
+// ============================================================================
+export const MAP = {
+  resolution: 320,
+  shade: 0.55,
+  seaDepth: 300,
+  seaShallow: 0x3b8fc0,
+  seaDeep: 0x123560,
+  snow: 0xf2f5f8,
+  buildMs: 8,
+  minZoom: 1,
+  maxZoom: 30,
+  zoomStep: 1.25,
+  labelZoom: 3.5,
+  airport: 0xffffff,
+  track: 0xff7a1a,
+  aircraft: 0xf5c518,
+};
+
+// ============================================================================
+// PER-AIRCRAFT FLIGHT FEEL (flight milestone 4)
+// ----------------------------------------------------------------------------
+// FLIGHT, above, is how the F-22 feels, and is the default for every aircraft. An
+// aircraft listed here gets those values with its own on top: the physics builds
+// `FLIGHT` with these laid over it (AircraftPhysics.F), so a key that is not listed
+// is the F-22's, and an aircraft with no entry (the F-22) is exactly FLIGHT. Every
+// key is one of FLIGHT's and keeps its meaning and its range; what is explained
+// here is only why this aircraft differs. Units are SI.
+// ============================================================================
+export const FLIGHT_OVERRIDES = {
+  // The Boeing 737-800: 41 to 79 tonnes, a long way from a fighter. Slow on the stick
+  // (the control surfaces are small for the mass and the pilot is flying a heavy
+  // airliner), a gentle auto-trim, a nose wheel that is a tiller on a 15.6 m wheelbase
+  // (Boeing's airport planning manual: wheelbase 15.60 m, steering to 78 degrees), a
+  // taxi governor for 9 m/s, and crash limits for a 79 tonne aircraft. Values are
+  // first estimates, tuned against the harness (scripts/flight/b737.mjs).
+  b737: {
+    // The stick and the damping. Rates come out of the damping: full stick against it
+    // gives about 1/damp rad/s, so a heavy airliner wants a big number.
+    dampPitch: 8,
+    dampRoll: 2.2,
+    dampYaw: 3.5,
+    // The rudder is limited to a sideslip of seven degrees (the F-22's is thirteen): an
+    // airliner's fin is for the engine out, not for skidding it round.
+    betaLimit: 0.12,
+    stickAttack: 0.9,
+    stickRelease: 3,
+    pitchAttack: 2.5,
+    pitchRelease: 3.5,
+    yawAttack: 1.6,
+    yawRelease: 3,
+    // Quicker lever travel, still slower than the fighter. Fraction/s, range 0.15-1.
+    throttleRate: 0.35,
+    actuatorTau: 0.18,
+    // Auto-trim: the tailplane trims the airliner for you, slowly.
+    trimRate: 1.6,
+    trimLimit: 0.8,
+    trimMinSpeed: 55,
+    // The gear takes eight seconds, the spoilers two and a half.
+    gearTime: 8,
+    airbrakeTime: 1.6,
+    autoSpoilers: true,
+    // The tiller: a big lock at walking pace, fading from 12 m/s, turning at 26 degrees
+    // a second, limited to a quarter of a g of side force (airlines hold to about that).
+    noseSteerMax: 1.3,
+    noseSteerSpeed: 12,
+    noseSteerRate: 0.45,
+    noseSteerLatG: 0.25,
+    // Taxi: lever 0.3 holds 9 m/s, which is 17 knots.
+    taxiSpeedPerLever: 30,
+    taxiSpeedMax: 15,
+    // Anti-skid brakes at full pressure: a little over half the load on the main wheels, a
+    // firm 0.45 to 0.5 g with the spoilers dumping the lift.
+    brakeFriction: 0.54,
+    wheelRadius: 0.56,
+    // Gear up on a short final: a horn under 250 m and 100 m/s.
+    gearWarnAgl: 250,
+    gearWarnCas: 100,
+    // The tail guard of an airliner that rotates at three degrees a second: a narrower band,
+    // a shorter look ahead and less margin, or it eases the pull off two degrees too soon
+    // and the aircraft sits on the runway at 175 knots (a real one lifts off at about 160).
+    tailMargin: 0.05,
+    tailBand: 0.03,
+    tailLead: 0.15,
+    // What counts as a crash, kinder than the first version (a person flew it and said even a soft
+    // landing was a crash: a touchdown at 4.1 m/s, 800 feet a minute, was). The gear is certified for
+    // 3 m/s and a real one survives a good deal more, so the limit is 6.5 m/s (1,280 ft/min, about
+    // what a flare that came too late gives); an unflared 3 degree approach is 7.6 m/s and still a
+    // crash. The nacelles hang 0.65 m above the tyres, so the skin may be pushed 0.6 m into the
+    // ground (not 0.35) and hit it at 5 m/s before it is a crash, and a tail may scrape 0.8 m.
+    skidCrashSpeed: 7,
+    skidCrashDepth: 0.8,
+    crashSpeed: 5,
+    maxSink: 6.5,
+    hullCrashDepth: 0.6,
+  },
+};
+
+// ============================================================================
+// THE AUTOPILOT (flight milestone 4, src/flight/Autopilot.js)
+// ----------------------------------------------------------------------------
+// Altitude, heading and speed hold, on every aircraft. `default` is a fixed wing's;
+// an aircraft listed by id has its own on top. Units are SI and radians.
+//   altRate, hdgRate, spdRate   how fast a held key moves its target: metres a second,
+//                               radians a second, metres a second per second (range
+//                               5-80, 0.02-0.3, 1-12)
+//   spdMin, spdMax              the speeds the target stays between, m/s calibrated;
+//                               altMin, altMax the altitudes, m
+//   engageAgl                   the height above the ground (m) below which it will not take
+//                               over, so it is not engaged on the apron or just off the runway
+//                               (range 20-300)
+//   intBand, intLeak            the altitude integral works only within `intBand` metres of the
+//                               target (range 10-80) and bleeds away at `intLeak` a second
+//                               outside it (range 0.2-3), so it cannot wind up on a climb
+//   kAlt, kAltI, vsInt, vsMax   altitude error to the vertical speed asked for (per
+//                               second, range 0.03-0.2), the vertical speed built up
+//                               per metre of error per second (range 0.0005-0.01) and
+//                               the most of it (m/s, range 0.5-4), and the most
+//                               vertical speed asked for, m/s
+//   kVs, pitchMax               the vertical speed error to the stick (a fraction of
+//                               full per m/s, range 0.01-0.15) and the most stick it
+//                               uses
+//   kHdg, bankMax               heading error to the bank asked for (range 0.5-2.5) and
+//                               the most bank, rad
+//   kBank, rollMax              the bank error to the roll stick (range 0.8-4) and the
+//                               most stick
+//   kSpd, aMax, kSpdA, accTau  the speed loop: the speed error to the acceleration asked for
+//                               (per second, range 0.05-0.3), the most acceleration asked for
+//                               (m/s2, range 0.3-5), the lever's rate per m/s2 of acceleration
+//                               still missing (a fraction of its full rate, range 0.05-1) and
+//                               the time constant that smooths the measured acceleration
+//                               (seconds, range 0.3-3)
+// ============================================================================
+export const AUTOPILOT = {
+  default: {
+    altRate: 25, hdgRate: 0.0524, spdRate: 2.5, spdMin: 45, spdMax: 400, altMin: 30, altMax: 20000,
+    intBand: 30, intLeak: 1, accTau: 1, engageAgl: 60,
+    kAlt: 0.08, kAltI: 0.0008, vsInt: 2, vsMax: 15, kVs: 0.1, pitchMax: 0.25,
+    kHdg: 1.2, bankMax: 0.44, kBank: 2, rollMax: 0.6,
+    kSpd: 0.1, aMax: 0.7, kSpdA: 0.5,
+  },
+  // A fighter climbs and turns hard and the stick it needs is smaller.
+  f22: {
+    altRate: 60, hdgRate: 0.15, spdRate: 8, spdMin: 60, spdMax: 700, altMax: 25000,
+    kAlt: 0.1, kAltI: 0.004, vsInt: 3, vsMax: 20, kVs: 0.05, pitchMax: 0.3,
+    kHdg: 1.6, bankMax: 1.0, kBank: 1.5, rollMax: 0.8,
+    kSpd: 0.15, aMax: 3, kSpdA: 0.2,
+  },
+  // An airliner: 2,500 feet a minute, 25 degrees of bank, a standard rate turn.
+  b737: {
+    altRate: 25, hdgRate: 0.0524, spdRate: 2.5, spdMin: 65, spdMax: 175, altMax: 12500,
+    kAlt: 0.08, kAltI: 0.0008, vsInt: 2, vsMax: 12.7, kVs: 0.1, pitchMax: 0.25,
+    kHdg: 1.2, bankMax: 0.44, kBank: 2, rollMax: 0.6,
+    // Preserve speed-loop lever authority with the quicker manual throttle.
+    // Acceleration error to lever command, range 0.1-0.8.
+    kSpd: 0.1, aMax: 0.7, kSpdA: 0.26,
+  },
+};
+
+
+// Milestone 5 damage: game response curves, not real crash-survivability limits.
+export const FLIGHT_DAMAGE = {
+  objectCrashSpeed: 10,  // airport wall normal impact speed that destroys, m/s; game value, range 5 to 20
+  objectDamageOnset: 0.4, // ignore slow resting wall pressure below this m/s; range 0.1 to 2
+  objectDamageRate: 0.08, // health lost per excess m/s in a wall hit; range 0 to 0.5
+  contactSkin: 0.01,     // stand-off before a solid contact, m; range 0.001 to 0.05
+  sweepEpsilon: 1e-9,   // near-zero swept displacement tolerance, m; range 1e-12 to 1e-6
+  apRollTrimRate: 0.18,  // AP stick trim per bank-error radian/second under asymmetric damage; range 0 to 0.5
+  apRollTrimLimit: 0.8,  // maximum AP roll trim; range 0 to 1
+  wingLiftLoss: 0.5,     // lift fraction lost over health 1 to just above 0; zero detaches wing; range 0 to 1
+  wingDrag: 0.025,       // added Cd at zero wing health; range 0 to 0.1
+  gearTravelLoss: 0.65,  // fraction of travel lost at zero health; range 0 to 0.9
+  gearRolling: 0.08,     // added rolling friction at zero health; range 0 to 0.2
+  landingOnset: 0.75,    // fraction of aircraft maxSink before gear damage; range 0.5 to 0.95
+  landingDamage: 0.3,    // gear health lost per excess m/s at touchdown; range 0 to 1
+  skidProtection: 0.5,   // tail skid protects shallow scrapes below this fraction of crash depth; range 0 to 1
+  strikeOnset: 0.8,      // normal closing speed before local strike damage, m/s; range 0 to 3
+  strikeDamage: 0.12,    // health lost per excess m/s on a new hull contact; range 0 to 0.5
+  scrapeRate: 0.00008,   // health per tangential metre while skin slides; range 0 to 0.001
+  scrapeMinSpeed: 1,    // ignore resting contact drift below this m/s; range 0 to 5
+  overspeedMargin: 1.03,// tolerance multiplier above limit; range 1 to 1.1
+  overspeedRate: 0.12,   // health lost/s for fractional excess speed 1; range 0 to 1
+  smoke: 0.6,           // caution/smoke below this health; range 0.3 to 0.9
+  fire: 0.3,            // critical/fire below this health; range 0.05 to 0.5
+  saveInterval: 1,      // seconds between dirty damage saves; range 0.1 to 5
+  surface: {           // relative abrasion/impact severity; each range 0 to 5
+    runway: 1, taxi: 1, apron: 1, tarmac: 1, road: 1,
+    grass: 1.2, sand: 1.4, rock: 2, gravel: 1.5, snow: 1.1, water: 2,
+  },
+};
+
+
+export const DAMAGE_FX = {
+  capacity: 224,          // maximum pool capacity, matching Ultra; range 48 to 500
+  maxDelta: 0.1,          // emission catch-up cap, seconds; range 0.03 to 0.25
+  smokeLife: 3,           // smoke lifetime, seconds; range 1 to 5
+  fireLife: 0.9,          // flame lifetime, seconds; range 0.2 to 1.5
+  smokeSize: 0.35,        // smoke cube size, m; range 0.1 to 2
+  fireSize: 0.65,          // flame cube size, m; range 0.1 to 1
+  smokeGrow: 4,           // smoke expansion multiplier; range 1 to 8
+  fireGrow: 2,            // flame expansion multiplier; range 1 to 4
+  rise: 3,               // upward particle speed, m/s; range 0 to 10
+  inheritVelocity: 0.18,  // fraction of aircraft velocity in smoke; range 0 to 1
+  drag: 0.2,             // particle velocity drag per second; range 0 to 2
+  flameEvery: 3,          // one flame per this many emissions below fire threshold; integer range 2 to 6
+  smokeColor: [0.16, 0.17, 0.18], // linear RGB, each range 0 to 1
+  fireColor: [1, 0.25, 0.015], // linear RGB, each range 0 to 1
+  warningFreq: 740,       // caution chirp frequency, Hz; range 300 to 1200
+  warningGain: 0.09,      // warning gain relative to engine bus; range 0 to 0.3
+  warningTime: 0.25,      // warning duration, seconds; range 0.1 to 1
+  warningCooldown: 2,     // minimum seconds between worsening-condition chirps; range 0.5 to 5
+  engineNoteLoss: 0.18,   // engine frequency reduction at zero health; range 0 to 0.5
+};
+
+// Working cockpit panels: display budgets only, never flight physics.
+export const FLIGHT_INSTRUMENTS = {
+  refreshHz: 30, // physical vector panel updates per second; range 15 to 60
+  maxVertices: 24000, // fixed capacity per surface; range 16000 to 96000
+  navRange: 20000, // landmark navigation radius in metres; range 5000 to 50000
+  hudPitchSpan: 40, // visible HUD pitch degrees; range 20 to 60
+};
+
+// Part C navigation. Distances are world metres, independent of render origin.
+export const FLIGHT_NAV = {
+  // Stored trip limits: 2-64 points, coordinates within the generated world.
+  maxPoints: 24,
+  minLeg: 50, // Reject duplicate/near-identical points, 10-500 m.
+  arrival: 350, // Arrival cylinder radius, 100-1500 m, lateral guidance only.
+  minSpeed: 15, // Do not advance while parked/taxiing, 5-40 m/s.
+  lookAhead: 12, // Seconds ahead for smooth leg interception, 5-30 s.
+  minLookAhead: 700, // Minimum interception distance, 200-3000 m.
+  maxIntercept: .65, // Maximum heading offset from leg, .2-1 rad.
+  ranges: [5000, 10000, 20000, 40000, 80000], // Full map width, 2-120 km.
+  rangeDefault: 2, // Initial range index, 0-4.
+  cacheMs: 2, // Per-frame map generation budget, 1-8 ms.
+  terrainCells: 22, // Bounded vector terrain grid per nav panel, 12-32.
+  trackStride: 8, // Track centreline sample spacing, 2-16 vertices.
+};
+
+// MENUS: the loading step panel (ui/Loading.js). Display and scheduling only, never gameplay.
+export const MENU = {
+  loadingDelay: 150, // ms a wait must last before the panel starts to fade in, so short waits show nothing; range 0 to 400
+  loadingFade: 100, // ms the panel takes to fade in and out; range 60 to 400
+  sliceMs: 30, // ms of loading work done between two yields to the browser, so the steps and the percentage keep updating; range 8 to 80
 };

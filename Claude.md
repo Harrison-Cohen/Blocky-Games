@@ -10,6 +10,11 @@ Full spec is in PROMPT.md. Read it before starting new work on a milestone.
 Picking this up in a new session? Read HANDOFF.md first: current state, the
 user's open requests, standing instructions, and testing gotchas.
 
+Two agents share this repo, Claude Code and Codex, and neither remembers the other's sessions. `AGENTS.md` is
+the entry point for Codex and also holds what is known about the user (their preferences and how they work);
+Claude should read it too. Both agents keep `HANDOFF.md` current and write down, in the repo, everything the
+next session needs, before a session ends.
+
 ## Commands
 
 ```
@@ -26,6 +31,7 @@ npm run race    # a full field races every track to the flag, cleanly
 npm run fx      # the ghost replays exactly, the gearbox never hunts, a gearbox tune is felt, skid marks sit on the road
 npm run specs   # every real car does its 0-60, quarter mile, top speed, grip and turning circle (real, scaled by STREET)
 npm run drag    # drag passes are timed right: reaction, splits, ET, trap speed, red lights and fouls
+npm run controls  # the controls chart shows only keys the input code really listens for
 ```
 
 The check scripts run headless against the real Track, VehiclePhysics and
@@ -74,12 +80,19 @@ any package, including dev dependencies.
 - No textures and no PBR anywhere. Phong is one specular term, not a PBR
   model, and it is only ever used on cars.
 - Never construct a material outside `src/render/Materials.js`.
-- Type: Martian Mono for timing and speed readouts, Archivo for menus and
-  labels. Two families total.
-- Palette: ink `#0E1A2B`, signal orange `#FF7A1A`, off white `#EDEDE7`, and
-  the timing colors `#B57BFF` purple, `#34D17A` green, `#F5C518` yellow.
-- HUD panels are hard edged rectangles. No rounded card grid, no drop
-  shadows, no glass blur, no all caps labels, no arrows after button text.
+- Type: Martian Mono for timing, speed readouts, tables and key caps, Archivo
+  for menus and labels. Use whatever fits a screen; the old two-family and
+  no-all-caps rules were lifted on 2026-10-22. Fonts stay self-hosted woff2.
+- Palette: ink `#0E1A2B`, off white `#EDEDE7`, the timing colors `#B57BFF`
+  purple, `#34D17A` green, `#F5C518` yellow, signal orange `#FF7A1A` for the
+  driving and flying HUD, and the menu accent, warm sand `#D8C8A0` (the
+  `--accent` CSS variable), for the pointer, the selected row and the main
+  button in menus. Menus do not use orange.
+- Menus (the dash display): flat ink panels in an off white double-line frame,
+  numbered rows, tables and charts wherever data has columns, a `>` pointer
+  on the selected row. See `MENU_REDESIGN_PLAN.md`.
+- Panels are hard edged rectangles. No rounded card grid, no drop shadows, no
+  glass blur, no arrows after button text.
 - Buttons say what happens: "Start lap", "Save car", "Back to garage".
 
 ## Performance
@@ -99,3 +112,43 @@ scenery, share materials across objects of the same color.
   no console errors or warnings.
 - When I report a handling problem, change values in `tuning.js` first and
   only touch the physics code if the model itself is wrong.
+
+## Flight
+
+A second mode: a large open world flown in an F-22 Raptor, a Boeing 737-800
+and an invented helicopter. Full spec is in FLIGHT.md. Read it before starting
+flight work.
+
+Commands, in addition to the nine above:
+
+```
+npm run flight    # trim, stall and recovery, published figures, hover, gear, damage
+npm run world     # height function, chunk seams, airports, track placement, origin rebasing
+npm run combat    # cannon, missiles, flares, combat AI
+npm run airrace   # AI pilots finish every course, gate timing, ghosts
+npm run missions  # every mission type completes and scores
+```
+
+Rules:
+
+- Flight lives in `src/flight` and `src/world`. Car modes must not change
+  behaviour, and all nine car checks must keep passing.
+- Flight physics is headless, fixed 120 Hz, no Three.js and no allocation in
+  `step()`. Aircraft stats live in `src/data/aircraft.js`.
+- AI aircraft run the same `AircraftPhysics` as the player. Never move one along
+  a path. The only exceptions are distant ambient scenery (recorded track laps,
+  air and road traffic), which hands over to live physics when you come near.
+- The ground is one height function used by both the mesh and the physics.
+  No raycasts.
+- The scene graph is placed through `WorldOrigin`. Physics stays in absolute
+  coordinates.
+- Races, missions and arenas are data: one file each, found by a registry.
+  A new track places itself in the world and on the map.
+- Hangar loadout and tuning are kept apart from cosmetics, like gearbox tunes.
+  Cosmetics never change handling.
+- Everything is unlocked through `isUnlocked()`, so progression can be added
+  later.
+- Aircraft are smooth shaded like the cars. The world is flat shaded and
+  faceted.
+- Performance: 60 fps on a MacBook Air M5 at the default render distance and
+  Medium graphics.

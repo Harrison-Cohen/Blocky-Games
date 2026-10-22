@@ -37,13 +37,20 @@ export class Scene {
     // Near plane at 0.2 m rather than 0.1: the far plane now reaches the sky
     // dome, and depth precision is set by the ratio of the two.
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.2, GRAPHICS.skyRadius + 200);
+    // The second pass of a cockpit view (see PostFX): it sees only layer 1, which holds the inside of
+    // a cockpit and the aircraft's own body (and the two lights, below). The world is layer 0.
+    this.overlayCamera = new THREE.PerspectiveCamera(70, 1, 0.04, 120);
+    this.overlayCamera.layers.set(1);
+    this.overlayOn = false;
 
     // One hemisphere light for bounce, one directional for shape and shadow.
     // Two lights is all a flat-shaded world needs.
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+    this.hemi.layers.enable(1);
     this.scene.add(this.hemi);
 
     this.sun = new THREE.DirectionalLight(0xffffff, 2.0);
+    this.sun.layers.enable(1);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(WORLD.shadowMapSize, WORLD.shadowMapSize);
     this.sun.shadow.bias = -0.0009;
@@ -68,8 +75,13 @@ export class Scene {
     // Dynamic resolution. renderScale multiplies the pixel ratio; see
     // _adaptResolution.
     this.renderScale = 1;
+    // The ceiling the controller may climb to (see applyGraphics). It has to be
+    // set here too: left undefined, the first step of _adaptResolution takes
+    // Math.min(undefined, ...) = NaN, the pixel ratio goes NaN and the canvas
+    // collapses to 0 x 0 a couple of seconds after start.
+    this.maxRenderScale = 1;
     this._rs = { time: 0, frames: 0, sum: 0, good: 0, hold: 2, raisedAt: -1, clock: 0 };
-    this.post = GRAPHICS.postFX ? new PostFX(this.renderer, this.scene, this.camera) : null;
+    this.post = GRAPHICS.postFX ? new PostFX(this.renderer, this.scene, this.camera, this.overlayCamera) : null;
 
     this._onResize = this._onResize.bind(this);
     window.addEventListener('resize', this._onResize);
@@ -122,8 +134,9 @@ export class Scene {
   // compile shaders, so the resolution governor is told to ignore them.
   applyGraphics(mesh) {
     if (this.post) this.post.dispose();
-    this.post = GRAPHICS.postFX ? new PostFX(this.renderer, this.scene, this.camera) : null;
+    this.post = GRAPHICS.postFX ? new PostFX(this.renderer, this.scene, this.camera, this.overlayCamera) : null;
     if (this.post && this.trackData) this.post.setTrack(this.trackData);
+    if (this.post && this.post.overlay) this.post.overlay.enabled = this.overlayOn;
     // Without the post chain nothing adapts the exposure, so it goes back to
     // the track's own rather than staying wherever the eye had it.
     if (!this.post && WORLD.toneMappingExposure > 0) {
@@ -138,6 +151,11 @@ export class Scene {
       this.trackLights.setTrack(mesh.lights);
     }
     this.renderScale = 1;
+    // The most the frame-rate controller may take the picture to, as a multiple
+    // of the resolution asked for. 1 for the cars; the flight world's detail
+    // setting raises it, and the controller climbs toward it while the frame has
+    // room (supersampling) and backs off when it has not.
+    this.maxRenderScale = 1;
     this.settle();
     this._onResize();
   }
@@ -199,7 +217,7 @@ export class Scene {
       if (rs.raisedAt >= 0 && rs.clock - rs.raisedAt < 3) rs.hold = 20;
     } else if (avg < budget * 1.03) {
       rs.good++;
-      if (rs.good >= 4 && this.renderScale < 1) {
+      if (rs.good >= 4 && this.renderScale < this.maxRenderScale) {
         next = this.renderScale * 1.07;
         rs.good = 0;
         rs.raisedAt = rs.clock;
@@ -207,10 +225,29 @@ export class Scene {
     } else {
       rs.good = 0;
     }
-    next = Math.min(1, Math.max(GRAPHICS.minRenderScale, next));
+    next = Math.min(this.maxRenderScale, Math.max(GRAPHICS.minRenderScale, next));
     if (Math.abs(next - this.renderScale) < 0.01) return;
     this.renderScale = next;
     this._onResize();
+  }
+
+  // The ceiling on the render scale (see maxRenderScale). Lowering it takes effect
+  // at once; raising it lets the controller climb.
+  setRenderScaleCeiling(m) {
+    this.maxRenderScale = m;
+    if (this.renderScale > m) {
+      this.renderScale = m;
+      this._onResize();
+    }
+  }
+
+  // How wide the sun's shadow is, as a multiple of the car world's: the shadow
+  // map stays the same size, so wider is coarser but reaches further.
+  setShadowReach(mult) {
+    const r = WORLD.shadowRadius * mult;
+    const cam = this.sun.shadow.camera;
+    cam.left = -r; cam.right = r; cam.top = r; cam.bottom = -r;
+    cam.updateProjectionMatrix();
   }
 
   // Ignore frame times for a moment: something is about to cause a hitch that
@@ -235,13 +272,35 @@ export class Scene {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.overlayCamera.aspect = w / h;
+    this.overlayCamera.updateProjectionMatrix();
     if (this.post) this.post.setSize(w, h, this.renderer.getPixelRatio());
   }
 
   render(dt = 0) {
     if (!this.drawable) return;
     if (this.post) this.post.render(dt);
-    else this.renderer.render(this.scene, this.camera);
+    else {
+      this.renderer.render(this.scene, this.camera);
+      if (this.overlayOn) this._renderOverlay();
+    }
+  }
+
+  // The inside of a cockpit, drawn on top of the world by a second camera (the post chain has a pass
+  // for it; this is the same without the chain). On or off for the cockpit view.
+  setOverlay(on) {
+    this.overlayOn = !!on;
+    if (this.post && this.post.overlay) this.post.overlay.enabled = this.overlayOn;
+  }
+
+  _renderOverlay() {
+    const r = this.renderer, bg = this.scene.background, auto = r.autoClear;
+    this.scene.background = null;
+    r.autoClear = false;
+    r.clearDepth();
+    r.render(this.scene, this.overlayCamera);
+    r.autoClear = auto;
+    this.scene.background = bg;
   }
 
   // Another camera like the main one, for the other half of a split screen.
@@ -291,6 +350,65 @@ export class Scene {
   // Programs already built cost nothing here, so calling it again is cheap.
   prewarm() {
     this.renderer.compile(this.scene, this.camera);
+  }
+
+  // The same, without a stall: resolves once the programs have linked, which the
+  // browser does on another thread. For the loading panel's shader step.
+  prewarmAsync() {
+    return this.renderer.compileAsync(this.scene, this.camera);
+  }
+
+  // --- flight -------------------------------------------------------------
+  // The flight game borrows this renderer, its post chain and its two lights.
+  // Entering hides the car world -- the track's lamps, the cars, the particles,
+  // everything but the sun, the hemisphere light and the sky -- and leaving puts
+  // it back exactly as it was. The track itself is swapped by setEnvironment and
+  // brought back by setTrack, as when you pick another circuit.
+  holdCarWorld() {
+    if (this._held) return;
+    this._held = [];
+    this._heldNear = this.camera.near;
+    this._heldFar = this.camera.far;
+    const keep = new Set([this.hemi, this.sun, this.sun.target, this.sky.group, this.sky.cloudGroup]);
+    for (const o of this.scene.children) {
+      if (keep.has(o) || !o.visible) continue;
+      o.visible = false;
+      this._held.push(o);
+    }
+  }
+
+  releaseCarWorld() {
+    if (!this._held) return;
+    for (const o of this._held) o.visible = true;
+    this._held = null;
+    this.camera.near = this._heldNear;
+    this.camera.far = this._heldFar;
+    this.camera.updateProjectionMatrix();
+  }
+
+  // A world that is not a car track: the same job as setTrack, from plain data.
+  // env carries what a track carries ({ data, palette, groundLevel, minimap })
+  // and group is the world's geometry.
+  setEnvironment(env, group) {
+    this.setTrack(env, { group, lights: [], applyShadows() {} });
+  }
+
+  // Fog and the horizon, for a world whose view distance is set by a slider
+  // rather than by a track. color is a packed 0xRRGGBB or a THREE.Color.
+  setFog(color, near, far) {
+    const f = this.scene.fog;
+    if (!f) return;
+    f.color.set(color);
+    f.near = near;
+    f.far = far;
+    if (this.scene.background && this.scene.background.isColor) this.scene.background.set(color);
+  }
+
+  // The camera's depth range, for a view that is kilometres deep.
+  setCameraRange(near, far) {
+    this.camera.near = near;
+    this.camera.far = far;
+    this.camera.updateProjectionMatrix();
   }
 
   add(obj) { this.scene.add(obj); }

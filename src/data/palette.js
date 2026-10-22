@@ -45,10 +45,6 @@ export const PAINTS = [
   { id: 'pearl-white', name: 'Pearl White', hex: 0xf2f1ec },
 ];
 
-export function paintByIndex(i) {
-  return PAINTS[((i % PAINTS.length) + PAINTS.length) % PAINTS.length];
-}
-
 // CSS-side equivalents, so the HUD and the 3D world never disagree about a color.
 export const CSS = {
   ink: '#0E1A2B',

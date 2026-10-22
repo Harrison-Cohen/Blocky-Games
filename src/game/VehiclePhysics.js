@@ -106,6 +106,19 @@ function approach(current, target, rate, dt) {
   return current + Math.sign(d) * step;
 }
 
+// What copyState saves, in order. A new field the model reads from one step to
+// the next belongs here; check-world's round trip will say if one is missing.
+const STATE_SCALARS = ['x', 'y', 'z', 'yaw', 'pitch', 'roll', 'vLong', 'vLat', 'vy',
+  'yawRate', 'pitchRate', 'rollRate', 'steer', 'throttle', 'brake', 'handbrakeBlend',
+  'steerAngleUsed', 'autoGear', 'wheelSpin', 'wheelsOnTrack', 'wheelsOnGround',
+  'wheelsOffTarmac', 'slipFront', 'slipRear', 'driveUse', 'latForceFront', 'latForceRear',
+  'frontLoad', 'rearLoad', 'impactSpeed', 'steerLimit',
+  'prevX', 'prevY', 'prevZ', 'prevYaw', 'prevPitch', 'prevRoll', 'prevWheelSpin',
+  'prevCompression0', 'prevCompression1', 'prevCompression2', 'prevCompression3'];
+const STATE_FLAGS = ['airborne', 'touchingBarrier', 'onTrack'];
+const STATE_SURFACES = ['tarmac', 'gravel', 'grass', 'sand', 'rock', 'snow', 'water'];
+export const STATE_LENGTH = STATE_SCALARS.length + STATE_FLAGS.length + 4 * 4 + 1 + 4;
+
 export class VehiclePhysics {
   constructor(chassis) {
     this.setChassis(chassis);
@@ -186,6 +199,40 @@ export class VehiclePhysics {
     this.prevCompression1 = this.compression[1];
     this.prevCompression2 = this.compression[2];
     this.prevCompression3 = this.compression[3];
+  }
+
+  // The whole state of the car, as numbers, and the way back in. A keyframe: load
+  // it into a car with the same chassis and the same driver state, step on, and
+  // every number is what it would have been had the car never stopped (the
+  // flight world's tracks replay recorded laps and hand over to live driving
+  // from one of these; scripts/check-world.mjs proves it bit for bit).
+  //
+  // The chassis is not in it -- that is data, and the same on both ends. Outputs
+  // the model only writes (slip, loads, the telemetry) are in it too, so a loaded
+  // car reads the same as the one it was copied from before it takes a step.
+  copyState(out = new Float64Array(STATE_LENGTH)) {
+    let o = 0;
+    for (let i = 0; i < STATE_SCALARS.length; i++) out[o++] = this[STATE_SCALARS[i]];
+    for (let i = 0; i < STATE_FLAGS.length; i++) out[o++] = this[STATE_FLAGS[i]] ? 1 : 0;
+    for (let i = 0; i < 4; i++) out[o++] = this.compression[i];
+    for (let i = 0; i < 4; i++) out[o++] = this.cornerLoad[i];
+    for (let i = 0; i < 4; i++) out[o++] = this.wheelGrounded[i] ? 1 : 0;
+    for (let i = 0; i < 4; i++) out[o++] = this.wheelOnTrack[i] ? 1 : 0;
+    out[o++] = Math.max(0, STATE_SURFACES.indexOf(this.surface));
+    for (let i = 0; i < 4; i++) out[o++] = Math.max(0, STATE_SURFACES.indexOf(this.wheelSurface[i]));
+    return out;
+  }
+
+  loadState(a) {
+    let o = 0;
+    for (let i = 0; i < STATE_SCALARS.length; i++) this[STATE_SCALARS[i]] = a[o++];
+    for (let i = 0; i < STATE_FLAGS.length; i++) this[STATE_FLAGS[i]] = a[o++] === 1;
+    for (let i = 0; i < 4; i++) this.compression[i] = a[o++];
+    for (let i = 0; i < 4; i++) this.cornerLoad[i] = a[o++];
+    for (let i = 0; i < 4; i++) this.wheelGrounded[i] = a[o++] === 1;
+    for (let i = 0; i < 4; i++) this.wheelOnTrack[i] = a[o++] === 1;
+    this.surface = STATE_SURFACES[a[o++]];
+    for (let i = 0; i < 4; i++) this.wheelSurface[i] = STATE_SURFACES[a[o++]];
   }
 
   get speed() {

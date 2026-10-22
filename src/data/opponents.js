@@ -102,5 +102,3 @@ export const OPPONENTS = [
              wander: 0.34, wanderRate: 0.47, phase: 0.8, reaction: 5.6 },
   },
 ];
-
-export const getOpponent = (id) => OPPONENTS.find((o) => o.id === id) || OPPONENTS[0];

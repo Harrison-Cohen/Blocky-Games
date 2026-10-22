@@ -76,7 +76,8 @@ export class Input {
     // digits and the driving path wants neither.
     // alt is X / square: deletes a preset of your own in the garage's list.
     // start is Start: the title screen starts, the pause card resumes.
-    this.menu = { up: false, down: false, left: false, right: false, confirm: false, back: false, alt: false, start: false };
+    // prev and next are the bumpers: the Garage and the Hangar change tab.
+    this.menu = { up: false, down: false, left: false, right: false, confirm: false, back: false, alt: false, start: false, prev: false, next: false };
 
     // Set while a screen owns the input. Driving keys stop accumulating and
     // driving actions stop firing, but menu edges keep coming through.
@@ -370,7 +371,7 @@ export class Input {
   // held stick steps one row rather than scrolling the whole list away.
   _pollMenuPad() {
     const m = this.menu;
-    m.up = m.down = m.left = m.right = m.confirm = m.back = m.alt = m.start = false;
+    m.up = m.down = m.left = m.right = m.confirm = m.back = m.alt = m.start = m.prev = m.next = false;
 
     const pad = this._findGamepad();
     if (!pad) { this._stickLatch = 0; return; }
@@ -391,8 +392,11 @@ export class Input {
     if (edge(1)) m.back = true;
     if (edge(2)) m.alt = true;
     if (edge(9)) m.start = true;
+    // The bumpers change tab in the Garage and the Hangar.
+    if (edge(4)) m.prev = true;
+    if (edge(5)) m.next = true;
     for (let i = 0; i < pad.buttons.length; i++) {
-      if (i > 15 || i > 2 && i < 12 && i !== 9) this._prevButtons[i] = pad.buttons[i].pressed;
+      if (i > 15 || i > 2 && i < 12 && i !== 9 && i !== 4 && i !== 5) this._prevButtons[i] = pad.buttons[i].pressed;
     }
 
     const x = pad.axes[0] ?? 0;

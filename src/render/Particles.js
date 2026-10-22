@@ -18,8 +18,8 @@ const E = new THREE.Euler();
 const C = new THREE.Color();
 
 export class Particles {
-  constructor(parent) {
-    const n = EFFECTS.maxParticles;
+  constructor(parent, capacity = EFFECTS.maxParticles) {
+    const n = capacity;
     this.max = n;
     this.parent = parent;
     this.mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), particleMaterial(), n);

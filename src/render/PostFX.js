@@ -164,8 +164,35 @@ function scaled(pass, scale) {
   return pass;
 }
 
+// A second look at the same scene from another camera, drawn on top of the first with the depth
+// buffer cleared: what the camera's layers show (layer 1: the inside of a cockpit and the aircraft's
+// own body) is drawn with its own near and far planes, so a cockpit a metre from the eye sits in
+// front of a world kilometres deep however the world's depth is spent. The scene's background is
+// left out for the pass, or it would paint over the first one. Off until a view asks for it.
+class OverlayPass extends Pass {
+  constructor(scene, camera) {
+    super();
+    this.scene = scene;
+    this.camera = camera;
+    this.needsSwap = false;
+    this.enabled = false;
+  }
+
+  render(renderer, writeBuffer, readBuffer) {
+    const bg = this.scene.background;
+    const auto = renderer.autoClear;
+    this.scene.background = null;
+    renderer.autoClear = false;
+    renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
+    renderer.clearDepth();
+    renderer.render(this.scene, this.camera);
+    renderer.autoClear = auto;
+    this.scene.background = bg;
+  }
+}
+
 export class PostFX {
-  constructor(renderer, scene, camera) {
+  constructor(renderer, scene, camera, overlayCamera = null) {
     this.renderer = renderer;
     const size = renderer.getSize(new THREE.Vector2());
     const pr = renderer.getPixelRatio();
@@ -179,6 +206,8 @@ export class PostFX {
     this.composer = new EffectComposer(renderer, target);
 
     this.composer.addPass(new RenderPass(scene, camera));
+    this.overlay = overlayCamera ? new OverlayPass(scene, overlayCamera) : null;
+    if (this.overlay) this.composer.addPass(this.overlay);
 
     this.ao = null;
     if (GRAPHICS.ao) {

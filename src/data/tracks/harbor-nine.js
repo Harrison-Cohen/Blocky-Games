@@ -19,6 +19,8 @@
 
 export default {
   id: 'harbor-nine',
+  // Where it sits in the flight world (src/world); the car game never reads it.
+  world: { biome: 'coast' },
   name: 'Harbor Nine',
   description: 'Night container port. Right angles, guardrails and one long dark tunnel.',
   order: 2,

@@ -10,6 +10,14 @@ import { hexToCss } from '../data/palette.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
+// A span with a class and some text, for the cells of a line.
+function cell(cls, text) {
+  const s = document.createElement('span');
+  s.className = cls;
+  s.textContent = text;
+  return s;
+}
+
 export class Menu {
   constructor(el, listEl) {
     this.el = el;
@@ -27,13 +35,17 @@ export class Menu {
   }
 
   // A row is { label, value() , step(d) } for a setting, { label, action() }
-  // for a button, or { section } for a heading the focus passes over. `cls`
-  // adds classes to its line.
+  // for a button, { section } for a heading the focus passes over, or
+  // { head: [titles] } for column titles over a table of lines. `cls` adds
+  // classes to its line. A line can also carry `no` (a number shown before the
+  // label), `cols` (fixed columns after it, for a table) and `hint` (a dim note
+  // on the right, text or a function).
   setRows(rows, focus = 0) {
     this.rows = rows;
     this.index = clamp(focus, 0, rows.length - 1);
-    if (rows[this.index] && rows[this.index].section) this.index = this._next(this.index, 1);
+    if (rows[this.index] && (rows[this.index].section || rows[this.index].head)) this.index = this._next(this.index, 1);
     this.listEl.replaceChildren();
+    const numbered = rows.some((r) => r.no);
     rows.forEach((row, i) => {
       const li = document.createElement('li');
       if (row.section) {
@@ -43,14 +55,31 @@ export class Menu {
         this.listEl.append(li);
         return;
       }
+      if (row.head) {
+        li.className = `race-head${row.cls ? ` ${row.cls}` : ''}`;
+        li.append(cell('race-ptr', ''), cell('race-no', ''), cell('race-row-label', row.head[0]));
+        for (const t of row.head.slice(1, -1)) li.append(cell('race-col', t));
+        if (row.head.length > 1) li.append(cell('race-row-value', row.head[row.head.length - 1]));
+        row._li = li;
+        this.listEl.append(li);
+        return;
+      }
       // A row with a value is a line in a list, even when Enter on it does
       // something (a track you can start on); one without is a button.
       li.className = row.action && !row.value ? 'race-row race-row-action' : 'race-row';
       if (row.cls) li.className += ` ${row.cls}`;
+      li.append(cell('race-ptr', '>'));
+      // In a list where lines are numbered, an unnumbered one keeps the column.
+      if (row.no || (numbered && !/\bbtn\b/.test(row.cls || ''))) li.append(cell('race-no', row.no || ''));
       const label = document.createElement('span');
       label.className = 'race-row-label';
       label.textContent = row.label;
       li.append(label);
+      if (row.cols) for (const t of row.cols) li.append(cell('race-col', t));
+      if (row.hint) {
+        row._hint = cell('race-row-hint', '');
+        li.append(row._hint);
+      }
       if (row.value) {
         row._value = document.createElement('span');
         row._value.className = 'race-row-value';
@@ -68,6 +97,16 @@ export class Menu {
             return b;
           };
           box.append(btn('\u2212', -1), row._value, btn('+', 1));
+          // Optional native slider; existing setting rows retain their stepper behavior.
+          if(row.range){
+            const r=row.range,input=document.createElement('input');
+            input.type='range';input.className='race-range';input.min=r.min;input.max=r.max;input.step=r.step;
+            input.setAttribute('aria-label',row.label);
+            input.addEventListener('focus',()=>{this.index=i;this.paint();});
+            input.addEventListener('click',e=>e.stopPropagation());
+            input.addEventListener('input',()=>{this.index=i;r.set(input.valueAsNumber);this.paint();});
+            row._range=input;box.insertBefore(input,row._value);
+          }
           li.append(box);
         } else {
           li.append(row._value);
@@ -89,9 +128,11 @@ export class Menu {
 
   paint() {
     this.rows.forEach((row, i) => {
-      if (row.section) return;
+      if (row.section || row.head) return;
       row._li.classList.toggle('focused', i === this.index);
+      if (row._hint) row._hint.textContent = typeof row.hint === 'function' ? row.hint() : row.hint;
       if (row._value) row._value.textContent = row.value();
+      if (row._range) row._range.value = row.range.get();
     });
     const row = this.rows[this.index];
     if (row && row._li.scrollIntoView) row._li.scrollIntoView({ block: 'nearest' });
@@ -103,7 +144,7 @@ export class Menu {
     const n = this.rows.length;
     for (let k = 1; k <= n; k++) {
       const j = (i + d * k + n * k) % n;
-      if (!this.rows[j].section) return j;
+      if (!this.rows[j].section && !this.rows[j].head) return j;
     }
     return i;
   }
