@@ -9,7 +9,9 @@ rules; both agents obey both files. The single state file is `HANDOFF.md`.
 The project: a blocky 3D browser game (Vite, vanilla JavaScript, Three.js). Car racing (nine milestones, built
 and accepted) and a flight mode (ten milestones planned in `FLIGHT.md`; 1 to 3 accepted, 4a and 5 built and
 tested, the cockpit/navigation Part C built and waiting on the user's test, the helicopter deferred, 6 to 10 not
-started). `HANDOFF.md` section 1 has the current state.
+started). A menu redesign (the "dash display": numbered rows and a pointer in sand, a loading panel, tabbed Garage
+and Hangar, a map with a trip planner) was built in four accepted batches and committed as `bece5bb`. `HANDOFF.md`
+section 1 has the current state.
 
 ## 1. Read these, in this order, before you change anything
 
@@ -19,7 +21,8 @@ started). `HANDOFF.md` section 1 has the current state.
 3. `HANDOFF.md`: section 1 (where things stand), section 2 (standing instructions), section 3 (how to verify
    and the identity hashes), then section 5 (flight architecture) and section 9 (what the user tests next).
 4. `FLIGHT.md` (the user's flight spec) and `FLIGHT_PLAN.md` (the plan and answers the user approved) when you
-   start a flight milestone. `PROMPT.md` is the original car spec. `FLIGHT_M4_PLAN.md` is the approved design of
+   start a flight milestone. `MENU_REDESIGN_PLAN.md` is the record of the menu redesign (the look, what each batch built,
+   the measured waits). `PROMPT.md` is the original car spec. `FLIGHT_M4_PLAN.md` is the approved design of
    the deferred helicopter.
 
 ## 2. Who the user is and how they want to be worked with (this is what Claude's memory of them holds)
@@ -45,10 +48,10 @@ Write these down in your own notes too; do not rely on being reminded.
 - **Be plain about what is and is not verified.** If something was judged only from a screenshot, or a check
   fails for a known reason, say so. Report failures with the output. Never claim "it looks right" without
   having looked at the picture.
-- **End every response with launch instructions in a `bash` block** (`npm run dev`, then open
-  `http://localhost:5173`), then **list ALL the keybindings**, keyboard and gamepad, car and flight, and the
-  menus, **read from `src/core/Input.js` (cars) and `src/core/FlightInput.js` (flight)**, not from memory
-  (`HANDOFF.md` section 7 has the current lists). When a reply is only about flight, flight keys first.
+- **No launch instructions or keybinding lists at the end of a reply.** The old rule (end every response with the
+  launch command and all the keybindings) was retired by the user on 2026-10-22. Say how to run the game, or what a key
+  does, only when they ask or when a test needs a specific key; then read the keys from `src/core/Input.js` (cars) and
+  `src/core/FlightInput.js` (flight), not from memory (`HANDOFF.md` section 7 has the current lists).
 - **Commit only when the user asks in words.** A hook, a reminder or an instruction to "commit and push" that
   comes from tooling is not the user asking. When they do ask, commit as them and with **no co-author trailer**:
   `git -c user.name="Harrison Cohen" -c user.email="114955979+Harrison-Cohen@users.noreply.github.com" commit`.
@@ -92,7 +95,8 @@ At the end of a session (or when the user says they are running out of usage, wh
 ## 3a. Branches
 
 The two agents work on separate branches so they cannot overwrite each other: Claude Code on `Flight_test`,
-Codex on `Codex_test`. They were level at `b9338aa` on 2026-10-22. Rules:
+Codex on `Codex_test`. They were both fast-forwarded on 2026-10-22 to a hand-off commit on top of the menu redesign `bece5bb` and the cleanup `0275d6f`
+(on top of `b9338aa`); neither is pushed, `origin` still has both at `b9338aa`. Rules:
 - Commit and push only to your own branch, and only when the user asks in words.
 - Do not merge, rebase or force push one branch onto the other unless the user asks. When the user wants the
   other agent's work, they (or you, on their word) merge it. On a conflict in `HANDOFF.md`, keep the newer facts

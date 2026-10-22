@@ -15,25 +15,24 @@ finished work (`FLIGHT_M3_PROMPT.md`, `FLIGHT_M4_PROMPT.md`, `FLIGHT_M5_PROMPT.m
 
 ## 1. Where things stand (2026-10-22)
 
-- **Menu redesign (the dash display), in batches; read `MENU_REDESIGN_PLAN.md`.** Batches 1 to 4 are built and WAITING ON THE USER'S TEST; the redesign is complete once they are accepted.
-  Batch 4: the Fly menu and the flight pause card are in groups (Fly, Setup, General, Flying) with numbered choices and the shared
-  Controls chart on its Flying tab; the map is a dash panel with two tabs, Airports (teleport) and Plan a trip, the trip laid out the
-  way a map app does it (lettered stops, a leg between each pair with its distance and time, a search box that adds an airport or a
-  race track, a summary, Start route) and drawn on the real map with lettered pins.
-  Batch 3: the Garage (Car, Paint, Parts, Gearbox, Stats) and the Hangar (Aircraft, Repair, Paint, Livery, Loadout, Tuning) are in tabs
-  (`ui/Tabs.js`), with the pointer and row numbers; the Garage's Stats tab is a table of all seven cars that picks the car.
-  Batch 1:
-  the new theme (off white double-line frame, numbered rows, `>` pointer, warm sand `--accent` `#D8C8A0` instead of orange in
-  every menu, the map screens, the garage and the Hangar), the shared `Menu`, the title (grouped Play, Setup, General), pause, track
-  select as a table with a best-laps bar chart, the session and race results, and the Controls chart (Driving and Flying tabs,
-  `src/data/controls.js`, guarded by `npm run controls`). Batch 2 is the loading step panel (`ui/Loading.js`: Fly, every session
-  start, the flight starts, the Graphics and Detail steppers) and shorter waits (see the Menus architecture bullet and the numbers in
-  the plan). The HUD and the map's track markers keep their orange (assumed, unconfirmed). `Claude.md`'s type and no-caps rules were lifted.
+- **Menu redesign (the dash display): done.** The user accepted each of its four batches ("looks good") and it is committed as
+  `bece5bb`. `MENU_REDESIGN_PLAN.md` has what each batch built, the measured waits and the deviations; section 4 here ("Menus",
+  "Loading", "Garage and Hangar tabs", "Flight menus and the map") has the architecture. In short: flat ink panels in an off white
+  double-line frame, numbered rows, a `>` pointer and warm sand (`--accent`, `#D8C8A0`) instead of orange in every menu; the title,
+  pause, track select, results, Garage, Hangar, Fly menu, flight pause and map all in that style; one Controls chart (Driving and
+  Flying tabs) generated from `src/data/controls.js`; a loading step panel behind every wait over 150 ms (Fly, session starts, flight
+  starts, Graphics and Detail steppers); the Garage and Hangar in tabs; the map with a Google Maps style trip planner. Open and
+  unconfirmed: the HUD, the cockpit panels and the map's track markers keep their orange and pink (a recolour would be a separate
+  decision); the flight menus have no Graphics row (it rebuilds the post chain, which flight configures itself); the loading panel's
+  fade and moving block are opacity and transform animations that Chrome runs on the compositor, which a headless Chrome cannot show,
+  so "keeps moving while the main thread is busy" is by design, not observed; nobody has tried a real pad's LB and RB on the tabs or
+  the panel on the user's own screen. `Claude.md`'s type and no-caps rules were lifted and the sand accent documented there.
 
-- **Branches.** `Flight_test` (Claude Code's) and `Codex_test` (Codex's) were both at `b9338aa` and pushed when
-  the cleanup of 2026-10-22 began. `initial-build` (`00d6bb0`) is the draft PR's base: draft pull request
-  `Harrison-Cohen/Blocky-Games#1` is `Flight_test` into `initial-build`. Commit only when the user asks in words
-  (section 2).
+- **Branches.** `Flight_test` (Claude Code's) and `Codex_test` (Codex's) are level, at one hand-off commit on top of `bece5bb` (the
+  menu redesign, one commit) on top of `0275d6f` (the 2026-10-22 cleanup) on top of `b9338aa`. **Nothing since `b9338aa` is pushed**: `origin/Flight_test` and
+  `origin/Codex_test` are still at `b9338aa`, so the cleanup and the menu redesign exist only on this Mac until the user asks for a push
+  (offer it). `initial-build` (`00d6bb0`) is the draft PR's base: draft pull request `Harrison-Cohen/Blocky-Games#1` is `Flight_test`
+  into `initial-build`. Commit only when the user asks in words (section 2).
 - **Car game: all nine milestones are built and accepted.** Six tracks (one a drag strip), seven chassis, race
   mode, drag mode for one or two players, garage, ghost, audio, graphics levels. Nothing is waiting.
 - **Flight game.** Built and accepted: milestone 1 (the F-22 on a test field), 2 (the open world), 3 (airports,
@@ -47,29 +46,24 @@ finished work (`FLIGHT_M3_PROMPT.md`, `FLIGHT_M4_PROMPT.md`, `FLIGHT_M5_PROMPT.m
 - **Not started:** the Magpie 48 helicopter (4b; the user took it out of the plan on 2026-10-21), and flight
   milestones 6 to 10 (air races and AI pilots, weapons and dogfights, missions, the living world, polish). Each is
   planned, approved, then built, one stop at a time.
-- **Checks on the current tree** (run 2026-10-22, after the cleanup): all nine car checks pass, `npm run world` passes
-  (119 ok), `npx vite build` is clean (the 800 kB chunk advisory is old and fine). `npm run flight` passes 451
-  checks and reports **nine failures, all of them the identity hashes, all on purpose** (section 3, "Identity
-  hashes"). Do not call `npm run flight` clean, and do not replace the recorded goldens without the user's say.
-- **Cleanup of 2026-10-22** (a maintenance pass the user asked for before testing C): dead code removed (the
-  unused `FieldMesh.js` test-field renderer, the hidden `Radar` disc and its CSS and `RADAR` tuning block, the
-  unused `FLIGHT_HUD` tuning block, the pre-Part B flight HUD CSS, unused imports and a few unused helpers),
-  stale "milestone N will" comments corrected, the markdown files condensed, and a profiling pass whose findings
-  are in section 10. Behaviour is unchanged, proved four ways: every deterministic check output matched the pre-cleanup run
-  (the nine flight identity hashes are the same values as before); a scripted 737 and F-22 flight through the real page ends in
-  the same state to six decimals on the old and the new tree; all ten `scripts/flight/*-browser.mjs` regression scripts pass
-  (19, 57, 11, 29, 31, 11, 18, 29 and 16 checks, plus the exterior pictures); and the 45 `npm run look` and 53 `look-world` pictures
-  of the old tree and the cleaned tree differ by at most 3.0 and 1.4 percent of pixels (only the animated title and pause
-  backgrounds and HUD text).
+- **Checks on the current tree** (run 2026-10-22 on `bece5bb`): all nine car checks and `npm run controls` pass, `npm run world` passes
+  (119 ok), `npx vite build` is clean (main chunk 938 kB, `FlightGame` chunk 256 kB; the 800 kB advisory is old and fine). `npm run
+  flight` passes 451 checks and reports **nine failures, all of them the identity hashes, all on purpose** (section 3, "Identity
+  hashes"). Do not call `npm run flight` clean, and do not replace the recorded goldens without the user's say. Every browser script
+  passes: `menu-browser` 38, `garage-browser` 40, `flight/menus-browser` 30, and the ten `scripts/flight/*-browser.mjs` (19, 57, 11, 29,
+  31, 11, 18, 29, 16, plus the exterior pictures).
+- **Cleanup of 2026-10-22** (before the menu work): dead code removed (the unused `FieldMesh.js`, the hidden `Radar` and its tuning
+  block, the unused `FLIGHT_HUD` block, old HUD CSS, unused imports), stale comments fixed, the markdown condensed, and a profile whose
+  findings are in section 10. Behaviour was proved unchanged four ways (identical deterministic outputs, a scripted flight ending in
+  the same state, all browser scripts, picture diffs under 3 percent).
 
 ## 2. Standing instructions
 
 `AGENTS.md` section 2 is the fuller list of the user's preferences. The ones that bite most often:
 
-- **End every response with launch instructions** in their own `bash` block (`npm run dev`, then open
-  `http://localhost:5173`), **then list ALL keybindings**, keyboard and gamepad, car and flight, and the menus,
-  read from `src/core/Input.js` (cars) and `src/core/FlightInput.js` (flight), not from memory (section 7 has the
-  current lists). When a reply is only about flight, flight keys first.
+- **No launch instructions or keybinding lists at the end of a reply.** The user retired that old rule on 2026-10-22. Say how to
+  run the game or what a key does only when they ask or a test needs a specific key; then read the keys from `src/core/Input.js`
+  (cars) and `src/core/FlightInput.js` (flight), not from memory (section 7 has the current lists).
 - **Stop at the end of each milestone or batch**, say exactly what to test and in what order, and wait. Plan first
   for a new milestone and get approval. Never roll into the next one unprompted.
 - **They test it, you cannot feel it.** They send notes by dictation (odd words: "ailerons" for the stabilators,
@@ -85,8 +79,9 @@ finished work (`FLIGHT_M3_PROMPT.md`, `FLIGHT_M4_PROMPT.md`, `FLIGHT_M5_PROMPT.m
   features behind `GRAPHICS` knobs in `tuning.js`. Ultra is the default and is exactly the `GRAPHICS`/`WORLD`
   values; `GRAPHICS_LEVELS` holds the steps down. (`Claude.md`'s Performance section still says pixel ratio 1.5;
   the build uses `maxPixelRatio 2` plus dynamic resolution. Flagged to the user, never answered.)
-- **Never kill the user's dev servers** (ports 5173 and 5174). Use another port for yours and stop what you
-  started. Scripts that open the game take a URL; several default to 5173, 5185 or 5186, so pass your own.
+- **Never kill the user's dev servers** (ports 5173 and 5174; theirs moved from 5173 to 5174 during the menu work, so find it with
+  `lsof -iTCP -sTCP:LISTEN -P`). Use another port for yours and stop what you started. Scripts that open the game take a URL;
+  several default to 5173, 5185 or 5186, so pass your own.
 - No new packages (including dev dependencies) without asking. No external art assets, no textures, no network
   calls at runtime. Never use an em dash or an en dash in anything you write.
 
@@ -426,13 +421,22 @@ Flight:
 - Browser fixtures: `game.onFly()` is asynchronous; offline audio contexts can have a Nyquist below 20 kHz (clamp filter cutoffs);
   CDP top-level `await import` needs an async IIFE; call `scene.frame` after moving the camera in a fixture; step physics and
   effects together for smoke pictures; do not edit source while a capture runs.
+- The menu work (2026-10-22): `respawnAt`, `toHangar` and a hangar departure now go through `FlightGame.go()` and the loading panel, so
+  they finish a few frames later; a script must `await game.loading.whenIdle()` before reading the result (`flight.start()` and
+  `_primeWorld()` stay synchronous, and `game.startSession()` returns its promise). A CDP screenshot waits for the main thread, so one
+  taken during a blocking job shows the finished page: photograph the panel during sliced work (Fly, Detail) or lower
+  `(await import('/src/data/tuning.js')).MENU.loadingDelay` to 0 first. The first launch shows the controls card on the title and the
+  first flight shows the flight controls card, so a test that presses Enter on Controls toggles it OFF: hide it first. A click on a
+  Start button or a key during a loading job is swallowed on purpose (a capture keydown guard and a full-screen overlay). The flight
+  input used to `preventDefault` Space and the arrows even in a text box, which made a space untypeable in the map's search box.
+  zsh has no `timeout`; macOS `sed -i` needs `''`.
 - Wikimedia (reference photos): needs a descriptive User-Agent, rate limits (429), blocks `upload.wikimedia.org` originals but
   serves `thumb.wikimedia.org/wikipedia/commons/thumb/<h>/<hh>/<name>/1280px-<name>` (`<h>`, `<hh>` the first one and two hex
   digits of the md5 of the file name).
 
 ## 7. Current keybindings
 
-Read from `src/core/Input.js` (cars) and `src/core/FlightInput.js` (flight); reread them before answering, do not trust this copy.
+Read from `src/core/Input.js` (cars) and `src/core/FlightInput.js` (flight); reread them before quoting a key, do not trust this copy.
 
 ### Cars
 
@@ -531,15 +535,17 @@ Gamepad (standard mapping):
 
 A pad with no standard mapping falls back to axis 0 roll, 1 pitch, 2 twist rudder, 3 throttle slider (untested, no hardware).
 
-Menus and screens: the flight menus use the same menu controls as the rest. Map: Up/Down or W/S airport, Left/Right or A/D start
-(apron/runway/air/Hangar), Enter/Space teleport, Esc/M close, +/- and wheel zoom, drag pan. Plan a trip: Tab reaches the buttons,
-Up/Down or W/S cycle planner actions, Enter/Space chooses; move the map cursor then arrows/WASD moves it and Enter/Space adds a
-stop, Escape returns to the buttons; on a pad Up above the first airport focuses Plan a trip, A opens, menu directions cycle,
-D-pad/stick move the cursor and A adds, B leaves the cursor then closes the map. Respawn after a crash: Up/Down or W/S selects an
-airport, Enter/Space or pad A/Start respawns at its hangar apron, Esc/M or pad B opens a return-to-list/title choice. Hangar visit:
-Leave hangar or Teleport to runway; pending edits ask Save, Discard or Keep editing first; Enter/Space repairs the selected part;
-Esc/B requests departure. The Fly menu and pause card carry View distance, Detail, Field of view (native slider; one degree per
-step with keys and pad), Time of day, Units and Volume.
+Menus and screens: the flight menus use the same menu controls as the rest (the Fly menu and pause card carry View distance, Detail,
+Field of view (native slider; one degree per step with keys and pad), Time of day, Units, Pitch with the mouse and stick and Volume).
+Map: two tabs, Airports and Plan a trip. Airports: Up/Down or W/S airport, Left/Right or A/D start (apron/runway/air/Hangar),
+Enter/Space teleport, Esc/M close, +/- and wheel zoom, drag pan. Plan a trip: click the map to pick a point (it is added with Add this
+point as a stop, or used as A), or type an airport or race track name in the search box (Up/Down through the results, Enter adds,
+Esc empties it); Tab reaches the buttons, Up/Down or W/S walk them, Enter/Space presses one; Move map cursor then arrows/WASD moves
+the cursor and Enter/Space adds a stop, Esc returns to the buttons. On a pad, Up above the first airport focuses the Plan a trip tab, A
+opens it, the d-pad and stick walk the buttons or move the cursor, A adds, B leaves the cursor then closes the map. Respawn after a
+crash: Up/Down or W/S selects an airport (no tabs), Enter/Space or pad A/Start respawns at its hangar apron, Esc/M or pad B opens a
+return-to-list/title choice. Hangar visit: Leave hangar or Teleport to runway; pending edits ask Save, Discard or Keep editing first;
+Enter/Space repairs the selected part; Esc/B requests departure. Garage and Hangar: Q and E (pad LB and RB) change tab.
 
 ## 8. Milestones and requests, in short
 
@@ -571,9 +577,10 @@ Flight, in order (FLIGHT.md lists ten milestones; the user flies each and sends 
 ## 9. Part C: what to test, and what has not been checked
 
 User test order:
-1. Press M, Plan a trip. Pick a live or fixed origin, add two turns and a destination by clicking airports/map points or moving the
-   cursor. Reorder, delete, reverse, activate, inspect the selected leg. Close the map and compare the HUD/cockpit terrain, range
-   and route progress.
+1. Press M, then the Plan a trip tab. A is your position, or a point you click on the map and choose Use this point as A. Add two
+   turns and a destination by clicking the map and pressing Add this point as a stop, by typing an airport or track name in the
+   search box and pressing Enter, or with the map cursor. Move up, move down, remove and reverse; Start route; Fly to this stop for
+   the selected leg. Close the map and compare the HUD/cockpit terrain, range and route progress.
 2. Start safely airborne. P once is Hold, again Route, again Off. Adjust altitude and speed, watch interception, waypoint changes
    and the final Hold. With no activated trip: Off, Hold, Off with a reason. Repeat on the 737 and a pad. Route is lateral guidance,
    so choose a safe altitude.
@@ -582,6 +589,10 @@ User test order:
    warnings, mute/volume and engine damage.
 5. Ordinary Hangar entry/leave/re-entry, Map teleport, reset and crash respawn. A reload keeps the trip and FOV but never engages
    the autopilot.
+
+Menu redesign, not verified (the user accepted it from looking at it): the loading panel on their screen and the compositor claim above,
+a real pad's LB and RB on the Garage, Hangar and map tabs, a Mac trackpad on the map, and the planned trip times (they use the
+aircraft's `airStart.speed`, not a measured cruise).
 
 Not verified, and only the user can: how anything FEELS (taxiing, the new power response, Route's steering, a physical gamepad or
 stick), and how anything SOUNDS (the revised engine voices were measured as signals and never listened to). Reference pages for
@@ -622,15 +633,20 @@ If CPU ever gets tight, start with the first.
 - Trees never collide (the plan says no). A crash used to be a free repair; the shipped design respawns fully repaired at the chosen
   hangar (survivors are not healed).
 - The 737 flap detents are Up, 5, 15, 30 (their choice); 40 is one data row away.
+- Menus: the sand accent was accepted (the cool alternative was steel `#A9B8C8`, one value in `--accent`). Do they want the HUD,
+  the cockpit panels and the map's track markers recoloured to match? Is `MENU.loadingDelay` (150 ms) right? A wait just over it shows
+  a faint panel for a moment.
 - Their message "That's why Dubai, you can leave your feet down. Why you can leave your everything." did not parse.
 
 ## 12. What comes next
 
-1. The user tests Part C (section 9) and sends notes; fix those first, in `tuning.js`/data where it is feel.
+1. The user tests Part C (section 9) and sends notes; fix those first, in `tuning.js`/data where it is feel. The menu redesign needs
+   nothing more unless they send notes.
 2. Optional refactors the 2026-10-22 cleanup found and deliberately did not do (each touches many lines, none changes behaviour):
    the Codex-written modules (`FlightRoute.js`, `InstrumentDrawing.js`, `FlightMapView.js`, `FlightInstrumentDraw.js`,
-   `FlightTelemetry.js`, `FlightHud.js`, `render/aircraft/FlightInstruments.js`, parts of `FlightGame.js`) are written in a dense one-line
-   style unlike the rest of the codebase; `Turntable.js` duplicates the Garage's turntable scene; a tiny `clamp` helper is defined 17
+   `FlightTelemetry.js`, `FlightHud.js`, `render/aircraft/FlightInstruments.js`, parts of `FlightGame.js`; `MapScreen.js`'s planner
+   and key handling were rewritten in the normal style in the menu work, its drawing core is still dense) are written in a dense
+   one-line style unlike the rest of the codebase; `Turntable.js` duplicates the Garage's turntable scene; a tiny `clamp` helper is defined 17
    times (identical bodies in most); the instrument vertex writer spreads arrays per point. Reformat or share them only when the user
    asks, and rerun every check after.
 3. Then, by the user's choice: the Magpie 48 helicopter (4b; design in `FLIGHT_M4_PLAN.md`: a rotor disc with momentum theory,

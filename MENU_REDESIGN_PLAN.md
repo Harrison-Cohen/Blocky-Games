@@ -1,5 +1,8 @@
 # Menu redesign: the plan (approved 2026-10-22; batches 1 to 4 built)
 
+**Status: finished.** All four batches were built and accepted by the user on 2026-10-22 and are committed as `bece5bb`. This file is now the
+record of the design and of what each batch built; the lasting architecture facts are in `HANDOFF.md` section 4. Nothing here is still to do.
+
 **Batch 1 as built (2026-10-22), waiting on the user's test.** The theme (`--accent` sand, frame variables in `styles.css`), the shared
 `Menu` (pointer cell, numbers, hints, table columns, framed buttons), the title (Play: Time trial, Race, Drag race, Fly; Setup: Garage,
 Controls; General: Volume, Graphics), pause (the same list plus General, the driving controls beside it), track select as a table with

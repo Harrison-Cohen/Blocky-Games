@@ -370,7 +370,6 @@ Stop after each one and tell me what to test. Do not roll into the next on your 
 - Before saying a milestone is done: all fourteen checks pass (nine existing plus the new ones that exist so far), `npx vite build` is clean, and the dev server starts with no console or warning output.
 - When I report a flying problem, change `tuning.js` or the aircraft's data first, and touch the model only if the model itself is wrong.
 - Commit only when I ask, as me, with no Claude co-author trailer.
-- End every response with launch instructions in a `bash` block, then list all keybindings read from `src/core/Input.js` and the flight input code, as the standing instructions in `HANDOFF.md` say.
 - Add a section to `HANDOFF.md` for flight as you go: what is built, what is waiting on my test, and what you learned.
 
 ## Open items for your plan
