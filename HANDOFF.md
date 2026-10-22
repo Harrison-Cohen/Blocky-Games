@@ -14,6 +14,39 @@ user approved, with the answers to the spec's open items), then sections 9 and
 
 ## 1. Where things stand
 
+- Part C implemented on Codex_test, 2026-10-22: terrain map/HUD/cockpit navigation, versioned
+  multi-stop planner, Off/Hold/Route AP, reference-led F-22 exterior and revised procedural
+  sound. Read HANDOFF 10y for files, checks, intentional hash differences and test order.
+  Stop for user test after C. All previous local work retained, no commits/pushes. Audio
+  signal checks are not a listening test; user audition is still required.
+
+- Latest pre-C addition, Codex_test, 2026-10-22: saved Field of view slider added to Fly and
+  pause menus, 55 to 110 degrees, default 78, controls all flight views and cockpit overlay.
+  Read 10x. 18 browser checks and build pass, eight pictures inspected. Transfer prompt
+  updated to preserve the setting; C remains unstarted. No commit/push.
+
+- New-chat transfer prepared, Codex_test, 2026-10-22: user asked whether Part C is preserved
+  and requested a prompt for a new chat. It is saved in FLIGHT_PART_C_PROMPT.md; read 10w.
+  Full C design/additions remain in FLIGHT_COCKPIT_NAV_PLAN.md and 10v. No C code started,
+  no B acceptance inferred, no commit/push. Continue from this existing dirty local checkout.
+
+- Newest, Codex_test, 2026-10-22: user tested B and sent two cockpit screenshots. B follow-up
+  fixes HUD/frame fit, 737 panel containment and downward look; quicker throttle/spool for
+  both aircraft and 80% less pilot-view shake/Mach kick. Read 10v for verification and retest.
+  F-22 body remodel and more realistic aircraft sound are added to C, still unstarted with
+  the minimap/waypoints/Route AP. Normal physics identity now intentionally changes because
+  the user asked for quicker acceleration; goldens are retained, never silently replaced.
+
+- Newest, Codex_test, 2026-10-22: user requested the next step after A2. Approved cockpit/navigation revision batch B is built and verified, waiting on the user's test. Working aircraft-themed panels and matching external HUD share one telemetry snapshot. Read 10u. Stop after B for user test before C (terrain minimap, multiple waypoints, Route AP). Existing M5/A/A2 working tree remains uncommitted.
+
+- Newest, Codex_test, 2026-10-21: user approved A2 with "exicute the plan", then "continue". A2 is built and verified, waiting on their test. Read 10t and FLIGHT_COCKPIT_NAV_PLAN.md. Stop for their test before B/C. Local uncommitted working tree preserves M5 and accepted A.
+
+- Latest, Codex_test, 2026-10-21: user approved FLIGHT_COCKPIT_NAV_PLAN.md with "continue with the plan". Batch A is built: toggle speed brakes, revised separate 737 nose/upper flight deck, shared window openings and improved seated visibility. See 10r for files, verification and test order. Stop for their test before B (instruments) and C (minimap/waypoints/Route AP). Changes remain local and uncommitted, preserving M5.
+
+- Latest revision request, Codex_test, 2026-10-21: user wants toggle speed brakes, a corrected two-piece 737 nose/flight deck with better pilot visibility, working aircraft-themed cockpit instruments and matching external HUD, a terrain minimap, and multi-waypoint trip planning. They chose authentic instruments with retro styling, multiple waypoints, and AP button cycling visual/manual guidance versus route following. Planning only: read FLIGHT_COCKPIT_NAV_PLAN.md and 10q, wait for approval before code. Existing M5 changes remain local and uncommitted.
+
+- Latest, Codex_test, 2026-10-21: user requested "continue with part B". Milestone 5 (5a and 5b) is built and awaiting their test, F-22 and 737 only. See 10p for collisions, effects/sound, respawn, checks and test order. Stop here, no milestone 6 or helicopter work. Flight checks have only six recorded physics-hash failures reproduced on pristine 8559a6a; final/pristine results match exactly. No commits or pushes.
+
 - Branch `initial-build` (not `main`). Commits so far:
   - `2bd4cb8` milestones 1-6 plus a polish round
   - `d6997de` milestone 7, full race mode
@@ -823,21 +856,22 @@ Keyboard:
 | Left / Right | roll |
 | A / D | rudder, and nose wheel steering on the ground |
 | W / S | throttle up / down (a lever: held keys move it) |
-| Left Shift | afterburner, held |
+| Either Shift | afterburner, held |
 | G | landing gear |
-| V | airbrake, held (the 737's spoilers; they also come up by themselves with the wheels down and the lever at idle) |
+| V | toggle airbrake (the 737's spoilers; automatic ground spoilers still work) |
 | B | wheel brake, held (it comes on a little at a time, `FLIGHT_INPUT.brakeAttack`) |
 | C | camera: chase, first person, cockpit, far orbit (the pad's Y too) |
-| Right mouse, held | free look (middle button in mouse flight) |
-| U | HUD on / off |
+| Right mouse, held | free look; drag down to see lower panels (middle button in mouse flight) |
+| U | external HUD on / off; physical cockpit instruments keep working |
 | N | mute |
 | T | mouse flight on / off (pointer lock; Esc gives it back and pauses) |
 | R, held 1 s | back to the hangar (a stopped aircraft at the mouth of a bay of the airport last used) |
+| Enter | enter a nearby Hangar when its button is visible; no automatic entry |
 | Esc | pause |
 | Space, F, Q, E | cannon, missile, flares, next target (later) |
 | ` (backquote) | telemetry (collected, nothing reads it yet) |
 | Z / X | flaps up / down, one setting at a time (the 737: up, 5, 15, 30; the F-22: Auto, Combat). Out is refused above the setting's limit speed, with a note |
-| P | autopilot on / off, in the air only (60 m or more above the ground). It takes the altitude, heading and speed the aircraft has. While it is on, Up / Down move the altitude target, Left / Right the heading, W / S the speed (the stick and the lever are not flown) |
+| P | Off, Hold, Route, Off; without an activated usable trip: Off, Hold, Off with reason. Airborne and at least 60 m AGL. Hold captures targets. Up/Down altitude, W/S speed; Left/Right heading in Hold only. Route holds pilot altitude/speed and steers lateral legs. |
 | H | hover assist (later, milestone 4b) |
 | K | cargo hook (later, milestone 4b) |
 | M | the map (milestone 3: pick an airport, Teleport) |
@@ -855,11 +889,11 @@ Gamepad (standard mapping):
 | R3, held | the right stick looks round instead |
 | LT | wheel brake (analog) |
 | RT | cannon (later) |
-| A / B | afterburner / airbrake, held (A is the cargo hook on the helicopter, 4b: the game reads the edge only there) |
+| A / B | A enters a nearby Hangar when prompted, otherwise hold for afterburner; B toggles airbrake (Back+B still mutes). Release menu/entry A before afterburner can engage |
 | X / Y | gear / camera |
 | RB / LB | missile / flares (later) |
 | D-pad up | next target (later) |
-| D-pad down | autopilot; then left stick Y moves the altitude target, left stick X the heading, right stick Y the speed |
+| D-pad down | Off/Hold/Route/Off; left stick Y altitude, X heading in Hold only, right stick Y speed |
 | D-pad left / right | flaps up / down |
 | L3 | HUD |
 | Back, tapped | the map |
@@ -871,6 +905,20 @@ A pad with no standard mapping (a flight stick) falls back to axis 0 roll, 1
 pitch, 2 twist rudder, 3 throttle slider; untested, there is no hardware.
 
 Flight menus use the same menu controls as the rest (the line above).
+Hangar physical visits offer Leave hangar (stationary, nose out) and Teleport to runway.
+Pending paint/load/tune or aircraft selection asks Save/Discard/Keep editing first.
+Enter/Space repairs the selected part immediately, even if other edits are later discarded.
+Esc/B requests normal departure or cancels the pending Save/Discard choice. Fly-menu preview
+retains Save aircraft/Discard and returns to that menu without a physical departure.
+Trip planner controls: read 10y, mouse buttons and map picking; Tab/Up/Down/Enter, map cursor arrows and Enter; pad Up above first airport then A, menu directions/A, cursor D-pad/A, B returns/closes.
+Map: Up/Down or W/S airport, Left/Right or A/D start (apron/runway/air/Hangar), Enter/Space
+teleport, Esc/M close, +/- and wheel zoom, drag pan. Pad follows menu navigation.
+
+Milestone 5 respawn: Up/Down or W/S selects an airport; Enter/Space or pad A/Start
+respawns at its hangar apron. Ineligible airports show why and cannot be confirmed.
+Esc/M or pad B opens return-to-list/title choices. The explicit Back to title button
+leaves flight. While wrecked, R, M and Esc lead to this choice rather than bypassing it.
+
 
 ## 8. Unresolved questions put to the user
 
@@ -947,6 +995,22 @@ What comes next, in order:
 ## 10. Flight
 
 ### 10.0 Start here (for a new chat)
+
+- Newest: Part C implemented, read 10y before any further flight work. User testing is next.
+  Navigation/planner/Route AP, F-22 exterior and audio are built. Do not restart C from the
+  old transfer prompt. No combat/helicopter work or formal acceptance inferred.
+
+- Transfer prompt: read 10w and FLIGHT_PART_C_PROMPT.md when moving to a new local chat.
+- Latest camera addition: read 10x for the saved FOV slider, verification and test order.
+- Newest implementation: read 10v for the user's B test feedback and fixes: HUD glass/frame fit, 737 panel containment, downward look, quicker power response and reduced pilot-view shake. Retest before C. User added F-22 body and realistic aircraft sound to C alongside navigation. No commit/push, no helicopter or milestone 6 work. Normal physics identity intentionally changes under the newly authorized acceleration tuning; legacy-response diagnostic isolates it.
+
+- Newest: read 10t. A2 is approved, built and verified, waiting on their test. Stop after A2 for the user test before B/C. Same working tree, no commits/pushes.
+
+- Latest: read 10r. Cockpit/navigation plan is approved; batch A built and ready for user test. B/C are unstarted, do not roll into them. Read the checklist in FLIGHT_COCKPIT_NAV_PLAN.md. Standard flight checks still have only six preexisting physics hash mismatches; same-runtime identity unchanged. No commits or pushes.
+
+- Newest: read 10q and FLIGHT_COCKPIT_NAV_PLAN.md. Cockpit/navigation revision is planned and awaiting approval. No implementation for that request yet. Prior M5 implementation/checks in 10p are preserved.
+
+- Latest, Codex_test: read `FLIGHT_M5_PLAN.md` and 10p. Both halves of milestone 5 are built; the user approved 5b with "continue with part B". Ready for their test, stop here. Car/world checks and screenshots pass; flight checks have six preexisting recorded physics-hash mismatches, with exact pristine/final matches in the same runtime. No goldens changed. Helicopter and milestone 6 remain unstarted. 4a has no separate acceptance report yet. 10m through 10o are historical.
 
 - UPDATE 2026-10-21 (later): the user flew the 737 and sent ten notes; all are built and verified in
   10l (committed and pushed). Read 10l after 10k. 4b still has not been started. A second agent, Codex,
@@ -2379,3 +2443,1185 @@ person.
 - The intakes' throat is a flat black plane (no duct inside), the lip is swept but the mouth is partly
   hidden by the fuselage cheek from the front.
 
+
+### 10m. Codex takeover and missing milestone 5 brief (2026-10-21)
+
+- User requested milestone 5 planning for the F-22 and 737 only; helicopter excluded. Milestone 4a remains under their test. Do not implement until they approve a plan, file tree and the brief's decisions.
+- Local checkout is `/Users/harrisoncohen/Documents/racing-game`, origin `https://github.com/Harrison-Cohen/Blocky-Games.git`. Switched from clean `Codex_test` to `Flight_test`, then pulled `origin Flight_test`: already up to date at `9a71305`. Dependencies already present; no install needed.
+- Read AGENTS.md, Claude.md, current handoff sections, flight spec and approved flight plan, and both input files. `FLIGHT_M5_PROMPT.md` is missing from this checkout after the pull. Need the user to provide it before producing the requested milestone-specific plan or answers. No implementation or tests performed, no commits or pushes, no servers stopped.
+- This session runs on the user's Mac, so edits are already local. Session access grants may be temporary; the checkout should be opened as a project for durable workspace access.
+
+### 10n. Milestone 5 proposal ready for review (2026-10-21)
+
+Branch `Codex_test`. This supersedes 10m's blocked status, retaining its history.
+
+- User requested takeover, sync Codex_test, read instructions and milestone 5 brief, then state
+  project status before planning. They require a plan, file tree and all nine decision answers,
+  followed by an approval stop. Scope is F-22 and 737 only; 4a remains under test.
+- Fetch, checkout Codex_test and pull origin Codex_test succeeded at 8559a6a. node_modules
+  exists. No packages installed, no merge/rebase, no commits/pushes, no servers touched.
+  Initial fetch hit the read-only .git sandbox; approved escalation completed the requested sync.
+- Read AGENTS.md, Claude.md, required HANDOFF sections and latest flight notes, FLIGHT.md,
+  FLIGHT_PLAN.md, FLIGHT_M5_PROMPT.md and both input sources. Inspected physics crash/modifier
+  hooks, store/normalization, aircraft binding/builders, airport layout, props and MapScreen.
+- `FLIGHT_M5_PLAN.md` records the proposal, decisions, file tree, sources, verification and test
+  order. Recommend two stops: 5a headless damage, persistence, repair and basic warnings; 5b
+  airport structures, effects and map respawn. User must approve before either starts.
+- Recommendations include seven parts per aircraft with old-record migration; full repair on
+  crash because respawn reaches a free-repair hangar anyway; explicit repair for survivors;
+  ground and gear/flap exposure damage; airport buildings solid in 5b; procedural city/track
+  scenery solidity deferred because props currently vary with graphics detail/density;
+  dev-only console damage hook; reuse MapScreen in respawn mode; pooled particles and vanish
+  cheap groups at zero, no debris physics. These are PROPOSALS, not user-approved decisions.
+- Sources: FAA ASCENT Project 23 report Table 3 supports existing 737-800 flap maxima
+  250/200/175 kt (manuals cited by that research). FAA landing design sink speeds are structural
+  design cases, not universal survival cutoffs. NG-specific primary confirmation of gear limits
+  not found. Keep inherited limits provisional, preserve current destruction thresholds and
+  the 737 firm-landing regression. URLs and details are in the plan.
+- Risks: half-health wing may exceed current trim/AP authority at some conditions; trace at a
+  feasible flight point rather than adding a magical assist. Damage modifiers must compose with
+  flaps and preserve F-22 full-health hashes. No golden re-recording. No repeated resting impact
+  charges, no graphic-dependent physics, no solid box filling an open hangar doorway.
+- Verification this session: read-only inspection and branch sync only. No test suite, build,
+  screenshots or performance checks run because implementation has not been approved.
+- Only planning markdown changed in this session. Files are already on the user's Mac, uncommitted.
+  Next action is wait for the user's approval, decision changes and batch preference.
+
+
+### 10o. Milestone 5a: damage and recovery state (2026-10-21)
+
+Branch `Codex_test`, on 8559a6a, local Mac checkout. The user said "continue with the plan",
+which approved the recommendations and two stops in `FLIGHT_M5_PLAN.md`. 5a is built, stop
+for their test. Do not begin 5b until they approve continuing. No commits or pushes requested
+or made. All changes are already on their Mac, uncommitted. The prior HANDOFF edits were
+preserved and their stale status superseded, not discarded.
+
+**What was built.**
+- `src/flight/Damage.js`: headless seven-part health and normalized load/record interface,
+  revision tracking, contact onset and sliding exposure, original crash classification,
+  737 gear/flap limit exposure. No Three.js, player dependency, storage or step allocations.
+- `aircraft.js` owns each aircraft's part list and surface/engine/hull mapping: wingL,
+  wingR, engineL, engineR, tail, gear, fuselage. `loadouts.js` derives Hangar rows from it.
+  Old grouped wings/engines health migrates to both children; explicit child wins, corrupt
+  child costs only itself. All new rates, tolerances, warning thresholds and AP trim knobs
+  are in `FLIGHT_DAMAGE` in tuning.js with comments and ranges. Gear speeds remain provisional
+  inherited settings with the sourcing gap labeled. No new packages.
+- `AircraftPhysics.js`: side-specific wing lift loss/drag composed with flaps, separate
+  engine thrust via existing health, proportional tail control/trim/vectoring authority,
+  gear support/brake/steering effects, fuselage-zero destruction. Physics reset keeps damage.
+  `Gear.js` records preallocated contact depth/closing/sliding/severity. Surface affects wear;
+  impact is charged on contact onset, motionless resting skin does not continuously wear.
+- Wing health is condition, not area: half-health wing retains 75 percent lift (tunable),
+  zero detaches all lift. Initial 50 percent lift loss made the 737 unrecoverable in traces.
+  No magic force or self-levelling was added. `Autopilot.js` adds bounded roll-stick trim
+  against bank error only for asymmetric wing damage. Healthy AP trim is exactly zero.
+- The tail skid protects shallow/slow scrapes instead of damaging the tail assembly for
+  its intended protective contact. This preserves the existing F-22 landing script.
+  Existing hard-impact thresholds and reasons remain, including the revised 737 firm landing.
+- `FlightGame.js` applies stored health, saves dirty revisions every second and at lifecycle
+  transitions/pagehide/hidden, saves before switch/restart, replaces destroyed airframes,
+  and keeps survivors damaged until explicit repair. `HangarStore.saveSetup` returns write
+  success so dirty saves can retry. Storage is outside the fixed step.
+- Hangar repair is instant and persistent even if subsequent paint/load/tuning edits are
+  discarded. Individual rows and Repair everything work on all seven parts. Returning to
+  a hangar with collapsed gear places the hull safely on the ground, does not secretly heal.
+- HUD shows damaged parts/percentages plus caution/critical warnings, using the existing yellow
+  caution and signal-orange alert palette. Visual effects, broken
+  groups and new sound are 5b. Current crash menu remains until 5b; it now replaces wrecks.
+- Dev only: `flight.debugDamage(partId, health)` sets actual physics health and persists it.
+  Returns the health record or false for invalid input. Vite strips it from production.
+  The usual dev window.flight/window.game handles were already dev-only too.
+
+**Verified.**
+- All nine car scripts pass: check, lap, timing, parts, ai, race, fx, specs, drag.
+- npm run world PASSES on this Mac, including the hashes that failed in the old container.
+- npm run flight: 312 checks pass, six FAIL, all six from the preexisting recorded F-22
+  physics goldens. All 67 added damage/store checks pass. All original 737 performance,
+  firm landing, late flare, stall/recovery, autopilot and mesh checks pass.
+- The six hash failures also occur on untouched 8559a6a, archived to /tmp/blocky-m5-baseline
+  with the same installed dependencies. The exact pristine and final hashes MATCH:
+
+  | Scenario | Recorded golden | Pristine and final on this Mac |
+  | --- | --- | --- |
+  | takeoff | 3f2cfbfe | 66ea10a7 |
+  | scripted | 09bf0cef | 9c751de9 |
+  | manoeuvre | 4ee079ce | 7dccc763 |
+  | landing | 0245d3c6 | 5bc89393 |
+  | taxi | c28ddd66 | 7bc6611f |
+  | parked | dc711af3 | d7f0a697 |
+
+  Three mesh goldens remain c55516da, 628e730d, f8b23a12 and pass. No golden edits.
+  Homebrew Node v26.5.0 arm64 and bundled Node both reproduce the same local table. The
+  cause of the difference from recorded goldens is not established. Do not call npm run
+  flight clean or silently replace hashes. `node scripts/flight/damage-identity.mjs
+  /tmp/blocky-m5-baseline` passes all nine before/after comparisons. This supplements,
+  does not bypass, the existing identity check.
+- Seven simulated display rates (30, 48, 60, 75, 120, 144, 240) produce identical damaged
+  physics/exposure. Repeated run is identical. 100,000 damaged steps retained no heap growth.
+- Half-wing trim/AP trace last 40 s: F-22 at 300 kt, altitude error 0.18 m, heading 0.54 deg,
+  bank 0.86 deg; 737 at 230 kt/62 t, altitude 0.20 m, heading 0.27 deg, bank 0.33 deg.
+- `scripts/flight/damage-browser.mjs` runs an isolated Chrome profile, not the user's saves:
+  11 checks pass for actual component health, persistence on restart/switch/reload, immediate
+  repair with discard, collapsed-gear return, crash/replacement and critical warning. Browser console clean.
+- Production build passes, only existing 800 kB chunk advisory. debugDamage absent from
+  production bundle. No runtime package or asset/network dependency was introduced.
+- npm run look and npm run look-world pass with clean page consoles on local headless Chrome.
+  All original screenshots inspected via labeled contact sheets; damage HUD and Repair views
+  also inspected full size. look is extended with both aircraft's damaged HUD/Repair pictures.
+  Screenshots are under /tmp/look-m5a-final, /tmp/look-m5a-world and /tmp/look-m5a-browser-final.
+  Smoke/fire/broken-part and new respawn shots await 5b. No full-M5 frame-time claim yet.
+
+**What bit.**
+- The old stall-speed measurement started with landing flaps at 230 kt. Once overspeed wears
+  wings that measures a damaged aircraft. It now starts below the chosen detent's limit.
+  The old stall recovery held full throttle/landing flaps for two minutes; its pilot now
+  retracts flaps before accelerating through their limit. The screenshot approach fixture
+  also slows to 145 kt before landing flaps. Assertions/tolerances and aircraft fits are not
+  weakened. The final old 737 checks still pass.
+- Game.onFly is async (lazy import). A browser fixture must await it before using flight.
+- The default shell Python has no Pillow; bundled workspace Python has it. No install needed.
+- Server binds and isolated Chrome required sandbox escalation. Port 5175 was occupied;
+  own test server used 5185. Never touched servers on 5173/5174 or stopped the unknown 5175.
+  Own 5185 test server was stopped at the end. User servers were left alone.
+
+**User test, in order.**
+1. Fly the 737 normally and land softly, then firmly. The revised 4a landing tolerance stays.
+2. Try a controlled low-sink belly landing and a hard crash; survive the former, crash the latter.
+3. In browser console during a dev flight: `flight.debugDamage('wingL', 0.5)` or
+   `flight.debugDamage('engineL', 0.5)`. Test the roll/yaw, opposite stick and AP at altitude.
+   Try tail/gear too, separately; reset between tests by explicit hangar repair.
+4. Switch aircraft and reload. Each aircraft keeps its own damage. R/teleport do not heal.
+5. Return to a marked hangar bay or use Open the hangar from the Fly menu. Repair a part,
+   then Repair everything. Repair persists immediately; discarding paint/tuning does not undo it.
+6. Accelerate the 737 with flaps out or operate gear above its limits. Health wears over time,
+   rather than instantly crashing at a placard speed. A normal legal flight should remain sound.
+
+**Still waiting.** The user's feel/gamepad judgment. No smoke, fire, broken meshes, damage
+sound, solid airport buildings or new respawn map yet. Those are 5b. The helicopter and M6
+remain untouched. After their test, fix feedback in tuning/data first, then seek their go-ahead
+for 5b. Commit/push only if they ask in words, to Codex_test only.
+
+
+### 10p. Milestone 5b: airport impacts, effects, sound and respawn (2026-10-21)
+
+Branch `Codex_test`, local Mac working tree on 8559a6a. User said "continue with part B",
+which authorized the second half of the approved FLIGHT_M5_PLAN.md. 5b is built. Milestone 5
+is ready for their test; STOP HERE, no milestone 6 or helicopter. They did not provide a
+separate 5a/4a acceptance report. No packages, commits, pushes, merges or rebases. The 5a
+changes and preexisting HANDOFF history were retained.
+
+**What changed.**
+- New `src/world/AirportStructures.js`: one list of visible/solid boxes for airport hangars,
+  terminals and towers. `AirportMesh.js` draws those exact boxes. Hangars have real side/back
+  walls, doorway jambs/header and roof, with the doorway open. The old painted door over a
+  solid body is gone. Roof overhangs and tower cab/mast boxes also collide. Trees, procedural
+  city scenery, track props and light/windsock poles retain their existing behaviour.
+- New `src/world/AirportCollisions.js`, constructed by `World.js`: analytic swept contacts in
+  absolute coordinates, shared by player/future AI and independent of streaming/graphics/origin.
+  Airport distance/height broad phase, then scalar slab tests against expanded solid boxes.
+  Each physics object owns its hit result and previous rotation. Aircraft part hit spheres
+  are model approximations listed in aircraft.js, not mesh raycasts. A sphere/box expansion is
+  conservative at corners; this is a lightweight proxy model, not exact triangle collision.
+- `AircraftPhysics.js`: earliest contact stops/interpolates position and quaternion just before
+  the wall. Slow impacts damage the actual contact part; above FLIGHT_DAMAGE.objectCrashSpeed
+  (10 m/s normal closing speed, a game setting, not a real survivability claim), crash with
+  reason "hit an airport building". Resting contact below onset does not repeatedly wear.
+  New collision tuning is in tuning.js with ranges/comments. Gear proxies follow the existing
+  99-percent-down contact rule. Missing parts no longer create passive aero forces or hull
+  ground contacts; their object volumes are skipped too. All full-health F-22 results preserved.
+- `aircraft.js` also defines per-part smoke/fire anchors and 737 wing break dependencies:
+  wingL takes engineL with it, wingR engineR. `Damage.js` propagates these in the headless
+  state; loadouts normalization enforces them for saved records. This avoids floating nacelles
+  or invisible live thrust when the wing disappears. Repairing the wing alone leaves its
+  engine needing its own repair; Repair everything restores both.
+- Builders expose arrays of existing mesh references through built.damageGroups. No reparenting,
+  new default geometry or changed default transforms. `Aircraft.js` hides a zero-health wing,
+  tail/fin, gear, or 737 engine and restores it after repair. F-22 integrated engine hardware
+  stays; its flame is suppressed when the engine is destroyed. Wing markings/737 tail logos
+  are included in the hidden groups, so they do not float.
+- New `src/render/DamageEffects.js`: reuses the existing opaque cube Particles pool with an
+  optional capacity argument (car default unchanged). Smoke below .6, flame below .3. No textures,
+  new material types, lights or debris physics. All FX/audio values in DAMAGE_FX in tuning.js.
+  GRAPHICS_LEVELS caps: Low 48 particles/12 emissions per second, Medium 96/24, High 160/40,
+  Ultra 224/56, shared across all parts. Missing external parts do not leave floating fires;
+  a wreck's fuselage and embedded F-22 engines can burn at zero health. Pause freezes particles,
+  rebasing preserves their absolute positions, restart/respawn/switch/exit clears the pool.
+- `FlightAudio.js`: engine gain/note changes with mean engine health, preserving full-health
+  values. Brief synthesized warning on a new/worsening caution/critical condition, cooldown
+  and latching prevent repeats for unchanged damage. Pending warning cancels after repair.
+  Existing audio bus/volume/mute/cockpit filtering reused; no extra audio files or network calls.
+- `MapScreen.js` has a respawn context, reusing its list, raster, markers, mouse pan/zoom and
+  keyboard +/- zoom. Name/distance/runway dimensions and eligibility reason per airport;
+  nearest compatible default. Start mode locked to hangar apron and separate from ordinary map
+  teleport preference. Enter/Space or pad A/Start confirms; Esc/M or pad B opens a small
+  return-to-list/title choice. Back to title button is explicit. Ineligible choices stay visible
+  but disabled. A rejected callback leaves the list open, not a blank paused screen.
+- `FlightPlaces.respawnPose(id)` validates a canonical airport and aircraft eligibility;
+  `FlightGame.respawnAt(id)` checks it again, requires a wreck and keeps the same aircraft.
+  It replaces the destroyed airframe and starts at the chosen hangar apron, velocity zero.
+  R/M/Esc while wrecked open the respawn flow. Ordinary map teleports remain available when
+  healthy. Transient HUD notes clear on relocation, preventing stale airport messages.
+
+**Verification on the final source.**
+- All nine car scripts PASS: check, lap, timing, parts, ai, race, fx, specs, drag.
+- npm run world PASSES, including the three hashes that failed in the old container.
+- npm run flight: 370 pass, six FAIL, only the same preexisting recorded F-22 physics golden
+  mismatches as 10o. No new failure. Before/after comparison against untouched 8559a6a passes
+  all six physics scenarios and all three mesh scenarios. The exact table in 10o is unchanged.
+  No golden edits. Do not call the standard flight command clean or overwrite its hashes.
+- Added headless modules structures.mjs, respawn.mjs and damage-visuals.mjs (registered in
+  check-flight.mjs): rotated/roof/thin-structure sweeps at high speed, doorway clearance,
+  actual 3/160/700 m/s hits, no repeated resting damage, 30/60/144 Hz collision identity,
+  exact hangar poses and eligibility, per-side visibility/repair/dependent engine, every FX
+  budget, flame emission, rebase invariance and pause/clear. Physics step remains allocation-free;
+  the existing and 5a heap checks pass.
+- Existing damage-browser.mjs: 11 lifecycle/storage/repair checks pass with the new respawn flow.
+- New damage-b-browser.mjs: 29 real-page checks pass, clean console. Covers both aircraft,
+  smoke/fire/broken side, repair, respawn layout/default/eligibility, stale ID and rejected
+  callback, real Enter/Escape events, pad confirm/Back/Start, chosen stationary apron/same
+  aircraft/full repair/FX cleanup, warning latch in real Web Audio and title exit/car loop.
+- Production build passes, only the existing 800 kB advisory. debugDamage stripped from bundle.
+- Extended npm run look passes, screenshots in /tmp/look-m5b-suite-final (35 pictures, including
+  both aircraft's smoke/fire/broken wing/Repair/respawn). npm run look-world passes in
+  /tmp/look-m5b-world-final (44 pictures). Its added damage subset also passes, two pictures
+  in /tmp/look-m5b-world-damage: fire at an airport, actual slow terminal contact. That contact
+  survived with fuselage health 0.701779210791603. All 81 suite pictures inspected on labeled
+  contact sheets; new effects, broken 737 wing/engine, respawn, fire/terminal contact also
+  inspected at full size. Browser-specific images in /tmp/look-m5b-final-checked.
+- New damage-performance.mjs: isolated headless Chrome, Medium, 1920 x 1080, render scale 1,
+  actual ANGLE Metal renderer reporting Apple M5. Two ten-second samples after four-second
+  warmup, real flight physics: healthy 597 frames (median 16.7 ms, p95 16.7); burning/damaged
+  601 frames (median 16.7 ms, p95 16.8), 55 live particles, no crash. Other screenshot jobs ran
+  during this measurement. This is evidence for this scene/sample, not a guarantee over the
+  entire world or a substitute for their interactive feel/sound/gamepad test.
+- Own test server on port 5185 was stopped at end; never touched 5173/5174 or unknown
+  5175. Chrome profiles for checks are isolated from the user's browser and saves.
+
+**What bit and how not to repeat it.**
+- Do not edit imported source while screenshot suites run: Vite reloads lose window.flight.
+  One intermediate look-world attempt failed for this reason; the stable-source rerun passed.
+- A stationary respawn's wheels settle vertically for a few frames. Assert zero velocity in
+  the spawn call and near-zero horizontal speed afterwards; do not fail a valid ground spawn
+  because the suspension has a small settling velocity.
+- The car title screen intentionally suspends driving input for menu controls. Title exit
+  verification checks the restored car loop, not input.suspended===false.
+- Step physics AND effects together when making moving smoke pictures. Advancing only FX at
+  a frozen aircraft with nonzero velocity piles particles in front of the source and misrepresents
+  the trail. Frozen ground-fire fixtures can advance FX alone with zero aircraft speed.
+- A 737 wing and its nacelle were initially separate visibility groups. That exposed a floating
+  engine after wing break. The attachment is now a headless data dependency, not just a render fix.
+
+**Test in this order, then wait for notes.**
+1. At an airport, taxi gently into a terminal/hangar wall. Stop with local damage. The hangar
+   doorway is open; the walls, back and roof are solid. A fast hit crashes.
+2. In dev flight, use flight.debugDamage('engineL',0.5) for smoke, then .2 for fire. Judge the
+   warning sound and lower engine note. Pause, switch camera/aircraft, inspect both planes.
+3. flight.debugDamage('wingL',0) removes that wing. On the 737 its engine goes with it. This is
+   severe damage; do this at altitude, then use crash/respawn or repair at the Hangar.
+4. Crash either aircraft. Choose a different eligible airport with Enter or pad A/Start. Same
+   aircraft, fully repaired, stopped at its chosen hangar apron. Try a short runway/heliport in
+   the 737: it must show why it is unavailable. Test Esc/B choices and Back to title.
+5. Repair and switching/reload persistence; full-health F-22 comparison; normal and firm 737
+   landing. All preexisting headless landing checks still pass.
+
+Known scope limits are the approved ones: no procedural city/track/tree collision, physical
+debris, spreading fire, structural g/speed damage, repair economy, weapons or helicopter.
+No new milestone was started. Commit/push only when the user asks in words, Codex_test only.
+
+### 10q. Cockpit, instruments and trip planning revision, plan awaiting approval
+
+Codex_test, 2026-10-21. User reported speed brakes require holding, 737 nose does not look
+right, cockpit visibility/instruments need improvement, and requested aircraft-themed retro
+speed/altitude gauges across cameras, terrain minimap and map trip planning.
+
+Read current FlightInput/Input, FlightHud/Radar, MapScreen/MapData, 737 builder, cockpit
+builder, camera, telemetry integration and project instructions. Existing corner display is
+landmark radar, not terrain map. Cockpit has animated horizon/levers but mostly decorative
+screen geometry. Nose and cockpit shell share one loft-derived skin.
+
+Asked three scope questions. Answers: authentic instrument styles with retro treatment;
+multiple waypoints; user chooses guidance or route AP by cycling AP during flight. Proposed
+Off -> Hold -> Route -> Off, skip Route if invalid. Plan covers three batches with user test
+stops: A toggle/nose/visibility; B profiles/shared telemetry/working panels; C terrain minimap,
+waypoint editing/storage and lateral Route AP. Route holds selected altitude/speed; no auto
+landing or terrain avoidance. Planning origin does not teleport. Trip persists, AP does not
+silently re-engage. Keyboard/pad flow must remain complete.
+
+Full plan, decisions, expected file tree, validation and source links saved in
+FLIGHT_COCKPIT_NAV_PLAN.md. Await explicit plan approval before gameplay edits. No new
+packages, commits, pushes or servers started/stopped in this planning turn. Existing M5
+working tree preserved; baseline caveat in 10p remains. No M6 or helicopter work.
+
+Research: Boeing NG overview and NG image listing; Commons 737-800 cockpit, JAL nose close-up
+and Gol front view, USAF F-22 simulator HUD article. Boeing image direct page returned 403;
+Boeing historical PDF link returned 404. Do not confuse MAX or museum early-737 photos with
+737-800 NG. Source photos are references only; no texture/assets/network calls in game.
+
+### 10r. Cockpit/navigation revision, batch A built, waiting on user test
+
+Codex_test, 2026-10-21. User approved the plan in 10q with "continue with the plan".
+Delivered A only, with the planned test stop before B and C. The earlier milestone 5 work
+is preserved uncommitted. No packages installed, no commits/pushes, no other branch touched.
+
+**Behavior and code.**
+- FlightInput.js emits a one-shot airbrake action on V and unmodified standard-pad B. Holding
+  or key repeat cannot repeat it. Back+B remains mute; releasing Back before B cannot
+  accidentally toggle. Suspended pad polling updates the held-button history.
+- FlightGame.airbrakeLever is independent of transient input state, copied into the fixed-step
+  command. Pause and camera changes preserve it. _place clears it for new flight, hangar,
+  teleport, reset and respawn; switching aircraft clears it too. Existing physical deployment
+  times (F-22 1.2 seconds, 737 1.6), drag/lift behavior and automatic ground spoilers unchanged.
+  The HUD shows actual physical surface travel; note confirms lever deployment/retraction.
+- FlightScreens controls card says toggle, not hold, and no longer falsely says airport
+  buildings are not solid. HANDOFF controls table updated. No car input changes.
+- New render/aircraft/b737Nose.js owns the shared lower nose and upper deck geometry, sill,
+  brow, roof and three framed panes per side. External shell has actual window holes, not
+  glass laid over an opaque tapered tube. Rounded lower nose and fuller upper forehead,
+  swept windscreen, narrower seals/centre post. Model remains a procedural interpretation
+  of photographs, not a measured CAD replica. Keep overall dimensions and physics/proxies.
+- b737.js retains the aft Loft, attaches separate lower/deck/glass/frame meshes, uses existing
+  cached materials/liveries and disposes every geometry. Livery strips stop at the cabin join
+  behind the flight deck; passenger windows stay behind it. Rear/front stripe sampling clamps
+  harmless floating-point endpoint overrun to the Loft, rather than dereference a null section.
+- cockpits.js uses identical shell vertices with BackSide interior material. Separate normal
+  offsets initially opened fine cracks at the brow/roof junction, so do not reintroduce them.
+  No opaque inside glass and no front cap across the view. Floor tapers below panel, rear
+  bulkhead meets cabin at z=12.6, overhead fits the reshaped roof. F-22 interior untouched.
+- B737 cockpitEye and cockpitView.eye both [0.55,1.04,14.1], captain's left seat. It was .82
+  high inside and on the right outside before. New eye clears the existing glareshield while
+  staying inside the glass. Panel gauges remain the old decorative ones for this batch;
+  working/authentic instruments are B, and route/AP cycle and terrain minimap are C.
+
+**References actually opened and inspected.**
+- Kentaro Iemoto JAL 737-800 nose side close-up:
+  https://commons.wikimedia.org/wiki/File:JAL_B737-800(JA304J)_(5001639172).jpg
+- Cory W. Watts Miami Air 737-800 flight deck:
+  https://commons.wikimedia.org/wiki/File:The_Flight_Deck_of_the_Boeing_737-800._(2956276002).jpg
+- Commons page in the browser returned 429; direct thumb.wikimedia.org images worked. The
+  Boeing airport PDF URL researched returned 404. These are reference images, no downloaded
+  assets or runtime texture/network feature. Windshield height was reduced after first render
+  comparison, preserving more white forehead above it. User still judges appearance/feel.
+
+**Final checks.**
+- All nine car commands PASS (check, lap, timing, parts, ai, race, fx, specs, drag).
+- npm run world PASS; production build PASS, only existing 800 kB advisory.
+- npm run flight: 387 PASS, six FAIL, exactly the existing F-22 physics goldens from 10o/10p:
+  takeoff 66ea10a7 vs recorded 3f2cfbfe; scripted 9c751de9 vs 09bf0cef;
+  manoeuvre 7dccc763 vs 4ee079ce; landing 5bc89393 vs 0245d3c6;
+  taxi 7bc6611f vs c28ddd66; parked d7f0a697 vs dc711af3.
+  Unmodified pristine 8559a6a comparison (damage-identity.mjs /tmp/blocky-m5-baseline) matches
+  all six physics hashes and all three F-22 mesh hashes exactly. No golden edits. Do not say
+  npm run flight is clean. Logs /tmp/cockpit-a-{flight,world,identity,build}.log.
+- New flight/input.mjs adds 11 real input-edge checks (keyboard, repeat, pad, modifier order,
+  suspension). New flight/cockpit.mjs adds six geometry/bounds/raycast visibility checks from
+  actual pilot eye (straight, above, runway below, side) and same-eye camera agreement.
+  Both registered in check-flight.mjs. These raycasts are test-only, no runtime ground raycast.
+- New flight/cockpit-a-browser.mjs: 19 checks PASS, clean console, both aircraft. Actual CDP
+  V events; gamepad simulated through navigator.getGamepads. Pause/resume, camera, deployment,
+  retraction, held edges, Back+B sound mute, starts/switching and crash respawn. Simulated pad
+  verification is not physical-controller acceptance. /tmp/cockpit-a-browser.log.
+- That script captures 13 final PNGs in /tmp/look-cockpit-a-final: exterior front/side/three
+  quarter and forward/left/right/down-panel/First person on runway and in air. Eight before
+  pictures in /tmp/look-cockpit-a-before; first iteration in /tmp/look-cockpit-a-first.
+- npm run look extended with 737 look left/right/down-panel: PASS, clean console, 38 pictures
+  in /tmp/look-cockpit-a-suite. Spoiler fixtures now use airbrakeLever instead of transient
+  input.state.airbrake, which FlightGame intentionally overwrites each fixed step.
+- npm run look-world extended with 737 Cockpit approach forward/left/right: PASS, clean
+  console, 49 pictures in /tmp/look-cockpit-a-world. Rebase comparison within same-frame noise,
+  existing terminal slow contact still survives. Logs /tmp/cockpit-a-look{,-world}.log.
+- All final picture sets inspected on labeled contact sheets; nose, forward cockpit, side
+  cockpit, downward panel and approach also inspected full size. Corrected the downward
+  fixture: existing FlightCamera look.y is negative for looking down. Initial positive sign
+  photographed the roof. Existing mouse/pad look semantics unchanged in this geometry batch.
+- Initial browser deployment assertion stepped only one second, short of existing deployment
+  time, so correctly saw 0.8333. Fixed the harness to step two seconds, not physics. External
+  camera fixture initially imported a second Three module and emitted its duplicate-instance
+  warning; replaced with vector clones from scene camera. Final run has no warning. External
+  fixture must call scene.frame after moving camera so the sky follows and shadows settle.
+- git diff --check clean. Runtime physics did not change for A. No new performance guarantee;
+  B must measure its actual working panels. No claims of instruments/navigation delivered yet.
+
+**Test in this order.**
+1. Fly the F-22: tap V, release, check it stays applied; tap again to retract. Repeat in 737.
+   Try controller B, and verify Back+B still mutes without changing speed brakes.
+2. Leave deployed while switching camera and pausing/resuming. It stays deployed. New flight,
+   reset/respawn and aircraft switch start retracted. The 737 can still automatically deploy
+   ground spoilers at idle with wheel weight, even with the manual lever retracted.
+3. Inspect the 737 front, side and three-quarter shape in the Hangar/orbit. Judge proportions
+   against the linked photo. Tell us if the nose is too pointed/blunt or forehead too high.
+4. Cycle C to Cockpit, taxi/take off and approach Meridian. Check runway and horizon visible,
+   look left/right/down, panel/glareshield and window posts do not obstruct the normal forward
+   view. Compare First person at the same captain's eye.
+5. Send notes before B. Instruments remain decorative until B, map/Route AP stay unchanged
+   until C. Do not start another batch or milestone until the user asks.
+
+Own Vite test server was on 5185, stopped at session end. Never touched 5173/5174. Isolated
+Chrome profiles were closed by their scripts; no tests touched the user's saved game/profile.
+
+### 10s. User accepts A and adds exterior/Hangar work to the plan
+
+Codex_test, 2026-10-21. User says everything looks good, then adds:
+1. Update remaining 737 model, especially inaccurate engines; remove random object on rudder.
+2. Teleport to Hangar, fix inability to get back into it after leaving. Replace automatic
+   stopped dwell with an explicit Enter Hangar button. Offer teleport to runway on exit.
+   Normal departure turns aircraft around so the pilot is ready to taxi.
+
+Planning only, no gameplay edits. Updated FLIGHT_COCKPIT_NAV_PLAN.md with a new A2 before
+B/C, marked A accepted. Await approval before A2 implementation; preserve M5/accepted A.
+No tests run for this docs-only revision; prior 10r results remain the implementation baseline.
+
+Findings from code:
+- FlightPlaces.update sets armed=false on automatic entry, and only arms on leaving the bay.
+  Same-aircraft Hangar close from play resumes without leaving/rearming. This is the clear
+  cause of the reported re-entry lockout; explicit button availability should replace the
+  timer/latch, not just call rearm and cause immediate forced reopening.
+- MapScreen/FlightPlaces teleport modes currently apron/runway/air; Airports.start already
+  has a hangar pose facing the door. Add the missing Map mode and a deliberate Enter button,
+  not automatic menu opening after teleport. R hold remains last-airport Hangar shortcut.
+- Existing hangar start offset is fixed at 16 m, while a 737 is long. Use aircraft size and
+  airport layout for safe outward departure, with clear hull/tail/wing footprint, not a blind
+  rotation that places its tail inside the now-solid hangar. Runway exit uses existing
+  eligible runway start; idle throttle, AP off, no automatic acceleration.
+- Current 737 nacelle is a capped Loft with circular dark disk and flat fan bars placed almost
+  on its front face. A2 needs lip/recess, correct silhouette, blades/spinner/exhaust/pylon.
+- Tail ring/disc insignia is positioned at z=-16.4, y=FIN.root+5.2, near the leading edge of
+  the swept fin; the raised badge can extend outside the fin. Likely random object described.
+  Confirm rendered object while implementing; remove raised/floating ornament while retaining
+  real fin/rudder and rudder animation. No screenshot requested because code identifies a
+  plausible cause and it can be checked in the existing local renderer.
+
+Recommended flow is detailed in plan. Button available only grounded/nearly stopped/low
+throttle/not wrecked. Click/Enter/contextual pad A, consuming A to avoid afterburner. Can
+re-enter immediately after normal exit when conditions hold. Two departure actions: Leave
+hangar (outward apron), Teleport to runway. Resolve pending Save/Discard explicitly, preserve
+immediate Repair persistence. Menu-only preview returns to Fly normally; explicit departure
+moves aircraft. Both aircraft, mouse/keys/pad, repeated visit regression checks, eligibility,
+switching/repair/damage/respawn and collision clearance required. Keep aerodynamic model,
+accepted nose and cockpit, dimensions and normal animations unchanged.
+
+Online primary references identify 737-800 engine as CFM56-7B:
+https://www.boeing.com/commercial/737ng
+https://www.cfmaeroengines.com/cfm56/CFM56-5B-CFM56-7B
+Use NG installation photographs at implementation, not MAX LEAP styling. No packages,
+servers, commits or pushes this turn. All changes remain local on Codex_test.
+
+
+### 10t. Approved A2: 737 engines/tail and explicit Hangar visits
+
+Codex_test, 2026-10-21. User approved the addition in 10s with "exicute the plan", then
+"continue" after an interrupted turn. A2 only. Stop for their test before B (working retro
+aircraft instruments) and C (terrain minimap, multi-waypoint planner, Off/Hold/Route AP).
+M5 and accepted A remain in the same uncommitted working tree. No packages, textures,
+external runtime assets, commits, pushes, merges or other branch changes.
+
+**Built.**
+- src/render/aircraft/cfm56.js is a procedural open 737NG nacelle: rounded metallic lip,
+  flattened lower cowl, recessed swept fan/spinner, core exhaust and plug, rear annular
+  closure and a short wing pylon. Twenty-four fan blades share one mesh per engine, rotate
+  with the existing spool value, and remain within the engine's damage ownership. b737.js
+  owns/disposes helper geometry, retains livery bands and accepted nose/cockpit. No thrust,
+  mass, aero or control tuning changes. Audited wing/pylon/gear/tail attachments in pictures.
+- Removed the solid torus/disc tail badge. All insignia now use thin planar shapes on the
+  fixed fin, smaller and positioned clear of its leading edge and moving rudder. Ring is a
+  RingGeometry paint marking, not a solid ornament. Fin, rudder and elevator animation stay.
+- FlightPlaces.availableHangar replaces dwell/armed latch. Grounded (including resting on
+  hull with broken gear), nearly stopped, low throttle, compatible airport and not crashed.
+  HANGAR.entryReach 24 m includes reset/teleport point; clearance 4 m bounds turn placement.
+  Airport arrival/last-airport bookkeeping stays independent. No automatic menu opening.
+- FlightGame creates an independent Enter hangar button (still visible with U HUD hidden),
+  revalidates click/Enter/contextual pad A, captures the actual airport/bay, and removes old
+  dwell HUD progress/hints. R hold still teleports to the last airport's mouth.
+- MapScreen/FlightPlaces include stored Hangar teleport mode, airport eligibility retained.
+  Teleport lands at mouth, then offers entry. Planning/navigation behavior remains for C.
+- Airports.start accepts optional aircraft/zone/outward placement, using size and actual
+  hangar wall location. Normal departure is stationary in that same bay, heading 180 degrees
+  from the entry pose. Runway departure uses the existing selected-airport start and heading.
+  Throttle zero, AP off. Ordinary visits preserve survivor damage and fuel; repairs remain
+  explicit and immediately persisted. Existing teleport/respawn rules remain separate.
+- Hangar physical visits offer Leave hangar and Teleport to runway. Pending paint/load/tune
+  edits or aircraft selection require Save/Discard/Keep editing before that departure.
+  Esc/B requests normal departure or cancels that confirmation. Preview from Fly menu keeps
+  original Save aircraft/Discard return flow. Aircraft switch rechecks runway eligibility;
+  fallback nearest eligible airport now uses the old aircraft's location, not new default 0,0.
+- FlightInput tracks contextual/menu/Back+A usage until A is released. FlightGame polls
+  suspended controls before menu callbacks can resume flight, preventing a held confirmation
+  from engaging afterburner or re-entering. No car input edits. Controller tests are synthetic,
+  not acceptance on a physical gamepad or flight stick.
+
+**References actually inspected online, no image assets added.**
+- Delta official 737-800 side photo: https://news.delta.com/media/image/48166
+- Avio Aero official engine article/photo: https://www.avioaero.com/news/articles/the-salento-hub
+  The close-up shows rounded inlet lip, fan recess, spinner/swept blades and flattened lower
+  casing. Plan also records Boeing and CFM primary references. This is a procedural visual
+  interpretation, not measured CAD fidelity. User judges final proportions and taxi feel.
+
+**Final verification.**
+- All nine car commands PASS: check, lap, timing, parts, ai, race, fx, specs, drag. World PASS.
+- Production build PASS with existing 800 kB chunk advisory. Logs /tmp/a2-{name}.log.
+- Flight: 404 PASS and six preexisting physics golden mismatches. Exact mismatches remain takeoff 66ea10a7 vs3f2cfbfe;
+  scripted 9c751de9 vs09bf0cef; manoeuvre 7dccc763 vs4ee079ce; landing 5bc89393 vs0245d3c6;
+  taxi 7bc6611f vsc28ddd66; parked d7f0a697 vsdc711af3. No golden edits. Same-runtime pristine
+  8559a6a comparison via damage-identity.mjs /tmp/blocky-m5-baseline matches all six physics
+  and three F-22 mesh hashes exactly. Do not claim npm run flight is clean.
+- Headless hangar-flow.mjs covers both aircraft, every compatible airport/bay, repeated
+  availability, 180-degree departure, conservative footprint clearance against shared
+  building solids, movement/throttle/airborne/crash guards, broken gear, finite geometry,
+  inlet recess, removed torus, broken wing's dependent engine/pylon. Registered in flight.
+  Existing check-flight Places tests now assert explicit availability instead of old dwell.
+- Input module adds contextual A, release latch and Enter checks. Browser hangar-browser.mjs
+  exercises actual page, keyboard/mouse and synthetic standard pad in an isolated profile.
+  Includes three visits per aircraft, Save/Discard/Keep editing, repair surviving Discard,
+  fuel/damage, runway alignment, HUD off prompt, crash guards/replacement, second bay,
+  aircraft switch/fallback, Map eligibility/stored mode, held Map A, preview return and fan
+  animation and clear outward camera line. 57 checks PASS, console clean.
+- FlightCamera external views use an obstruction callback; AirportCollisions.cameraFraction
+  reuses the existing swept-box solver with separate scratch for one camera sphere, without
+  changing aircraft collision/damage state. Clearance 1.5 m lives in FLIGHT_CAMERA. Both
+  aircraft departure pictures now show the aircraft, not the Hangar roof. Three analytic
+  heading/clear-sky tests added to structures.mjs; pilot cameras are unchanged.
+- Accepted A cockpit/toggle browser checks: 19 PASS. M5 damage browser: 11 PASS; M5b
+  effects/repair/respawn/audio browser: 29 PASS, all with clean consoles. Tests use isolated
+  Chrome profiles, no changes to the user browser save.
+- npm run look PASS: 41 pictures in /tmp/look-a2-suite. npm run look-world PASS: 51 pictures
+  in /tmp/look-a2-world. Both extended with physical Hangar entry/departure fixtures and
+  clean consoles. Rebase: 601 changed pixels against baseline 621, inside tolerance; slow
+  terminal contact still survives with fuselage health 0.701779210791603.
+- All final PNG sets inspected on labeled contact sheets: suite 41, world 51, A2 close-ups/
+  visits/map 15, accepted cockpit views 13, damage 12. New engine front/side/rear, tail,
+  Save/Discard, map Hangar mode and outward chase view also inspected full size. Accepted
+  cockpit forward/side/panel visibility preserved. No physical-controller or interactive
+  taxi-feel acceptance claimed. User still tests those.
+- Final git diff --check clean; no forbidden Unicode dash characters added. package.json,
+  package-lock.json and car Input.js unchanged. No new dependencies or runtime assets.
+- Only our Vite test server on 5185 was used; stopped after verification. User ports
+  5173/5174 were not stopped. Chrome profiles belong to the scripts and were closed.
+- Reproduce: npm run flight/world/build and all nine car commands, then
+  node scripts/flight/hangar-browser.mjs http://localhost:5185 /tmp/look-a2-hangar;
+  node scripts/flight/cockpit-a-browser.mjs http://localhost:5185 /tmp/look-a2-cockpit;
+  node scripts/flight/damage-browser.mjs http://localhost:5185;
+  node scripts/flight/damage-b-browser.mjs http://localhost:5185 /tmp/look-a2-damage;
+  npm run look -- /tmp/look-a2-suite http://localhost:5185;
+  npm run look-world -- /tmp/look-a2-world http://localhost:5185.
+  Start an isolated Vite server on 5185 first, never stop the user's servers.
+
+**What bit this implementation.**
+- An initial test used await import at script expression top level in CDP; changed to async
+  IIFE. It was a harness syntax error, not a game failure.
+- Fan blades overlapped and were too dark at first; separated and batched them. Pylon initially
+  protruded above the wing; lowered it to meet underside. Rear annulus faced inward and let
+  the scene show through the back; reversed profile winding. Final close-ups checked again.
+- Flat ring initially sat inside the fin bevel and straddled the rudder; moved planar paint
+  to fixed fin face with actual extrusion/bevel offset. No raised badge.
+- Outward 737 departure revealed the long chase camera inside/behind the Hangar roof,
+  obscuring the aircraft despite safe hull placement. A render-only obstruction guard is
+  verified using existing airport collision boxes; no aircraft move or forced view change.
+  This is render-only and leaves the camera's desired distance intact, so it returns as
+  space clears. No raycasts, no frame-rate guarantee inferred from headless screenshots.
+
+**User test order.**
+1. Inspect 737 engine front/side/rear and tail in Hangar/orbit, compare the linked references.
+2. M map, pick compatible airport, At the hangar, Teleport. Confirm it waits for entry; click
+   Enter hangar or press Enter. U hides flight HUD but leaves the entry button usable.
+3. Leave hangar, confirm nose faces out and aircraft is stopped, clear and visible. Taxi,
+   then stop and re-enter; repeat three visits in both aircraft. Try contextual pad A.
+4. Change paint/load/tune, select departure, try Keep editing, then Save or Discard. Repair
+   damaged parts and discard a cosmetic edit; repair stays. No free survivor repair/refuel.
+5. Try Teleport to runway, check selected airport/runway alignment and idle throttle. Switch
+   F-22 to 737 from a short field, confirm explained move to a compatible airport.
+6. Send notes before B/C. Existing V/pad B toggles remain, Hold AP only until C. Helicopter
+   and milestone 6 stay unstarted.
+
+
+### 10u. Cockpit/navigation revision batch B: working aircraft instruments
+
+Codex_test, 2026-10-22. The user asked "continue with the next step of this part" after
+A2. This authorizes the next batch B in FLIGHT_COCKPIT_NAV_PLAN.md, not milestone 6.
+Built B only, preserving M5, accepted A and A2 in the same local uncommitted tree.
+Stop for user readability/visibility feedback before C. No new packages, external assets,
+textures, runtime network calls, commits, pushes, merges or other branch changes.
+
+**Architecture and files.**
+- data/aircraft.js selects instrumentProfile '737ng' or 'raptor'. New
+  data/flightInstruments.js owns profiles, palettes, display mount/layout data and shared
+  speed/altitude scale rules. Each profile identifies its intended display family. Unknown
+  IDs use a safe generic glass profile. This is a data extension point for future aircraft;
+  it does not invent an authentic design for an unknown model automatically.
+- flight/FlightTelemetry.js creates and updates one read-only render snapshot. SI physics
+  fields, converted CAS/TAS, Mach, MSL altitude, AGL, climb, pitch/bank/heading, flight path
+  from alpha/beta, AoA/G, throttle, fuel, AB reserve/lock, gear/flaps/speedbrake, wheel brake,
+  steering/park, AP selected targets/mode, per-part health/severity and nearest airport.
+  Engine values are actual Engine.n*100, fuelFlow*3600 kg/h and thrust/1000 kN. Label Spool
+  instead of N1: n is the simulation's relative spool, with zero at idle. No invented EGT,
+  oil pressure, temperature, magnetic variation, ILS, radio or combat values.
+- FlightGame samples before scene rendering even with U off, then gives that same snapshot
+  to physical panels and FlightHud. Health, warning priority and units have one source.
+  No control commands or aircraft physics changes. Navigation markers are absolute world
+  coordinates, so origin rebasing cannot move instruments relative to their map information.
+- flight/InstrumentDrawing.js owns renderer-neutral vector strokes, clipped attitude/pitch
+  ladder, moving speed/altitude tapes, heading-up landmark display, engine arcs, systems,
+  standby, mode control and F-22 HUD. Its small procedural glyph table is compiled into
+  horizontal runs once, no bitmap/texture assets. Canvas and cockpit use the same strokes.
+- render/aircraft/FlightInstruments.js emits one bounded vertex-colour triangle batch per
+  physical display. Rect/line fast paths avoid per-glyph array allocation; polygon winding
+  accepts both directions and always faces the seated pilot. Materials.instrumentInk is
+  the shared unlit vertex-colour material, with no textures. Geometry is disposed by the
+  existing interior ownership traversal. No persistent callbacks or per-panel timers.
+- FLIGHT_INSTRUMENTS in tuning.js: refreshHz 30, maxVertices 24000 per surface, navRange
+  20000 m, hudPitchSpan 40 degrees, each with comment/range. Display budgets only, not
+  fixed-step simulation. Peak headless surface 10962 vertices; ordinary whole cockpit about
+  33750 F-22 / 41136 737 vertices. Positions/colours capacity about 4.03 / 4.61 MB respectively.
+- cockpits.js mounts actual displays on modelled panels, replaces decorative gauge shapes,
+  preserves mechanical controls and shell/windows. 737: captain/FO PFD and ND pairs, upper
+  engine screen, closer lower centre systems display, standby flight readout, working MCP
+  targets. Lowered yokes, angled panel toward pilot, shortened pedestal so it cannot cover
+  warning/health rows; gear knob kept outside lower screen. MCP clears the glareshield.
+- F-22: green working HUD, primary flight/navigation/engine screens, lower systems screen
+  and two up-front control/status displays. Side stick and lower consoles clear the displays.
+  The exterior fuselage is a continuous loft, with no cockpit recess: it hid the lower
+  systems panel. AircraftBuilder now exposes that unchanged mesh as cockpitShell; Aircraft
+  excludes just that shell from the close overlay pass in Cockpit, retaining it in the
+  world pass. Interior draws in the cleared-depth overlay. Other views and repaint restore
+  original layers. F-22 exterior geometry/materials and all three mesh hashes unchanged.
+- ui/FlightInstrumentDraw.js is the external Canvas2D adapter. FlightHud uses the profile's
+  primary/navigation/engine/systems displays in Chase/orbit; F-22 First person uses green HUD
+  symbology. Physical Cockpit hides floating gauges and warning duplicates. U only hides the
+  screen overlay, not the physical panels. Service notes, reset progress, camera and location
+  labels remain separate. Canvas aria labels and a text health mirror expose actual values.
+  Existing radar object is retained as a hidden landmark registry until C; no duplicate disc.
+- No terrain minimap, trip planner or Route AP yet. Navigation panels currently show compass,
+  airport/runway/track markers, range and nearest airport distance/bearing/eligibility. P and
+  D-pad Down still toggle existing Hold. AP targets use chosen display units and true heading.
+
+**Future aircraft/profile contract.**
+Choose/add a profile in data/flightInstruments.js and reference its key in the aircraft data.
+Panel specs declare id/type/parent, body-mount position, physical size and logical vector
+view size. A cockpit builder passes named parent groups to createInstrumentSet and returns
+that set as interior.instruments. finish(group) applies layer 1. Interior.dispose owns all
+child geometry; shared Materials.js materials are not disposed by each panel. Generic
+fallback provides working primary/nav/systems on the placeholder interior. Add real model
+instrument styling explicitly when that aircraft is implemented, including the helicopter
+if the user brings it back. Do not add sensors the simulation does not have.
+
+**References researched this batch.**
+- Boeing NG design overview: https://www.boeing.com/Commercial/737ng/737-next-generation-design-highlights
+- Boeing NG display image listing: https://secure.boeingimages.com/archive/The-Boeing-737-Next-Generation-Flight-Deck-2F3XC5KE3X4.html
+  Search-index description confirmed LCD flight deck; direct page returned 403. Prior A
+  flight deck/nose photos remain in 10r and the plan. No reference images shipped as assets.
+- USAF F-22 simulator/photo: https://www.af.mil/News/Article-Display/Article/134990/sheppard-airmen-check-out-raptor-simulator/
+- USAF side-stick explanation explicitly names the F-22:
+  https://www.aftc.af.mil/About-Us/History/On-This-Day-in-Test-History/Article-Display-Test-History/Article/2272288/august-11-1956-f-102-side-stick-testing/
+These are recognizable instrument-family interpretations of the simulated systems, not
+full avionics replicas. Keep the user's aircraft-authentic with retro styling decision.
+
+**Verification complete.**
+- All nine car commands PASS, npm run world PASS, production build PASS with existing
+  800 kB advisory. Logs /tmp/b-{check,lap,timing,parts,ai,race,fx,specs,drag,world,build}.log.
+- npm run flight: 422 PASS, six preexisting recorded Mac physics golden mismatches:
+  takeoff 66ea10a7 vs3f2cfbfe; scripted 9c751de9 vs09bf0cef; manoeuvre 7dccc763 vs4ee079ce;
+  landing 5bc89393 vs0245d3c6; taxi 7bc6611f vsc28ddd66; parked d7f0a697 vsdc711af3.
+  Unmodified 8559a6a same-runtime comparison matches all six physics and three F-22 mesh
+  hashes exactly, /tmp/b-identity.log. No golden changes. Do not claim flight suite clean.
+- New flight/instruments.mjs registered in check-flight: 18 checks for heading wrap, unit/AP
+  conversions, non-mutating snapshot, actual engine values, warning priority, finite/facing
+  geometry under extreme pitch/bank, budget/no textures/layers, GPU disposal, generic future
+  fallback and shell layer restoration. Physical matrices/strokes tested, no test-only
+  raycasts introduced to runtime. Existing nose visibility ray tests still pass.
+- New instruments-browser.mjs: 31 checks PASS, console clean, both aircraft. Keyboard U,
+  actual movement of physical vertex buffers, no Cockpit overlay duplicates, three unit
+  systems, profile themes, First person, AP targets, damage, bank/pitch, origin rebase,
+  respawn, repeated switch/disposal, reload and 1280x720 non-overlapping external layout.
+  27 final PNGs in /tmp/look-b-final, all inspected on labeled contact sheets. Both seated
+  forward views, 737 mode-control/lower systems and F-22 HUD also inspected full size.
+- Existing A2 Hangar checks: 57 PASS. Accepted A cockpit/toggle: 19 PASS. M5 damage persistence:
+  11 PASS. M5b effects/audio/repair/respawn: 29 PASS, clean console, 12 PNGs in
+  /tmp/look-b-damage. Isolated Chrome saves only; physical gamepad feel remains untested.
+- Extended npm run look PASS: 45 PNGs in /tmp/look-b-suite. npm run look-world PASS:
+  53 PNGs in /tmp/look-b-world. Console clean. Rebase difference 608 pixels versus baseline
+  624, within tolerance; slow airport wall contact survives with fuselage health
+  0.701779210791603. Final production build rerun after the last CSS change, PASS.
+- All 27 specialist, 45 look, 53 look-world and 40 combined A/A2/M5b regression pictures
+  inspected on ten labeled contact sheets. Checked panel clearance, bank/pitch, units,
+  night contrast, damage/repair/respawn, exterior views, Hangar departures and small HUD.
+  git diff --check clean. Controls reread from both Input.js and FlightInput.js.
+- Stopped only this batch's Vite server on 5185 (session 95012); port confirmed clear.
+  User dev servers on 5173/5174 were left alone. Implementation and memory files remain
+  local and uncommitted on Codex_test; nothing was pushed. No package or lockfile changes.
+
+**Measured performance, real local Apple M5 GPU, 1920x1080, Medium.**
+New instruments-performance.mjs uses isolated Chrome, four seconds warm-up, eight seconds
+measurement each case (481 frames), live physics and actual renderer. ANGLE Metal Renderer:
+Apple M5. Does not certify other graphics levels or interactive controller feel.
+
+| Aircraft/view | Frame median/p95 ms | Render CPU median/p95 ms | Physical batch median/p95 ms |
+|---|---|---|---|
+| F-22 Chase | 16.7 / 16.8 | 2.3 / 3.6 | 0.3 / 0.6 |
+| F-22 Cockpit | 16.7 / 16.7 | 3.4 / 4.4 | 0.4 / 0.5 |
+| 737 Chase | 16.7 / 16.7 | 2.5 / 3.5 | 0.5 / 0.7 |
+| 737 Cockpit | 16.7 / 16.7 | 3.3 / 4.5 | 0.5 / 0.7 |
+
+Physical batch timing forces CPU rebuild 100 times, independent of the frame timing samples;
+actual refresh is capped to 30 Hz. Frame results are consistent with 60 fps in these captures,
+not a blanket guarantee for all locations/graphics settings. Console clean, neither aircraft
+crashed. /tmp/b-performance.log. Later cosmetic panel/console clearance adjustments keep the
+same batches and capacity. Do not compare these numbers to simultaneous GPU screenshot runs.
+
+**What bit this batch.**
+- Prototype lines/arcs vanished because line quads and rectangles had opposite winding.
+  Batched polygon adapter now normalizes winding; headless facing checks protect it.
+- Enlarged 737 primary screens exposed old yoke overlap. Lowered wheel without changing
+  animation or control physics. Lower systems display needed a closer/larger mount, proper
+  panel angle, and a shorter pedestal so neither nav labels nor the warning row is covered.
+- F-22 lower display was underneath the unchanged external loft; fixed close overlay layer
+  ownership rather than altering exterior vertices or hiding wings. Pilot views are still
+  separate, and switching/repainting must preserve the shell-layer restoration.
+- Engine n is not real N1. Retain Spool naming and actual kg/h/kN. Do not invent EGT/oil
+  or pressure readings to make the real layout appear busier.
+- Resetting camera mode alone does not reset FlightInput.look. Test fixtures must explicitly
+  clear look before each aircraft/forward shot, otherwise a previous look-down contaminates it.
+- Git fetch initially hit restricted .git/FETCH_HEAD, then succeeded through the approved
+  escalation. No checkout/pull over the dirty implementation tree. Codex_test still 8559a6a.
+
+**User test order.**
+1. 737, cycle C to Cockpit. Start on runway, look forward then down with held right mouse
+   (middle in mouse-flight, pad hold R3/right stick). Check speed/altitude and text readability,
+   window/runway view, yoke clearance, lower systems and mode-control targets.
+2. Take off; check tapes, horizon/flight path, climb, heading, fuel and separate engine spools.
+   Turn/bank and change throttle/flaps/spoilers/brakes/gear. Confirm numbers move with systems.
+3. P engages Hold in eligible flight; adjust arrows/W/S and check displayed targets. Switch
+   units from pause and compare Cockpit, First person and Chase. U hides overlay while
+   physical displays continue. Try night setting to judge contrast.
+4. F-22 repeat, inspect green HUD and six panels, look down at lower health/systems display.
+   Inspect alerts/part health after damage, repair/respawn, and aircraft switches. Check that
+   old warning/AP states do not survive a replacement. Existing Hangar flow remains usable.
+5. Send readability/visibility/style/performance notes before C. Terrain minimap, waypoint
+   planning and Route autopilot remain approved but unstarted until the next requested batch.
+
+### 10v. B user-test corrections: HUD fit, panel containment, lower views and power response
+
+Codex_test, 2026-10-22. User supplied two cockpit screenshots and asked for:
+1. F-22 HUD glass/frame large enough to contain every number/symbol.
+2. 737 instrument housing contained within the nose and access to the lower panels; their
+   screenshots were the lowest view they could reach during play.
+3. Quicker acceleration for both aircraft and about 80% less first-person afterburner/Mach-1
+   shaking, which they described as nearly unplayable.
+4. Add the F-22 exterior/body remodel and less arcade, more realistic sound to Part C.
+
+The first three are this B follow-up. C's navigation scope is preserved and expanded in
+FLIGHT_COCKPIT_NAV_PLAN.md. Do not implement C during this retest, and do not start combat
+or helicopter work. No commits/pushes or package changes. All earlier local work preserved.
+
+**Built and why.**
+- F-22 HUD glass, four frame bars and vector surface now share one tilted parent transform.
+  Previously separate transforms left the symbols/frame at different slopes. Enlarged
+  glass .26 x .19 -> .34 x .26 m, enlarged symbols .255 x .18 -> .28 x .20 m, retaining a
+  physical border on every side. Instrument stroke data and long-number tests fit on glass.
+  Files: render/aircraft/cockpits.js and data/flightInstruments.js.
+- 737 main instrument assembly moved aft .32 m. Shortened glareshield depth .60 -> .40 m
+  and moved it aft .42 m, leaving its corners inside the actual nose. Moved lower systems
+  and pedestal aft with the main panel so neither is buried. Standby unit moved left and
+  narrowed to clear the yoke, without changing the yoke animation or control authority.
+  Named main-panel, lower-bulkhead, glareshield and MCP housings for containment diagnostics.
+- FlightInput vertical free look had reversed signs: dragging the mouse down or right
+  stick down looked UP. Both now look down. The mouse-flight branch used to intercept
+  middle-button movement before the look branch, so middle look did not work at all.
+  Look now takes priority while held, leaving the virtual stick unchanged. Existing
+  1.4-radian limits and return spring retained. No new controls or pointer-lock behavior.
+  Pause controls explicitly say drag down for lower panels. Actual CDP mouse input tested.
+- tuning.js FLIGHT_CAMERA eyeShakeScale and eyeKickScale are .2 (ranges 0-1): First person
+  AND Cockpit get 80% less positional shake and Mach-crossing FOV punch. This scales the
+  existing combined effect, including stall tremor. Chase/orbit keep their amplitude.
+  World and overlay still use exactly the same camera transform. No flight dynamics change
+  from camera scaling. Files: tuning.js and render/FlightCamera.js.
+- Faster power is a response tune, not fictitious engine ratings: FLIGHT.throttleRate
+  .35 -> .65 fraction/s; b737 override .18 -> .35. New engineSpoolUpScale .55 and
+  engineAbUpScale .65 multiply existing engine time constants once in AircraftPhysics's
+  constructor. Actual data/aircraft.js rated thrust, drag curves, mass and top-end power
+  unchanged. Runtime Engine fuel/thrust/damage behavior unchanged. Shortens arrival of
+  power, not sustained acceleration once engines have settled. No allocation in step().
+- First 737 landing regression failed (field lengths about 1842 to 1883 m against 1600 m
+  plus 10% tolerance): faster manual lever had doubled the AP speed-loop authority. Reduced
+  AUTOPILOT.b737.kSpdA .5 -> .26 to preserve lever authority. Final four-airport landings
+  pass at 1642 to 1648 m, touch down 386 to 388 m with 1.5 to 1.6 m/s sink. No weakened
+  acceptance limits, no landing pilot or braking changes. Existing Hold checks pass.
+
+**Measured power response, same 120 Hz simulation.**
+3000 m altitude, 50% fuel, gear up, idle initial engines; hold W from time zero, F-22 also
+holds afterburner. F-22 begins 150 m/s, 737 begins 100 m/s. Same altitude-hold pilot in both
+before/after, 1200 steps. Values are in-game response measurements, not real-aircraft claims.
+
+| Aircraft | Old 10-second speed gain | New gain | Improvement |
+|---|---|---|---|
+| F-22 | 58.82 m/s | 67.60 m/s | about 15% |
+| 737 | 13.87 m/s | 17.60 m/s | about 27% |
+
+F-22 final altitude 3017.3 vs 3017.5 m, 737 2910.2 vs 2899.2 m. New results do not come
+from diving lower. For more sustained acceleration after spool-up, discuss a separate
+explicit thrust/drag tune using traces; do not claim this response pass raises steady thrust.
+
+**Verification.**
+- All nine car suites PASS, world PASS, production build PASS (old 800 kB advisory).
+  Logs /tmp/b-feedback-{check,lap,timing,parts,ai,race,fx,specs,drag,world,build}.log.
+- Full flight: 434 PASS, six retained recorded F-22 physics golden failures. IMPORTANT:
+  these are no longer unchanged results. The user explicitly asked for quicker acceleration,
+  and the response tune intentionally changes all six normal hashes. Goldens left untouched:
+
+  | Scenario | Normal result now | Recorded golden |
+  |---|---|---|
+  | takeoff | 43755769 | 3f2cfbfe |
+  | scripted | efc81f03 | 09bf0cef |
+  | manoeuvre | 83f47016 | 4ee079ce |
+  | landing | 487530f2 | 0245d3c6 |
+  | taxi | 267e9520 | c28ddd66 |
+  | parked | 3d160d7c | dc711af3 |
+
+  All other flight checks, including published cruise/top speed, takeoff/landing, Hold,
+  damage, input, frame-rate invariance and geometry pass. /tmp/b-feedback-flight-final.log.
+- Existing damage-identity.mjs now accepts optional --legacy-response: temporarily restores
+  ONLY throttleRate .35, engineSpoolUpScale 1 and engineAbUpScale 1 for the diagnostic,
+  then restores the current knobs in finally. With this flag, all six pristine same-runtime
+  physics and three F-22 mesh hashes match exactly. /tmp/b-feedback-identity.log.
+  Command: node scripts/flight/damage-identity.mjs /tmp/blocky-m5-baseline --legacy-response.
+  Without the flag the comparison correctly fails because acceleration is now different.
+- New registered flight/cockpit-feedback.mjs: 12 headless checks PASS. Real shell ray
+  containment for all 737 housing vertices, high-number/damage HUD strokes inside glass,
+  mouse/mouse-flight/pad look, actual camera displacement/FOV scaling, external amplitude,
+  before/after speed gains with altitude sanity guard. Existing 18 instrument checks pass.
+- New cockpit-feedback-browser.mjs: 11 PASS, clean console, 20 PNGs in
+  /tmp/look-cockpit-feedback, at 2048 x 1184 approximating the user's screenshots. Actual
+  right and middle mouse events, lower views, release return, units/night/fast-high warning.
+  Test sets mouseFlight directly to isolate the existing event path; it does not certify a
+  physical flight stick or browser-specific pointer-lock permission behavior.
+- Existing B browser suite: 31 PASS, clean console, 27 PNGs in /tmp/look-feedback-instruments.
+  Camera/unit/U, AP targets, damage, reload, switch/disposal, rebasing and small HUD layout.
+- Extended look PASS, clean console, 45 PNGs in /tmp/look-feedback-suite.
+- Extended look-world PASS, clean console, 53 PNGs in /tmp/look-feedback-world. Rebase
+  difference 572 pixels versus 593 frame-noise control, inside tolerance. Airport wall
+  contact still survives with fuselage health 0.701779210791603. First attempt was interrupted
+  by Vite HMR after editing a source file while the script was running, then a full rerun
+  passed without edits. Keep source saves out of browser capture/performance runs.
+- All 20 feedback, 27 instrument, 45 look and 53 world PNGs inspected on 12 labeled
+  contact sheets. F-22 high-altitude warning HUD and corrected 737 lower/standby view also
+  inspected full size. Pause hint text fits the control card in the final world pictures.
+  User comfort/readability and physical controller feel still require their retest.
+- Final Medium/1920 x 1080 capture, real Apple M5 Metal renderer, four seconds warm-up and
+  eight seconds sampling per case: 480/481 frames each, all frame medians 16.7 ms; p95
+  16.7 ms except 737 Chase 16.8 ms. Render CPU median/p95 ms: F-22 Chase 2.2/3.1,
+  F-22 Cockpit 2.8/4.0, 737 Chase 2.4/3.1, 737 Cockpit 2.6/4.0. Physical batch CPU
+  median/p95: .4/.7, .4/.6, .5/.7, .5/.6 respectively. Same buffer capacities, console
+  clean, no crashes. /tmp/b-feedback-performance.log. Consistent with 60 fps in these
+  samples, not a guarantee for every location, graphics setting or interactive input.
+- Final build and git diff --check pass; additions/untracked source checked for forbidden
+  dash characters. Controls reread from Input.js and FlightInput.js. No package/lockfile or
+  car input edits. Only own test Vite on 5185 stopped; user 5173/5174 servers left alone.
+  All work is local and uncommitted on Codex_test at 8559a6a, nothing pushed.
+
+**References and C additions.**
+Checked NASA excess-thrust explanation: acceleration depends on thrust minus drag and mass,
+https://www1.grc.nasa.gov/beginners-guide-to-aeronautics/excess-thrust-thrust-drag/ .
+USAF fact sheet retains F-22's 35,000-pound-class engines, no new rating invented:
+https://www.af.mil/About-Us/Fact-Sheets/Display/Article/104506/f-22-raptor/ .
+Expanded C plan links USAF/Lockheed three-view and photographs for the F-22 body; NASA fan/
+jet/core noise reference for aircraft-specific procedural audio and a NASA pilot interview
+for Mach-1 viewpoint treatment. Those are references, no assets shipped. C now includes:
+- Original terrain minimap, multiple waypoint planner and Off/Hold/Route AP.
+- Reference-led F-22 fuselage/chines/canopy/wing junction/intake shoulders/aft body/tails/
+  nozzle silhouette; preserve dimensions, animations, cockpit clearance and damage ownership.
+- Separate 737 fan/rumble and F-22 turbine/exhaust voices, smoother real-spool response,
+  wind/cockpit filtering, less repeating arcade pitch/pulse, retained warnings/mute/damage.
+  No new packages or recordings. Actual listening and user feedback required for acceptance.
+
+**Retest order before C.**
+1. C to F-22 Cockpit. Check the larger HUD border at idle and high speed/altitude. Hold
+   right mouse and drag DOWN to see the entire lower systems panel; hold R3 and move right
+   stick down on a pad. T mouse-flight: hold middle button and drag down, check no steering.
+2. Repeat in the 737: forward windshield view, look left/right/down, main/standby/lower
+   systems, and MCP. Check the rectangle stays inside the nose. Release look to recenter.
+3. From idle add W on each aircraft; F-22 add Shift. Judge quicker response. Check Hold
+   targets/landing handling still feel appropriate. This improves power arrival, not full-
+   spool steady thrust. Existing tune/payload/fuel selections still affect the aircraft.
+4. F-22 First person and Cockpit with afterburner and through Mach 1: judge the remaining
+   20% shake/kick. External camera deliberately keeps its effects. Sound is not revised yet.
+5. Send visibility/response/comfort notes. Stop here, then start expanded C on the user's
+   instruction. No commit or push unless explicitly asked in words.
+
+### 10w. Part C transfer prompt for a new chat
+
+Codex_test, 2026-10-22. User asked if Part C is already in the handoff and requested a
+prompt for a new chat. Confirmed the expanded scope is recorded in 10v and the full
+FLIGHT_COCKPIT_NAV_PLAN.md. Created FLIGHT_PART_C_PROMPT.md, a self-contained pasteable
+prompt with the actual local checkout, branch, reading order, current state and boundaries.
+
+Part C remains unstarted: shared terrain minimap and cockpit map, multiple-waypoint trip
+planning/persistence, Off/Hold/Route autopilot, reference-led F-22 exterior and more realistic
+aircraft-specific procedural sound. All decisions and verification details stay in the
+plan and 10v. No B feel/readability acceptance was inferred from this transfer request.
+
+Important carry-forward facts are in the prompt: preserve the large dirty/untracked local
+tree; no pull/reset/clean/branch replacement over it; no commit/push; 5173/5174 untouched;
+current response tune and 80% pilot-view shake reduction already built; six intentional
+normal-physics hash changes with retained goldens; --legacy-response baseline diagnostic;
+/tmp pictures/logs/baseline may disappear and are not durable memory. A new local chat can
+read the files directly; GitHub-only or cloud chats cannot see this uncommitted working tree.
+
+The user's intervening keyboard look question did not request a code change: right mouse
+held looks around, middle button in mouse flight, held R3/right stick on pad. No keyboard-
+only look bindings exist. Do not invent an approved IJKL/numpad look task from that question.
+
+This transfer turn changes markdown only. Input.js and FlightInput.js reread for controls;
+git diff --check and new prompt character/reference checks pass. No dev server started,
+no tests rerun for documentation, no commit or push. Paste the new prompt in a chat attached
+to /Users/harrisoncohen/Documents/racing-game to begin C on the existing work.
+
+### 10x. Saved flight FOV slider before Part C
+
+Codex_test, 2026-10-22. User requested an FOV slider before moving to C because the fixed
+view made it hard to see all instruments. Added the actual control and updated the Part C
+transfer prompt. C still unstarted, no B acceptance assumed, no commits/pushes/packages.
+
+Built:
+- Fly and flight pause menus contain Field of view, a native mouse-draggable range slider
+  with degree readout and +/- buttons. Keyboard left/right or menu gamepad left/right changes
+  one degree, Enter/Space/A also steps as other settings do. Menu focus stays on the row.
+- tuning.js FLIGHT_CAMERA userFovMin 55, userFovMax 110, userFovDefault 78, userFovStep 1,
+  comments/ranges supplied. These are vertical degrees, confirmed from installed Three.js
+  PerspectiveCamera source documentation. Default preserves the old Cockpit angle.
+- FlightGame loads/saves flight.fov through Storage and owns setFov/_fovRow. Camera owns
+  normalizeFlightFov: finite numeric values clamp/round; absent or malformed data uses 78.
+  The setting survives aircraft switch/configuration, pause, camera change and page reload.
+- FlightCamera.userFov supplies the selected base angle for all four flight views, so
+  camera changes or speed cannot override the user's preference. The previous speed-based
+  widening is disabled for gameplay with a selected FOV. Existing small Mach kick remains,
+  capped at 110; First person/Cockpit retain the prior 80% comfort reduction. Near/far rules
+  remain separate while world/overlay projection angles match. Physics/eye position unchanged.
+- RaceScreens.Menu has optional range row support; only FOV opts in. Other menus retain
+  their previous stepper. Native input click stops row activation to prevent an extra step;
+  focus synchronizes the row index, input updates storage/value, paint synchronizes thumb.
+  styles.css adds one .race-range rule. No car FOV, input, geometry, physics or audio changes.
+
+Verified:
+- New scripts/flight/fov-browser.mjs: 18 actual-page checks PASS, clean console. Tests native
+  mouse slider, keyboard single increment (no native/menu double step), gamepad menu path,
+  both aircraft, all camera modes, world/overlay agreement, Mach maximum clamp, no aircraft
+  movement from changing view, pause/Fly agreement, reload, malformed storage, menu fit at
+  1280x720 and existing car volume/menu behavior. Isolated Chrome save, synthetic pad menu.
+- Eight PNGs in /tmp/look-flight-fov, all visually inspected on /tmp/fov-contact.jpg; small
+  pause menu inspected full size too. Both cockpits at 78 and 110 show the expanded panel
+  coverage. Higher FOV makes instruments smaller; downward look still accesses lower panels.
+- npm run build PASS with the existing 800 kB chunk advisory; /tmp/fov-build.log. git diff
+  --check and forbidden-dash checks pass. No full physics/world/car suite rerun for this
+  settings-only addition; the last full results and six golden caveats remain in 10v.
+- Test server was only own 5185, user 5173/5174 left alone. Stop own server after verification.
+- Own 5185 server stopped after verification, port confirmed clear. Existing 12 cockpit
+  feedback headless checks also pass, including original standalone camera shake behavior.
+  All changes remain local/uncommitted on Codex_test, including the updated prompt.
+
+User test: Esc, select Field of view, drag toward 95 to 110 and resume. Compare 737 and
+F-22 Cockpit panels, look down, switch cameras/aircraft and reload to check the saved choice.
+Fly menu offers the same setting. Keep this feature when implementing C and its F-22 remodel.
+
+### 10y. Part C: terrain navigation, trip planner, Route AP, F-22 exterior and audio
+
+Codex_test, 2026-10-22. User explicitly requested the complete approved Part C in the
+existing local checkout, preserving all dirty/untracked M5/A/A2/B/FOV work. This section
+supersedes earlier statements that C is unstarted. Do not infer formal B or C acceptance.
+Stop after C for user testing. No helicopter, combat or milestone 6 work. No commits,
+pushes, merges, rebases, pulls, branch changes, packages, textures or runtime network calls.
+Remote refs fetched only; branch remains Codex_test at 8559a6a. Initial local work backed
+up to /tmp/blocky-before-part-c.tar.gz before editing, but that is disposable scratch.
+
+**Built navigation and planning.**
+- world/FlightMapCache.js owns one WeakMap-cached raster per world, using the existing
+  MapData height/biome/coast samples. FlightGame starts it before the full map ever opens.
+  FLIGHT_NAV.cacheMs limits generation to about 2 ms per frame (one row is the minimum
+  work unit). Canvas upload only when its revision changes. Full map/external navigation
+  share that canvas. Physical displays read its RGBA into a bounded 22 by 22 vector mesh,
+  no CanvasTexture. MapData airport markers now use actual runway centres, not the offset
+  platform centres. All airport/runway markers and sampled real track centrelines share
+  the cache registry, including automatically discovered tracks.
+- ui/FlightMapView.js supplies north-up transforms, clipped overlays, track/runway strokes,
+  ownship rotation, planned/active route and active stop. InstrumentDrawing.navigation
+  uses it for both cockpit and themed external HUD; Canvas crops the cached terrain.
+  Shared scale, north indication, heading, range and progress. External Map zoom buttons
+  and planner Navigation zoom buttons control both physical and external range. No new
+  flight keybindings. Physical panels continue with U off. Existing Radar object is hidden
+  and retained only for its regression-compatible landmark registry; no visible old disc.
+- flight/FlightRoute.js is headless, absolute coordinates, no render-origin dependency.
+  One version-1 trip: null origin means capture live position at activation; fixed origin
+  is retained. Up to 24 ordered stops, final stop is destination, labels/airport IDs bounded,
+  finite world-bounded coordinates and 50 m minimum adjacent spacing. Invalid saved trips
+  recover empty. Invalid edits retain the old trip with a reason rather than erase it.
+  FlightRouteStore.js uses existing Storage under flight.trip. Progress and AP engagement
+  are never persisted. Aircraft switches/spawns preserve the planned trip, clear guidance.
+- MapScreen has explicit Plan a trip versus Teleport options. Mouse click picks a marker or
+  arbitrary point. Origin can be live or selected; add airports/points, select stops, move
+  up/down, delete, reverse, activate nearest forward leg or a selected leg, cancel and clear.
+  Incompatible airport stops remain navigable and list why the aircraft cannot land there.
+  Activation shows leg selection before AP use. Planning does not move, repair or refuel
+  aircraft. Teleport/Hangar and crash respawn retain their separate eligibility checks.
+- Keyboard: Tab accesses Plan a trip and buttons; Up/Down or W/S cycles planner actions,
+  Enter/Space chooses. Move map cursor then arrows/WASD moves the cursor, Enter/Space adds;
+  Escape returns to buttons. Mouse uses the same actions. Standard pad: Up above the first
+  airport focuses Plan a trip, A opens; menu directions cycle buttons, A chooses. Cursor
+  uses D-pad/stick and A adds; B leaves cursor, next B closes map. Start closes ordinary
+  map. Existing teleport controls unchanged. Last stop is always the destination.
+
+**Route autopilot.**
+- P / D-pad Down: Off, Hold, Route, Off. A route must first be activated in Map. Without a
+  usable trip: Off, Hold, Off plus a readable reason. Airborne/AGL engagement guards remain.
+  Hold captures current targets. Route preserves selected altitude/CAS, owns lateral
+  heading; arrows/pad still adjust altitude/speed, heading selection belongs to Hold.
+- Route.update runs on the fixed physics clock even in manual/visual guidance. Nearest
+  forward-leg activation, bounded cross-track interception/lookahead, endpoint recovery,
+  swept arrival and endpoint-plane crossing with corridor guard, low-speed guard, monotonic
+  leg advance (no waypoint chatter), and remaining distance. Final arrival transitions AP
+  to Hold on final leg heading with a completion notice. No direct motion, altitude/speed
+  constraints per waypoint, terrain avoidance, automatic takeoff or landing.
+- Edits/cancel during Route fall back to Hold on current heading. Crash turns AP off and
+  clears route progress. Reset/spawn/switch also clear progress and leave AP off. Rebase
+  only moves render objects, never route points or progress. New tuning lives in FLIGHT_NAV.
+
+**F-22 exterior.**
+- AircraftBuilder.js: slimmer/flatter chined forebody, revised broad aft fuselage taper,
+  blended angular strakes, paired lower/flatter engine shoulders, main-wing root/sweep,
+  tailplane planform, wider fin separation and wider/flatter rectangular nozzle exits.
+  Photographic review found exposed shoulder caps; tapered their forward ends into the
+  forebody and lowered/flattened bulges before final captures. Existing canopy stations,
+  seated eye, FOV preference, HUD frame and cockpit panels retained. Added hull skin is in
+  cockpitShell layer handling so it cannot cover lower physical panels. Hull skin remains
+  fuselage-owned, wings/fins/stabilators and nozzles retain their existing damage groups.
+  Livery, flap/rudder/stabilator/nozzle/gear animation paths preserved. No aircraft data,
+  inertia, collision, thrust, lift or aerodynamic tuning changed by this visual revision.
+- Before/after mesh bounding boxes match exactly: min [-6.829999923706055, -1.35, -11.25],
+  max [6.829999923706055, 3.153693293775311, 8.600000381469727]. Bounds include invisible
+  plume geometry, so they are a preservation comparison, not real airframe measurements.
+- Retained mesh goldens intentionally fail, NOT overwritten: default c55516da -> 56457cf3,
+  tips 628e730d -> ff389890, split f8b23a12 -> 39caa9c3. Identity suite heading now explains
+  that retained B-response/C-exterior references intentionally differ instead of claiming
+  the F-22 is unchanged. Six normal physics hashes are exactly the pre-C 10v outputs.
+
+**Procedural sound.**
+- FlightAudio.js retains Web Audio and shared SoundEngine master/mute/hidden-tab lifecycle.
+  Core/exhaust noise plus restrained harmonics: 737 lower triangle fan/low rumble, F-22
+  higher sine turbine and stronger exhaust/actual burner roar. Harmonics follow each
+  engine's own n, health and running/fuel state. Broad noise follows surviving actual spool;
+  failed/stopped engines fade away, rather than leaving an idle voice indefinitely.
+- Removed periodic swell/flutter oscillators and artificial twin-engine pitch detuning,
+  removed burner ignition kick by default, smoother audio targets. No engine response or
+  physics change. Pilot views attenuate/filter engines and wind separately by aircraft;
+  stall/gear/damage alerts bypass the cabin lowpass but retain master volume and pause.
+  Filter cutoff respects the context Nyquist limit, including offline/low-rate contexts.
+- Sonic boom suppressed in First person and Cockpit. External camera retains the existing
+  crossing presentation, not a stationary-observer propagation simulation. Camera comfort
+  scaling and bounded Mach kick unchanged. All new sound tuning is in tuning.js.
+- Audio limitation: reference recording pages were researched and signal graphs measured,
+  but neither reference recordings nor the revised synthesis were actually listened to by
+  this agent. No sound-authenticity or perceived-quality claim. The user must audition
+  idle, power changes, burner, wind, cabin/external transitions, warnings and mute/volume.
+
+**Primary references, reference-only, no shipped assets.**
+- Lockheed Martin product card, retrieved/rendered locally and photographs inspected:
+  https://www.lockheedmartin.com/content/dam/lockheed-martin/aero/documents/f22/F-22-Product-Card.pdf
+- DVIDS/NAWDC orthographic top and front images, retrieved and inspected:
+  https://www.dvidshub.net/image/9081649/f-22-raptor-top-orthographic-view
+  https://www.dvidshub.net/image/9081638/f-22-raptor-front-orthographic-view
+  These are orthographic reference illustrations, not flight photographs. Manufacturer
+  side/three-quarter photos supply the photographic comparison. The planned USAF three-view
+  https://www.aetc.af.mil/News/Photos/igphoto/2000550281/ and manufacturer overview returned
+  403, including a direct retry; do not claim those inaccessible images were inspected.
+- NASA engine noise sources, fan/core/jet discussion:
+  https://ntrs.nasa.gov/api/citations/20140006523/downloads/20140006523.pdf
+- NASA test pilot explicitly says pilots do not hear their own boom:
+  https://www.nasa.gov/podcasts/small-steps-giant-leaps/small-steps-giant-leaps-episode-166-bringing-back-supersonic-flight/
+- Primary exterior recording pages identified, not auditioned:
+  https://www.dvidshub.net/video/481165/f-22-raptor-taxi-and-takeoff
+  https://norwegian-no.mynewsdesk.com/videos/boeing-737-800-taking-off-from-osl-26362
+
+**Verification record (final additions below).**
+- Nine car commands PASS, world PASS, build PASS with existing 800 kB advisory.
+- Full flight: 451 checks PASS, only nine retained identity failures: six 10v response
+  outputs and three explicitly authorized C mesh outputs above. No other failures.
+- Legacy-response diagnostic against fresh git archive of 8559a6a in /tmp/blocky-c-pristine:
+  all six physics traces match pristine exactly. Three mesh differences are intentional.
+  Do not describe the diagnostic's nonzero exit as an unexpected physics regression.
+- New registered navigation.mjs: 20 checks including actual-physics three-leg completion
+  on both aircraft, interception, overshoot, low speed, invalid storage/edit, target changes,
+  cancel and identical output at 30/60/144 Hz. Maximum altitude excursion over the scripted
+  420 s trip: F-22 18.93 m, 737 7.54 m. Bank maxima 1.0015 and .4491 rad, inside existing
+  allowed transient margin. Final AP mode Hold, neither aircraft stalled/crashed.
+- navigation-browser.mjs: 29 actual-page checks PASS. Real keyboard/mouse plus synthetic
+  standard navigator.getGamepads input via the real Input and FlightInput polling paths.
+  Shared cache before map open, planner order/origin/reverse/delete/activation/clear,
+  Off/Hold/Route cycle via P and pad D-pad Down, reset/switch/crash/rebase, versioned reload
+  and corrupt storage. Console clean. Seven PNGs in /tmp/look-c-navigation-final inspected.
+- audio-c-browser.mjs: 16 offline real-Web-Audio checks PASS, console clean. Energy rises
+  with spool, cabin attenuates/filters, failed/shut-down engine voices disappear, no clipping
+  in sampled cases, no amplitude LFOs, warning spectrum retained, boom viewpoint, actual
+  burner and distinct wave profiles. Signal checks do not replace listening.
+- Existing instrument-browser: 31 PASS, 27 PNGs /tmp/look-c-initial inspected. A2 Hangar:
+  57 PASS, 15 PNGs /tmp/look-c-hangar inspected. FOV: 18 PASS, eight PNGs /tmp/look-c-fov inspected.
+- Extended look PASS, 45 PNGs /tmp/look-c-suite inspected; look-world PASS, 53 PNGs
+  /tmp/look-c-world inspected. Console clean. Rebase difference zero pixels over threshold
+  versus zero control; mean .0239 versus .0232. Airport wall contact survives, hull .7017792.
+- Final F-22 specialist: nine PNGs /tmp/look-c-exterior-final, front/side/top/quarter/rear,
+  Cockpit 78/110 forward/down. Clean console. Final front/quarter inspected full size;
+  all remaining final views inspected on labeled contact sheet. Earlier nine prototype views informed shoulder correction.
+- Test-script gotchas: game.onFly is asynchronous, await it before accessing window.flight.
+  Heading assertions must wrap modulo 2*pi. Offline audio contexts can have Nyquist below
+  20 kHz; clamp filter cutoff. Browser harness eval timeout timers keep Node alive briefly
+  after its visible PASS, so do not assume a command chain has reached the next script.
+
+**User test order.**
+1. M, Plan a trip. Pick a live or fixed origin, add two turns and a destination by clicking
+   airports/map points or moving the cursor. Reorder/delete/reverse, activate, inspect the
+   selected active leg. Close map and compare HUD/cockpit terrain, range and route progress.
+2. Start safely airborne. P once Hold, again Route, again Off. Adjust altitude and speed,
+   watch interception/waypoint changes/final Hold. With no activated trip, check Off/Hold/Off
+   and reason. Repeat on 737 and pad. Route is lateral guidance, choose safe altitude.
+3. Inspect F-22 front/side/top/rear in orbit/Hangar, control surfaces, gear, livery and cockpit
+   at preferred FOV. Check downward look, larger HUD and unchanged comfort settings.
+4. Listen to both aircraft at idle, power changes, cruise and F-22 burner. Compare First
+   person/Cockpit with external, wind, useful warnings, mute/volume and engine damage.
+5. Test ordinary Hangar entry/leave/re-entry, Map teleport, reset and crash respawn. Reload
+   should keep trip/FOV but never engage AP. Send feel/readability/model/audio feedback.
+
+**Final verification and measured performance.**
+- Existing M5b browser: 29 PASS, live Web Audio warnings/latched damage, smoke/fire/broken
+  parts, repair, eligible respawn and return to car loop. 12 PNGs /tmp/look-c-damage inspected.
+- Final audit added exact transformed-runway-midpoint checks. Airport local u=0 is the
+  threshold; use toWorld(length/2,0), not either airport origin or platform centre.
+  Added pad return from Plan a trip entry focus to first airport to preserve teleport flow.
+- All specialist/navigation/Hangar/FOV/M5b, instrument and extended suite images inspected
+  on labeled contact sheets; forward/quarter F-22 and route cockpit/map views also full size.
+- Final performance used an isolated Chrome on real ANGLE Metal Apple M5, Medium,
+  1920x1080, 4 s warm-up and 8 s sampling (481 frames each). Activated two-stop Route AP
+  and terrain navigation on both aircraft. Earlier overlapping diagnostic capture discarded
+  for reporting; these values are /tmp/c-performance-isolated.log.
+
+| Aircraft/view | Frame median/p95 ms | Render CPU median/p95 ms | Physical batch median/p95 ms |
+|---|---|---|---|
+| F-22 Chase | 16.7 / 16.8 | 2.4 / 3.4 | .5 / .8 |
+| F-22 Cockpit | 16.7 / 16.8 | 2.8 / 4.1 | .5 / .7 |
+| 737 Chase | 16.7 / 16.7 | 2.7 / 3.6 | .6 / .9 |
+| 737 Cockpit | 16.7 / 16.8 | 3.2 / 4.6 | .6 / .9 |
+
+Display vertex totals about 35,000 F-22 / 44,000 737, capacities unchanged at 4.03/4.61 MB.
+Console clean, neither aircraft crashed. Consistent with 60 fps in these measured cases,
+not every location/graphics level or physical controller feel. The final runway midpoint
+correction only changes cached marker coordinates and does not alter draw workload.
+
+- Final checks/logs: /tmp/c-{check,lap,timing,parts,ai,race,fx,specs,drag}.log,
+  /tmp/c-world-final.log, /tmp/c-flight-final.log, /tmp/c-build-final.log,
+  /tmp/c-legacy-identity-final.log. Scratch paths can disappear; the results above are memory.
+- No original working file is missing, no package/lockfile changes, no newly added em/en
+  dashes, git diff --check clean. Source controls reread from Input.js and FlightInput.js.
+- Stop for user testing. Existing changes remain on the user's local computer, uncommitted
+  on Codex_test. Nothing pushed. No permission to commit or proceed beyond C inferred.
+- Additional exact healthy-Hold comparison used the pre-C Autopilot.js/tuning.js extracted
+  from the initial working-file backup, with the current unchanged AircraftPhysics. Both
+  aircraft flew the same 90 s combined altitude/heading/speed target change. Position,
+  velocity, attitude, fuel and AP integrators/targets match to the bit. /tmp/c-hold-identity.log.
+- Final full world rerun after runway midpoint correction PASS. Final navigation browser
+  29 PASS and all seven replacement PNGs inspected again. Final full flight 451 PASS and
+  the same nine documented identity differences. Final build PASS, old size advisory only.
+- Stopped only this session's Vite on 5186 (unified exec session 27450, exit 130). No action
+  targeted 5173 or 5174. No test server remains on 5186. User testing is the next action.

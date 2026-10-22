@@ -16,7 +16,8 @@ built and waiting on the user's test, 4b not started).
 2. `Claude.md`: the project rules (stack, targeted edits, tuning in `src/data/tuning.js`, look and feel,
    commands). Ignore the words "Claude" and "you cannot see the screen": see section 6 below.
 3. `HANDOFF.md`: section 1 (where things stand), section 3 (standing instructions), section 10.0 (start
-   here for flight), then the newest flight sections (10k is milestone 4a as built, 10l is the user's notes
+   here for flight), then the newest flight sections (currently 10y for completed C, 10v for B corrections, 10x for FOV and 10w for the
+   Part C transfer prompt; 10k is milestone 4a as built, 10l is the user's notes
    after flying the 737 and how they were fixed). Section 10j and `FLIGHT_M4_PLAN.md` hold the approved design
    of milestone 4b.
 4. `FLIGHT.md` (the user's flight spec) and `FLIGHT_PLAN.md` (the plan and answers the user approved) when
@@ -71,7 +72,7 @@ Write these down in your own notes too; do not rely on being reminded.
 At the start of a session:
 
 1. Read section 1 above, then `git log --oneline -10` and `git status` so you know what is committed.
-2. Look for a newer `HANDOFF.md` section than the one you expect (the last letter after 10, now 10l). If the
+2. Look for a newer `HANDOFF.md` section than the one you expect (the last letter after 10, now 10y). If the
    user's latest notes are in it, they have been dealt with; if they are in the chat only, deal with them and
    then write them down.
 
@@ -102,7 +103,43 @@ code). Rules:
 - `HANDOFF.md` will diverge between the branches. Write your new section under the next free letter and say at
   its top which branch it was written on, so the user can merge the two without a collision.
 
-## 4. Where things stand (2026-10-21)
+## 4. Where things stand (2026-10-22)
+
+Read 10y first. The older delivery notes below retain history; 10y supersedes their
+C-unstarted and stop-before-C instructions. User testing after completed C is now next.
+
+- Part C implemented on Codex_test, 2026-10-22: terrain map/HUD/cockpit navigation, versioned
+  multi-stop planner, Off/Hold/Route AP, reference-led F-22 exterior and revised procedural
+  sound. Read HANDOFF 10y for files, checks, intentional hash differences and test order.
+  Stop for user test after C. All previous local work retained, no commits/pushes. Audio
+  signal checks are not a listening test; user audition is still required. Final flight
+  451 PASS with six retained B-response and three intentional mesh differences; healthy
+  Hold matches pre-C bit for bit. Own 5186 server stopped; 5173/5174 never targeted.
+
+- Latest addition before C, HANDOFF 10x: saved Field of view slider in Fly/pause menus,
+  55 to 110 vertical degrees, default 78, one-degree steps. All flight camera views and
+  the cockpit overlay use the selected angle; speed no longer overrides it. Native mouse
+  slider plus keyboard/pad/menu stepper. 18 browser checks/build pass, eight pictures read.
+  Part C prompt updated to preserve it. No car FOV or flight physics changes.
+
+- New-chat transfer prompt: FLIGHT_PART_C_PROMPT.md, indexed in HANDOFF 10w. Part C's full
+  approved scope and additions are in FLIGHT_COCKPIT_NAV_PLAN.md. C remains unstarted; this
+  prompt was prepared at the user's request, without starting C or assuming B acceptance.
+
+- Latest revision on Codex_test (2026-10-22): user requested the next step after A2.
+  Batch B is built and verified, waiting on the user's test (HANDOFF 10u): shared telemetry,
+  working aircraft-specific vector cockpit instruments and matching external HUD, U behavior,
+  generic future profile. Stop for their test before C (terrain minimap, multiple waypoints,
+  selectable Hold/Route AP), which is unstarted. No milestone 6 or helicopter work.
+
+- Newer user feedback (2026-10-22), HANDOFF 10v: enlarged/aligned F-22 HUD glass/frame,
+  contained 737 panels within the nose, fixed reversed mouse/pad vertical look and broken
+  mouse-flight middle-button look, quicker throttle/spool response for both aircraft,
+  80% less pilot-view shake/Mach kick. Retest before C. User explicitly authorized changed
+  F-22 acceleration; normal physics hashes now differ on purpose. Do not call them unchanged
+  or replace goldens. Legacy-response diagnostic still matches pristine physics/mesh.
+  Add the F-22 exterior remodel and less arcade aircraft-specific sound to C, alongside
+  the original terrain minimap/waypoints/Route AP. Those C additions are not built yet.
 
 - Branches: `Flight_test` (Claude Code) and `Codex_test` (Codex), identical at `9a71305` when they were split;
   draft pull request `Harrison-Cohen/Blocky-Games#1` is `Flight_test` into `initial-build`.
@@ -123,6 +160,18 @@ code). Rules:
   is kept in `FLIGHT_M4_PLAN.md` for when the user brings it back.
 - The prompt the user pastes to start milestone 5 is `FLIGHT_M5_PROMPT.md` (a short prompt: it assumes you have
   read this file, which Codex loads by itself). Later milestones get a `FLIGHT_M<n>_PROMPT.md` the same way.
+
+- **Milestone 5 built on Codex_test (2026-10-21):** user approved FLIGHT_M5_PLAN.md with
+  "continue with the plan", then "continue with part B". Seven-part damage, physical effects,
+  persistence/repair, airport building collisions, smoke/fire/broken parts, sound and map
+  respawn are built. Read HANDOFF 10p and stop for the user's test. Do not start milestone 6.
+  Collision scope is airport hangars, terminals and towers. Helicopter stays deferred.
+- **Recorded identity hashes on this Mac:** six physics goldens already fail on untouched
+  8559a6a. Since the user's B feedback, quicker acceleration intentionally changes current
+  normal hashes too. The optional --legacy-response diagnostic matches all six pristine
+  same-runtime physics outputs; current exterior mesh goldens pass. Read HANDOFF 10v for
+  current outputs, not older unchanged-physics statements. Do not replace goldens or claim
+  npm run flight is clean. The baseline directory in /tmp is disposable, not project memory.
 
 ## 5. Commands
 
