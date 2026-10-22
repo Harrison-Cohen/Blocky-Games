@@ -105,6 +105,10 @@ code). Rules:
 
 ## 4. Where things stand (2026-10-22)
 
+Committed and pushed to origin/Codex_test on 2026-10-22 at the user's word (`758f1cd` code, `1e05684`
+docs); local Flight_test fast-forwarded to match, not pushed. The "no commits/pushes" lines below were true
+when written. See the first bullet of HANDOFF section 1.
+
 Read 10y first. The older delivery notes below retain history; 10y supersedes their
 C-unstarted and stop-before-C instructions. User testing after completed C is now next.
 

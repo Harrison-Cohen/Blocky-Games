@@ -14,6 +14,15 @@ user approved, with the answers to the spec's open items), then sections 9 and
 
 ## 1. Where things stand
 
+- Committed and pushed, 2026-10-22, at the user's word ("commit to origin and then merge with flight
+  test"): all the M5 and A/A2/B/C work is now two commits on Codex_test (`758f1cd` code, `1e05684` docs,
+  pushed to origin/Codex_test), and local `Flight_test` was fast-forwarded to the same commit (it had no
+  commits of its own after `9a71305`). Flight_test was NOT pushed to origin (the draft PR still shows the
+  old tip) until the user says so. Statements below that say "no commits/pushes" describe the time they
+  were written. Claude Code resumed the work after Codex ran out of usage; Part C is still waiting on the
+  user's test (10y test order), nothing new was built. Re-ran flight (451 ok, the same nine documented
+  identity failures) and the build (clean, old size advisory).
+
 - Part C implemented on Codex_test, 2026-10-22: terrain map/HUD/cockpit navigation, versioned
   multi-stop planner, Off/Hold/Route AP, reference-led F-22 exterior and revised procedural
   sound. Read HANDOFF 10y for files, checks, intentional hash differences and test order.
